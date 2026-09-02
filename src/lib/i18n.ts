@@ -41,6 +41,18 @@ export const ja: Record<string, string> = {
   Account: 'アカウント',
   'Sign out': 'ログアウト',
 
+  // PlaygroundsPage (the app's very first screen)
+  'TheSEA Organization': 'TheSEA組織',
+  Playgrounds: 'プレイグラウンド',
+  Video: '動画',
+  Layout: 'レイアウト',
+  'Your playgrounds': '自分のプレイグラウンド',
+  'Shared playgrounds': '共有プレイグラウンド',
+  'All types': 'すべてのタイプ',
+  'All teams': 'すべてのチーム',
+  'Newest first': '新しい順',
+  'Search playgrounds': 'プレイグラウンドを検索',
+
   // MultiPageCanvas (view-all canvas)
   'Add more sizes': 'サイズを追加',
   'Add more variations of this banner in different sizes': 'このバナーの別サイズのバリエーションを追加します',

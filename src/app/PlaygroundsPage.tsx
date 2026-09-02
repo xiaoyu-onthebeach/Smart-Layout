@@ -1,5 +1,7 @@
 import { ChevronDown, CircleHelp, Search } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAppStore } from '@/store/useAppStore';
+import { useT } from '@/lib/i18n';
 
 const CREATE_BUTTONS = [
   { label: 'Image', icon: '/icons/image.svg' },
@@ -22,6 +24,9 @@ const PLACEHOLDER_CARDS = Array.from({ length: 15 }, (_, i) => i);
  */
 export function PlaygroundsPage() {
   const goTo = useAppStore((s) => s.goTo);
+  const language = useAppStore((s) => s.language);
+  const setLanguage = useAppStore((s) => s.setLanguage);
+  const t = useT();
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden" style={{ background: '#040406' }}>
@@ -32,16 +37,24 @@ export function PlaygroundsPage() {
           className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-sm text-white transition-colors hover:bg-white/5"
         >
           <img src="/icons/logo.svg" alt="" className="size-6" />
-          TheSEA Organization
+          {t('TheSEA Organization')}
           <ChevronDown className="size-4 opacity-70" />
         </button>
 
         <div className="flex items-center gap-2">
-          <button type="button" className="flex h-8 items-center gap-1 rounded-lg px-3 text-sm text-white transition-colors hover:bg-white/5">
-            English
-            <ChevronDown className="size-4 opacity-70" />
-          </button>
-          <button type="button" aria-label="Help" className="flex size-8 items-center justify-center rounded-lg text-white transition-colors hover:bg-white/5">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="flex h-8 items-center gap-1 rounded-lg px-3 text-sm text-white transition-colors hover:bg-white/5">
+                {language === 'ja' ? '日本語' : 'English'}
+                <ChevronDown className="size-4 opacity-70" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setLanguage('en')}>English</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setLanguage('ja')}>日本語</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <button type="button" aria-label={t('Help')} className="flex size-8 items-center justify-center rounded-lg text-white transition-colors hover:bg-white/5">
             <CircleHelp className="size-4" />
           </button>
           <button type="button" className="flex items-center gap-1 rounded-lg p-1 transition-colors hover:bg-white/5">
@@ -54,7 +67,7 @@ export function PlaygroundsPage() {
       <div className="flex min-h-0 flex-1 flex-col px-16">
         {/* Playgrounds section header */}
         <div className="z-[2] flex h-10 shrink-0 items-center justify-between">
-          <h1 className="text-[30px] leading-[38px] font-bold text-white">Playgrounds</h1>
+          <h1 className="text-[30px] leading-[38px] font-bold text-white">{t('Playgrounds')}</h1>
           <div className="flex shrink-0 items-center gap-3">
             {CREATE_BUTTONS.map((btn) => (
               <button
@@ -65,7 +78,7 @@ export function PlaygroundsPage() {
                 style={{ background: '#26262C', borderColor: '#40404A', letterSpacing: '-0.01em' }}
               >
                 <img src={btn.icon} alt="" className="size-6" />
-                {btn.label}
+                {t(btn.label)}
               </button>
             ))}
           </div>
@@ -78,9 +91,9 @@ export function PlaygroundsPage() {
         >
           <div className="flex flex-1 items-start gap-4">
             <div className="flex h-[34px] items-center border-b-2 pb-3 text-sm font-bold" style={{ borderColor: '#4570FF', color: '#4570FF' }}>
-              Your playgrounds
+              {t('Your playgrounds')}
             </div>
-            <div className="flex h-[34px] items-center pb-3 text-sm font-bold text-white/85">Shared playgrounds</div>
+            <div className="flex h-[34px] items-center pb-3 text-sm font-bold text-white/85">{t('Shared playgrounds')}</div>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
@@ -90,7 +103,7 @@ export function PlaygroundsPage() {
                 className="flex h-8 shrink-0 items-center gap-1 rounded-full border px-4 text-sm text-white/85"
                 style={{ background: 'rgba(38,38,44,0.88)', borderColor: '#2F2F37' }}
               >
-                {filter}
+                {t(filter)}
                 <ChevronDown className="size-3 shrink-0 text-white/85" />
               </div>
             ))}
@@ -99,7 +112,7 @@ export function PlaygroundsPage() {
               style={{ background: 'rgba(38,38,44,0.88)', borderColor: '#2F2F37' }}
             >
               <Search className="size-4 shrink-0 text-white/45" />
-              Search playgrounds
+              {t('Search playgrounds')}
             </div>
           </div>
         </div>
