@@ -9,6 +9,7 @@ import { MultiPageCanvas } from '@/features/editor/artboard/MultiPageCanvas';
 import { ExportModal } from '@/features/editor/artboard/ExportModal';
 import { TopBar } from './TopBar';
 import { LeftPanel } from './LeftPanel';
+import { PlaygroundsPage } from './PlaygroundsPage';
 import { CanvasStart } from './CanvasStart';
 import { DefaultModeToolbar } from './DefaultModeToolbar';
 import { ModeSwitcher } from './ModeSwitcher';
@@ -99,6 +100,8 @@ export function Shell() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [canvasMode, viewAllActivePageId, currentSet, selectedElements, deletePage, removeElement, duplicateElement, reorderElement, selectElement]);
+
+  if (step === 'playgrounds') return <PlaygroundsPage />;
 
   return (
     <TooltipProvider delayDuration={200}>

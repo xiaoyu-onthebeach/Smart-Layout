@@ -4,7 +4,7 @@ import { findMatchingRefsAcrossGroup } from '@/lib/match-select';
 const PAGE_LOADING_DURATION_MS = 5000;
 
 export const createUiSlice: Slice<UiSlice> = (set) => ({
-  step: 'editor',
+  step: 'playgrounds',
   sizeSelectOpen: false,
   addSizesOpen: false,
   bulkProductsOpen: false,

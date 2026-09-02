@@ -2,7 +2,7 @@ import type { StateCreator } from 'zustand';
 import type { BannerSet, Layout, LayoutElement, Product } from '@/types';
 
 /** Top-level app step. Overlays (size-select, add-sizes, bulk-products, export) layer on top of a step. */
-export type AppStep = 'start' | 'editor' | 'allLayouts';
+export type AppStep = 'playgrounds' | 'start' | 'editor' | 'allLayouts';
 
 /** Bottom-toolbar tool. 'text'/'shape' arm a click/drag placement gesture rather than adding instantly. */
 export type Tool = 'select' | 'move' | 'brush' | 'eraser' | 'text' | 'shape';
