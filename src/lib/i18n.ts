@@ -13,11 +13,18 @@ export const ja: Record<string, string> = {
   'Add banner': 'バナーを追加',
   'All banners': 'すべてのバナー',
   'No banners yet.': 'まだバナーがありません。',
+  'Square sizes': '正方形サイズ',
+  'Horizontal sizes': '横型サイズ',
+  'Vertical sizes': '縦型サイズ',
+  'Collapse all': 'すべて折りたたむ',
+  'Expand all': 'すべて展開',
+  'Add a main banner size': 'メインバナーサイズを追加',
+  'Main Square': 'メイン正方形',
+  'Main Horizontal': 'メイン横型',
+  'Main Vertical': 'メイン縦型',
   Assets: 'アセット',
   'View all': 'すべて表示',
   'All sizes': 'すべてのサイズ',
-  Editing: '編集',
-  'Single banner': '単一バナー',
   Select: '選択',
   Move: '移動',
   Brush: 'ブラシ',
@@ -31,8 +38,6 @@ export const ja: Record<string, string> = {
   Button: 'ボタン',
   Badge: 'バッジ',
   Expand: '拡大',
-  'Re-generate': '再生成',
-  'Split into layers': 'レイヤーに分割',
   'Create your first banner set!': '最初のバナーセットを作成しましょう！',
   'Pick your target platform and design one primary banner, and adapt to every required size easily.':
     'ターゲットとするプラットフォームを選び、プライマリバナーを1つデザインすれば、必要なすべてのサイズに簡単に対応できます。',
@@ -56,16 +61,19 @@ export const ja: Record<string, string> = {
   // MultiPageCanvas (view-all canvas)
   'Add more sizes': 'サイズを追加',
   'Add more variations of this banner in different sizes': 'このバナーの別サイズのバリエーションを追加します',
+  'Add more square size variations': '正方形のサイズバリエーションを追加',
+  'Add more horizontal size variations': '横型のサイズバリエーションを追加',
+  'Add more vertical size variations': '縦型のサイズバリエーションを追加',
   'ALL SIZES': 'すべてのサイズ',
   'Add page': 'ページを追加',
   'No pages yet — use "+ New page" to start.': 'ページがありません — 「+ 新規ページ」から開始してください。',
   'PRIMARY SIZE': 'プライマリサイズ',
 
-  // ArtboardFrame / ArtboardScene
+  // ArtboardFrame
   Choose: '選択',
   'or drag your visual': 'または画像をドラッグ',
   Confirm: '確定',
-  'Draw a rectangle around the scene focus': 'フォーカスにする範囲を四角で囲んでください',
+  'Draw a rectangle around the area to keep as the focus in all sizes': 'すべてのサイズでフォーカスとして残す範囲を四角で囲んでください',
   'New Banner': '新しいバナー',
 
   // Image dialogs
@@ -77,6 +85,7 @@ export const ja: Record<string, string> = {
   'All visuals': 'すべての画像',
   'Uploaded image': 'アップロード済みの画像',
   'Expand image': '画像を拡大',
+  'Expanding image…': '画像を拡大しています…',
   'Describe the expanded area...': '拡大するエリアを入力…',
 
   // Size-select & templates
@@ -116,7 +125,7 @@ export const ja: Record<string, string> = {
   'Copy layer': 'レイヤーをコピー',
   'Duplicate layer': 'レイヤーを複製',
   'Lock layer': 'レイヤーをロック',
-  'Split in layers': 'レイヤーに分割',
+  'Unlock layer': 'レイヤーのロックを解除',
   'Takes a few minutes': '数分かかります',
   'Bring to front': '最前面へ',
   'Send to back': '最背面へ',
@@ -150,6 +159,8 @@ export const ja: Record<string, string> = {
   Size: 'サイズ',
   'Export settings': 'エクスポート設定',
   'File type': 'ファイル形式',
+  Name: '名前',
+  Custom: 'カスタム',
 
   // Shape/text/image editor sub-panels
   'Select in all sizes': 'すべてのサイズで選択',
@@ -163,7 +174,11 @@ export const ja: Record<string, string> = {
   Alignment: '配置',
   Position: '位置',
   'Anchor type': 'アンカータイプ',
+  'Position mode': 'ポジションモード',
   Smart: 'スマート',
+  Anchored: 'アンカー固定',
+  'Top + Bottom': '上 + 下',
+  'Left + Right': '左 + 右',
   Color: 'カラー',
   'Uniform radius': '均一な角丸',
   'Per-corner radius': 'コーナーごとの角丸',
@@ -193,6 +208,13 @@ export const ja: Record<string, string> = {
   'Line height': '行の高さ',
   Decoration: '装飾',
   'Expand to frame': 'フレームに合わせる',
+  'Edit content': 'コンテンツを編集',
+  'No sizes match': '一致するサイズがありません',
+  'Duplicate banner': 'バナーを複製',
+  Delete: '削除',
+  Preview: 'プレビュー',
+  Description: '説明文',
+  'Button text': 'ボタンのテキスト',
 };
 
 export function translate(text: string, language: Language): string {

@@ -26,7 +26,6 @@ export function AddBannersPanel() {
   const upsertLayout = useAppStore((s) => s.upsertLayout);
   const loadSet = useAppStore((s) => s.loadSet);
   const setActiveLayout = useAppStore((s) => s.setActiveLayout);
-  const setCanvasMode = useAppStore((s) => s.setCanvasMode);
   const setActiveCanvas = useAppStore((s) => s.setActiveCanvas);
   const language = useAppStore((s) => s.language);
   const t = useT();
@@ -126,7 +125,6 @@ export function AddBannersPanel() {
     loadSet(bannerSet);
     setActiveCanvas(setId);
     setActiveLayout(layout.id);
-    setCanvasMode('viewAll');
     closeSizeSelect();
   }
 

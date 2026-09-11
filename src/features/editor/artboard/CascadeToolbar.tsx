@@ -21,8 +21,8 @@ export function CascadeToolbar({ setId }: { setId: string }) {
         backdropFilter: 'blur(16px)',
       }}
     >
-      <span className="flex items-center gap-2 py-2 text-sm font-semibold whitespace-nowrap text-white">
-        <img src="/icons/match_select.svg" alt="" className="size-[22px]" />
+      <span className="flex shrink-0 items-center gap-2 py-2 text-sm font-semibold whitespace-nowrap text-white">
+        <img src="/icons/match_select.svg" alt="" className="size-[22px] shrink-0" />
         {t('Apply changes to all sizes')}
       </span>
 

@@ -6,16 +6,35 @@ import { useAppStore } from '@/store/useAppStore';
 import { nextId, createAdaptedLayout } from '@/lib/create-layout';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import type { BannerSet, Layout } from '@/types';
-import type { PageGroup } from '@/store/types';
+import type { PagePosition } from '@/store/types';
 import { ArtboardFrame } from './ArtboardFrame';
 import { CascadeToolbar } from './CascadeToolbar';
 import { CanvasZoomBar } from './CanvasZoomBar';
 import { PageTitleBar } from './PageTitleBar';
 import { QuickSizeMenu, type QuickSizeResult } from './QuickSizeMenu';
-import { PAGE_GAP, GROUP_PAD_TOP, GROUP_PAD_RIGHT, GROUP_PAD_BOTTOM, GROUP_PAD_LEFT, PAGE_TITLE_RESERVE, TITLE_CLEARANCE_BUFFER } from '@/lib/canvas-layout';
+import { SceneContextMenu } from './SceneContextMenu';
+import { PreviewDialog } from './PreviewDialog';
+import {
+  canvasRootOf,
+  PAGE_GAP,
+  PAGE_TITLE_RESERVE,
+  PRIMARY_LABEL_RESERVE,
+  SECTION_GAP_BOTTOM,
+  SECTION_GAP_TOP,
+  SECTION_HEADER_HEIGHT,
+  TITLE_CLEARANCE_BUFFER,
+} from '@/lib/canvas-layout';
 import { applyPrototypeSizeFill } from '@/lib/prototype-size-fill';
 import { buildOverlayElements } from '@/lib/overlay-elements';
 import { computeGroupLayout } from '@/lib/group-layout';
+import { classifyRatioBucket, type RatioBucket } from '@/lib/size-class';
+
+/** Per-ratio hover copy for the "add more sizes" icon next to a main size's own "ALL SIZES" row. */
+const ADD_SIZE_TOOLTIP_BY_BUCKET: Record<RatioBucket, string> = {
+  square: 'Add more square size variations',
+  horizontal: 'Add more horizontal size variations',
+  vertical: 'Add more vertical size variations',
+};
 
 const PADDING = 96;
 const MAX_FIT_ZOOM = 1;
@@ -113,37 +132,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-/**
- * Generic screen-delta drag tracker — converts screen px to canvas-space px via `zoom`.
- * If the pointer never moves past PAN_THRESHOLD before mouseup, treats it as a plain click
- * and fires `onClick` instead (so a drag handle can double as a select target).
- */
-function startCanvasDrag(e: ReactMouseEvent, zoom: number, onDelta: (dx: number, dy: number) => void, onClick?: () => void) {
-  e.stopPropagation();
-  e.preventDefault();
-  const startX = e.clientX;
-  const startY = e.clientY;
-  let lastX = startX;
-  let lastY = startY;
-  let moved = false;
-
-  function onMove(ev: globalThis.MouseEvent) {
-    const dx = (ev.clientX - lastX) / zoom;
-    const dy = (ev.clientY - lastY) / zoom;
-    lastX = ev.clientX;
-    lastY = ev.clientY;
-    if (Math.abs(ev.clientX - startX) > PAN_THRESHOLD || Math.abs(ev.clientY - startY) > PAN_THRESHOLD) moved = true;
-    onDelta(dx, dy);
-  }
-  function onUp() {
-    window.removeEventListener('mousemove', onMove);
-    window.removeEventListener('mouseup', onUp);
-    if (!moved) onClick?.();
-  }
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onUp);
-}
-
 /** True if some other page already occupies the space to the right (blocking a new right-add). */
 function hasBlockerToRight(entry: PageEntry, others: PageEntry[]) {
   return others.some(
@@ -169,14 +157,23 @@ function AddSizeIconButton({
   onClick,
   size = 10,
   onHoverChange,
+  tooltip,
 }: {
   onClick?: (e: ReactMouseEvent) => void;
   size?: 7 | 10;
   onHoverChange?: (hovered: boolean) => void;
+  /** Overrides the default generic hover copy — e.g. a main size's own ratio-specific message. */
+  tooltip?: string;
 }) {
   const t = useT();
   const [hovered, setHovered] = useState(false);
   const sizeClass = size === 10 ? 'size-10' : 'size-7';
+  // /icons/add size.svg reserves ~22% of its own viewBox as drop-shadow padding around its filled
+  // circle, so stretching the image to the button's own box (inset-0) leaves a visible ring of the
+  // gray button showing at the edges — scale the image up by the same ratio (35 / 27.4238, the
+  // svg's full viewBox vs. its filled circle) and center it so the circle itself, not the padded
+  // image box, exactly covers the button.
+  const hoverIconPx = size === 10 ? 51 : 36;
 
   function setHover(value: boolean) {
     setHovered(value);
@@ -203,12 +200,17 @@ function AddSizeIconButton({
         style={{ background: '#26262C' }}
       >
         <Plus className={cn('size-4 text-white transition-opacity', hovered && 'opacity-0')} />
-        <img src="/icons/add%20size.svg" alt="" className={cn('absolute inset-0 transition-opacity', sizeClass, hovered ? 'opacity-100' : 'opacity-0')} />
+        <img
+          src="/icons/add%20size.svg"
+          alt=""
+          className={cn('pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity', hovered ? 'opacity-100' : 'opacity-0')}
+          style={{ width: hoverIconPx, height: hoverIconPx }}
+        />
       </button>
       {hovered && (
         <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 flex -translate-x-1/2 flex-col items-center">
           <div className="w-[184px] rounded-md px-2 py-1 text-center text-sm text-white" style={{ background: 'rgba(38,38,44,0.88)' }}>
-            {t('Add more variations of this banner in different sizes')}
+            {t(tooltip ?? 'Add more variations of this banner in different sizes')}
           </div>
           <div className="h-2 w-4" style={{ background: 'rgba(38,38,44,0.88)', clipPath: 'polygon(50% 100%, 0 0, 100% 0)' }} />
         </div>
@@ -225,6 +227,7 @@ function AllSizesDivider({
   onConfirm,
   sourceLayoutId,
   onFocusPrimary,
+  primarySize,
 }: {
   left: number;
   top: number;
@@ -233,6 +236,8 @@ function AllSizesDivider({
   sourceLayoutId: string;
   /** Recenters the camera on the primary scene — the primary can be scrolled out of view for a large group, so opening this menu brings it back on screen. */
   onFocusPrimary: () => void;
+  /** This group's own primary dimensions — picks the ratio-specific hover copy for the "+" icon. */
+  primarySize: { width: number; height: number };
 }) {
   const t = useT();
   const [hovered, setHovered] = useState(false);
@@ -241,10 +246,90 @@ function AllSizesDivider({
       <span className="shrink-0 text-base text-white/45">{t('ALL SIZES')}</span>
       <div className="pointer-events-auto shrink-0">
         <QuickSizeMenu onConfirm={onConfirm} sourceLayoutId={sourceLayoutId}>
-          <AddSizeIconButton size={7} onHoverChange={setHovered} onClick={onFocusPrimary} />
+          <AddSizeIconButton
+            size={7}
+            onHoverChange={setHovered}
+            onClick={onFocusPrimary}
+            tooltip={ADD_SIZE_TOOLTIP_BY_BUCKET[classifyRatioBucket(primarySize.width, primarySize.height)]}
+          />
         </QuickSizeMenu>
       </div>
       <div className="h-px min-w-0 flex-1 transition-colors" style={{ background: hovered ? 'rgba(255,255,255,0.45)' : '#40404A' }} />
+    </div>
+  );
+}
+
+const ADD_ICON_SIZE = 28; // matches AddSizeIconButton's own size={7} (Tailwind size-7)
+const ADD_ICON_GAP = 8; // fixed screen px — the line stops this far short of each icon's circle on both sides
+const ALL_SIZES_LABEL_RESERVE = 100; // approximate screen-px width reserved for the "ALL SIZES" text before the line begins
+
+/**
+ * One shared "ALL SIZES" header spanning every column of a bundle of primaries created together
+ * (see BannersTab's "+") — a single divider line running the full row, punctuated by one "+" per
+ * column (each still independently starting *that* column's own group), rather than each column
+ * getting its own separate header. The line renders as discrete segments between icons (not one
+ * continuous line with icons drawn on top) so the canvas's dotted background shows through in the
+ * `ADD_ICON_GAP` on either side of each circle, matching the reference design.
+ */
+function UnifiedAllSizesHeader({
+  left,
+  top,
+  totalWidth,
+  icons,
+}: {
+  left: number;
+  top: number;
+  /** Screen-px, from this header's own left edge to the last column's right edge. */
+  totalWidth: number;
+  /** Each column's icon center x — screen-px, relative to `left`, already zoom-scaled by the caller — plus its own confirm/focus handlers. */
+  icons: Array<{ x: number; entry: PageEntry; onConfirm: (results: QuickSizeResult[]) => void; onFocusPrimary: () => void }>;
+}) {
+  const t = useT();
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const tooltipFor = (entry: PageEntry) => ADD_SIZE_TOOLTIP_BY_BUCKET[classifyRatioBucket(entry.layout.size.width, entry.layout.size.height)];
+  return (
+    <div className="pointer-events-none absolute" style={{ left, top, width: totalWidth, height: 0 }}>
+      {/* Vertical centering here is done with explicit `top` offsets, not `transform: translateY`
+          — a `transform` on an ancestor becomes the containing block for any `position: fixed`
+          descendant, which would silently break QuickSizeMenu's own fixed-positioned panel (it'd
+          anchor to this element instead of the viewport, landing off-screen). */}
+      <span className="absolute text-base text-white/45" style={{ left: 0, top: -8 }}>
+        {t('ALL SIZES')}
+      </span>
+      {icons.map((icon, i) => {
+        const segStart = i === 0 ? ALL_SIZES_LABEL_RESERVE : icons[i - 1].x + ADD_ICON_SIZE / 2 + ADD_ICON_GAP;
+        const segEnd = icon.x - ADD_ICON_SIZE / 2 - ADD_ICON_GAP;
+        return (
+          <div key={icon.entry.id}>
+            {segEnd > segStart && (
+              <div
+                className="absolute h-px transition-colors"
+                style={{ left: segStart, top: -0.5, width: segEnd - segStart, background: hoveredIndex === i ? 'rgba(255,255,255,0.45)' : '#40404A' }}
+              />
+            )}
+            <div className="pointer-events-auto absolute" style={{ left: icon.x - ADD_ICON_SIZE / 2, top: -ADD_ICON_SIZE / 2 }}>
+              <QuickSizeMenu onConfirm={icon.onConfirm} sourceLayoutId={icon.entry.layout.id}>
+                <AddSizeIconButton
+                  size={7}
+                  onHoverChange={(v) => setHoveredIndex(v ? i : null)}
+                  onClick={icon.onFocusPrimary}
+                  tooltip={tooltipFor(icon.entry)}
+                />
+              </QuickSizeMenu>
+            </div>
+          </div>
+        );
+      })}
+      {icons.length > 0 &&
+        (() => {
+          const last = icons[icons.length - 1];
+          const segStart = last.x + ADD_ICON_SIZE / 2 + ADD_ICON_GAP;
+          return (
+            segStart < totalWidth && (
+              <div className="absolute h-px" style={{ left: segStart, top: -0.5, width: totalWidth - segStart, background: '#40404A' }} />
+            )
+          );
+        })()}
     </div>
   );
 }
@@ -290,38 +375,6 @@ function AddPageHotspot({ edge, sourceLayoutId, onConfirm }: { edge: 'right' | '
   );
 }
 
-function GroupContainer({
-  left,
-  top,
-  width,
-  height,
-  zoom,
-  onSelect,
-  onDragMove,
-}: {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  zoom: number;
-  onSelect: () => void;
-  onDragMove: (dx: number, dy: number) => void;
-}) {
-  return (
-    <div
-      className="absolute cursor-move rounded-lg"
-      style={{ left, top, width, height }}
-      onMouseDown={(e) => {
-        // Shift-drag is always a marquee selection, even over a group's own invisible drag-handle
-        // overlay — let it bubble to the canvas background's handler instead of moving the group.
-        if (e.shiftKey) return;
-        startCanvasDrag(e, zoom, onDragMove, onSelect);
-      }}
-      onClick={(e) => e.stopPropagation()}
-    />
-  );
-}
-
 function PageCard({
   entry,
   left,
@@ -330,6 +383,7 @@ function PageCard({
   height,
   scale,
   active,
+  entered,
   isLoading,
   isPrimary,
   showCascadeToolbar,
@@ -342,6 +396,7 @@ function PageCard({
   showBottomAdd,
   onAddAdjacent,
   onRename,
+  onSceneContextMenu,
 }: {
   entry: PageEntry;
   left: number;
@@ -350,6 +405,11 @@ function PageCard({
   height: number;
   scale: number;
   active: boolean;
+  /** True only once truly "entered" (double-clicked) — unlike `active` (also true from a plain
+   * single-select), this is what unlocks ArtboardFrame's full inner-layer interactivity (drag the
+   * image, edit text in place, etc.). A merely-selected-but-not-entered card stays a static preview
+   * so dragging it always moves the whole card instead of grabbing a layer underneath. */
+  entered: boolean;
   isLoading: boolean;
   isPrimary: boolean;
   showCascadeToolbar: boolean;
@@ -370,6 +430,8 @@ function PageCard({
   showBottomAdd: boolean;
   onAddAdjacent: (edge: 'right' | 'bottom', results: QuickSizeResult[]) => void;
   onRename: (name: string) => void;
+  /** Right-click anywhere on the scene that isn't already its own image layer's context menu. */
+  onSceneContextMenu: (e: ReactMouseEvent) => void;
 }) {
   const { set: bannerSet, layout } = entry;
   const [isHovered, setIsHovered] = useState(false);
@@ -410,9 +472,10 @@ function PageCard({
           scale={scale}
           width={width}
           height={height}
-          active={active}
+          active={entered}
           onActivate={onActivate}
           onSceneMouseDown={onStartDrag}
+          onSceneContextMenu={onSceneContextMenu}
           showEmptyStateHint={scale >= 0.2}
           className="absolute inset-0"
         />
@@ -433,6 +496,9 @@ export function MultiPageCanvas() {
   const pagePositions = useAppStore((s) => s.pagePositions);
   const pageGroups = useAppStore((s) => s.pageGroups);
   const pageGroupIdByPage = useAppStore((s) => s.pageGroupIdByPage);
+  const canvasRootByPage = useAppStore((s) => s.canvasRootByPage);
+  const canvasRootOrder = useAppStore((s) => s.canvasRootOrder);
+  const reorderCanvasRoot = useAppStore((s) => s.reorderCanvasRoot);
   const loadingPageIds = useAppStore((s) => s.loadingPageIds);
   const upsertLayout = useAppStore((s) => s.upsertLayout);
   const loadSet = useAppStore((s) => s.loadSet);
@@ -455,11 +521,18 @@ export function MultiPageCanvas() {
   const selectScene = useAppStore((s) => s.selectScene);
   const selectScenes = useAppStore((s) => s.selectScenes);
   const selectedElements = useAppStore((s) => s.selectedElements);
+  const selectElement = useAppStore((s) => s.selectElement);
+  const setActiveLayout = useAppStore((s) => s.setActiveLayout);
+  const deletePage = useAppStore((s) => s.deletePage);
   // A layer selected with match-select on spans several scenes at once — dimming every scene that
   // selection didn't *also* add to selectedSceneIds would leave the other matched scenes looking
   // deselected even though they're showing a live bounding box, so skip dimming entirely whenever
   // the current element selection already spans more than one scene.
   const isMultiSceneElementSelection = new Set(selectedElements.map((r) => r.layoutId)).size > 1;
+  // Selecting a main size (its primary) shouldn't dim its own "all sizes" pack — they read as one
+  // unit — so anything sharing a real PageGroup with a selected scene stays at full opacity too,
+  // not just the literal selected id(s).
+  const selectedGroupIds = new Set(selectedSceneIds.map((id) => pageGroupIdByPage[id]).filter(Boolean));
 
   const outerRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
@@ -478,8 +551,51 @@ export function MultiPageCanvas() {
   // canvas (including this same card whenever this is null) renders with no position transition
   // at all, so panning/zooming the camera moves everything in lockstep, instantly.
   const [reorderDrag, setReorderDrag] = useState<{ groupId: string; siblingId: string; x: number; y: number } | null>(null);
+  // Same float-then-snap treatment as `reorderDrag`, but for swapping "cluster roots" (a bundle's
+  // main-size columns) left-to-right instead of siblings within one pack — see startClusterRootDrag.
+  // `entryId` is always the cluster root itself (a bare page, or a group's own primary), never one
+  // of its siblings, even when the whole pack visually rides along with the drag.
+  const [clusterReorderDrag, setClusterReorderDrag] = useState<{ rootId: string; entryId: string; x: number; y: number } | null>(null);
+  const [sceneContextMenu, setSceneContextMenu] = useState<{ x: number; y: number; entryId: string } | null>(null);
+  const [previewEntryId, setPreviewEntryId] = useState<string | null>(null);
   const didPanRef = useRef(false);
   const fitKeyRef = useRef<string | null>(null);
+  const cameraAnimRef = useRef<number | null>(null);
+
+  // Smoothly pans/zooms from wherever the camera currently sits to `target`, instead of the instant
+  // jump a plain `setCamera` would give — used for "bring the primary back on screen" (the "ALL
+  // SIZES" + icon's onFocusPrimary), where a sudden cut reads as jarring. Cancels any prior
+  // in-flight animation first so rapid repeat clicks retarget smoothly rather than fighting.
+  function animateCameraTo(target: Camera, duration = 400) {
+    if (cameraAnimRef.current !== null) cancelAnimationFrame(cameraAnimRef.current);
+    const start = camera;
+    const startTime = performance.now();
+    function tick(now: number) {
+      const t = Math.min(1, (now - startTime) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setCamera({
+        x: start.x + (target.x - start.x) * eased,
+        y: start.y + (target.y - start.y) * eased,
+        zoom: start.zoom + (target.zoom - start.zoom) * eased,
+      });
+      cameraAnimRef.current = t < 1 ? requestAnimationFrame(tick) : null;
+    }
+    cameraAnimRef.current = requestAnimationFrame(tick);
+  }
+
+  // Any manual pan/zoom should immediately override an in-flight animateCameraTo — otherwise a
+  // click-to-focus animation still in flight would fight the user's own gesture and snap back.
+  function stopCameraAnim() {
+    if (cameraAnimRef.current === null) return;
+    cancelAnimationFrame(cameraAnimRef.current);
+    cameraAnimRef.current = null;
+  }
+
+  useEffect(() => {
+    return () => {
+      if (cameraAnimRef.current !== null) cancelAnimationFrame(cameraAnimRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const el = outerRef.current;
@@ -491,11 +607,12 @@ export function MultiPageCanvas() {
     return () => ro.disconnect();
   }, []);
 
-  // The view-all canvas shows exactly one "canvas" at a time — a standalone page's own id, or a
-  // group's id — never several side by side, so creating/switching to a different banner set
-  // hides whatever was visible before instead of stacking it below. Every top-level page gets its
-  // own canvas from the moment it's created, whether or not it's ever grouped into a set.
-  const rootOf = (id: string) => pageGroupIdByPage[id] ?? id;
+  // The view-all canvas shows exactly one "canvas" at a time — a standalone page's own id, a
+  // group's id, or a bundle's shared root (see canvasRootOf) — never several side by side, so
+  // creating/switching to a different banner set hides whatever was visible before instead of
+  // stacking it below. Every top-level page gets its own canvas from the moment it's created,
+  // whether or not it's ever grouped into a set.
+  const rootOf = (id: string) => canvasRootOf({ pageGroupIdByPage, pageGroups, canvasRootByPage }, id);
   const activeRoots = new Set(pageOrder.map(rootOf));
   const effectiveActiveId = activeCanvasRootId && activeRoots.has(activeCanvasRootId) ? activeCanvasRootId : pageOrder.length ? rootOf(pageOrder[0]) : null;
 
@@ -529,6 +646,12 @@ export function MultiPageCanvas() {
   // units has to divide by the current zoom, or low zoom (bigger groups, more auto-fit zoom-out)
   // would let a sibling's title bar collide with the divider/label above it.
   const titleClearance = (PAGE_TITLE_RESERVE + TITLE_CLEARANCE_BUFFER) / camera.zoom;
+
+  // Pass 1: compute each real group's *relative* layout only (siblings' pack width/height) —
+  // deliberately not touching any entry's `.pos` yet, since a group's own footprint (needed below
+  // to space it apart from its neighbors) depends on this, not the other way around.
+  const relativeLayoutByGroupId = new Map<string, { primaryEntry: PageEntry; siblingEntries: PageEntry[]; layout: ReturnType<typeof computeGroupLayout> }>();
+  const siblingIds = new Set<string>();
   for (const group of Object.values(pageGroups)) {
     if (group.memberIds.length < 2) continue;
     const primaryEntry = entries.find((e) => e.id === group.memberIds[0]);
@@ -539,13 +662,108 @@ export function MultiPageCanvas() {
       .filter((e): e is PageEntry => Boolean(e));
     const layout = computeGroupLayout(
       primaryEntry.layout.size,
-      siblingEntries.map((e) => ({
-        id: e.id,
-        width: e.layout.size.width,
-        height: e.layout.size.height,
-      })),
+      siblingEntries.map((e) => ({ id: e.id, width: e.layout.size.width, height: e.layout.size.height })),
     );
-    groupLayoutById.set(group.id, {
+    relativeLayoutByGroupId.set(group.id, { primaryEntry, siblingEntries, layout });
+    for (const s of siblingEntries) siblingIds.add(s.id);
+  }
+  const groupIdByPrimaryId = new Map(Array.from(relativeLayoutByGroupId.entries()).map(([groupId, v]) => [v.primaryEntry.id, groupId]));
+  // Shared by Pass 2's reflow and Pass 3's bundle-header math — a cluster root's own frame width
+  // once it has no siblings yet, or its whole sibling pack's width once it does.
+  function footprintWidthOf(root: PageEntry): number {
+    const groupId = groupIdByPrimaryId.get(root.id);
+    return groupId ? relativeLayoutByGroupId.get(groupId)!.layout.contentWidth : root.layout.size.width;
+  }
+
+  // Pass 2: reflow every "cluster root" (a real group's primary, or a standalone page — anything
+  // that isn't itself a pack sibling) left to right with a consistent gap, using each one's *actual
+  // current* footprint. Bundled starting sizes (see BannersTab's "+") begin evenly spaced by their
+  // own bare widths; the moment one of them grows a wide sibling pack, every cluster after it needs
+  // to shift right to keep from overlapping, which is exactly what this recomputes on every render
+  // rather than baking a fixed offset in at creation time. Order follows the bundle's explicit
+  // `canvasRootOrder` (drag-to-reorder writes there — see startClusterRootDrag) when one exists;
+  // a lone, never-bundled canvas falls back to plain position order.
+  const rawClusterRoots = entries.filter((e) => !siblingIds.has(e.id));
+  const explicitClusterOrder = effectiveActiveId ? canvasRootOrder[effectiveActiveId] : undefined;
+  const clusterRoots = explicitClusterOrder
+    ? [
+        ...explicitClusterOrder.map((id) => rawClusterRoots.find((r) => r.id === id)).filter((r): r is PageEntry => Boolean(r)),
+        ...rawClusterRoots.filter((r) => !explicitClusterOrder.includes(r.id)),
+      ]
+    : rawClusterRoots.sort((a, b) => a.pos.x - b.pos.x);
+  // Anchored at the *smallest* stored x among current members, not whichever one is first in
+  // `order` — otherwise promoting a later-created (further-right) column to first place would drag
+  // the whole bundle's start point along with it, jumping everyone right on every swap. Every
+  // cluster root's rendered x is fully order-derived from that one fixed point, matching how a
+  // group's sibling pack is entirely derived from its primary's position rather than each
+  // sibling's own (inert) stored coordinates.
+  const clusterAnchorX = clusterRoots.length ? Math.min(...clusterRoots.map((r) => r.pos.x)) : 0;
+  let clusterCursorX = clusterAnchorX;
+  for (const root of clusterRoots) {
+    root.pos = { x: clusterCursorX, y: root.pos.y };
+    clusterCursorX += footprintWidthOf(root) + PAGE_GAP;
+  }
+  // Deliberately *not* overridden here for the entry mid cluster-reorder-drag (see clusterReorderDrag
+  // below) — this settled cascade position is what the "PRIMARY SIZE"/"ALL SIZES" header, divider,
+  // and any sibling pack all anchor to, and none of that should swim around with the cursor; only
+  // the dragged card's own on-screen position (applied at final render) floats free.
+
+  // Pass 3: group cluster roots created together (see BannersTab's "+") by their shared
+  // canvasRootByPage value. Once at least one bundle member has grown its own sibling pack, the
+  // whole bundle gets ONE shared "PRIMARY SIZE"/"ALL SIZES" header spanning every column instead of
+  // each column growing its own separately — and every grouped member's own sibling pack is shifted
+  // to start at one shared line, so every column's "All sizes" row begins at the same Y regardless
+  // of how tall its own primary happens to be. A lone (unbundled) cluster root, or a bundle where
+  // nothing has sizes yet, is untouched here and keeps its ordinary single-column treatment below.
+  type UnifiedHeader = {
+    originX: number;
+    originY: number;
+    primaryLabelY: number;
+    headerY: number;
+    totalWidth: number;
+    icons: Array<{ x: number; entry: PageEntry }>;
+  };
+  const unifiedHeaders: UnifiedHeader[] = [];
+  const bundledGroupIds = new Set<string>();
+  const siblingsYDeltaByGroupId = new Map<string, number>();
+
+  const bundleByKey = new Map<string, PageEntry[]>();
+  for (const root of clusterRoots) {
+    const key = canvasRootByPage[root.id] ?? root.id;
+    const list = bundleByKey.get(key) ?? [];
+    list.push(root);
+    bundleByKey.set(key, list);
+  }
+  for (const bundle of bundleByKey.values()) {
+    if (bundle.length < 2) continue;
+    const sorted = [...bundle].sort((a, b) => a.pos.x - b.pos.x);
+    if (!sorted.some((root) => groupIdByPrimaryId.has(root.id))) continue;
+
+    const originX = sorted[0].pos.x;
+    const originY = sorted[0].pos.y;
+    const maxPrimaryHeight = Math.max(...sorted.map((root) => root.layout.size.height));
+    const headerY = maxPrimaryHeight + SECTION_GAP_TOP;
+    const sharedSiblingsY = headerY + SECTION_HEADER_HEIGHT + SECTION_GAP_BOTTOM;
+
+    const icons = sorted.map((root) => ({ x: root.pos.x - originX + footprintWidthOf(root) / 2, entry: root }));
+    const last = sorted[sorted.length - 1];
+    const totalWidth = last.pos.x - originX + footprintWidthOf(last);
+
+    unifiedHeaders.push({ originX, originY, primaryLabelY: -PRIMARY_LABEL_RESERVE - titleClearance, headerY, totalWidth, icons });
+
+    for (const root of sorted) {
+      const groupId = groupIdByPrimaryId.get(root.id);
+      if (!groupId) continue;
+      bundledGroupIds.add(groupId);
+      const localLayout = relativeLayoutByGroupId.get(groupId)!.layout;
+      siblingsYDeltaByGroupId.set(groupId, sharedSiblingsY - (localLayout.headerY + SECTION_HEADER_HEIGHT + SECTION_GAP_BOTTOM));
+    }
+  }
+
+  // Pass 4: now that every cluster root's `.pos` (and every bundle's Y-alignment delta) is final,
+  // anchor each group's siblings relative to its (possibly just-reflowed) primary.
+  for (const [groupId, { primaryEntry, siblingEntries, layout }] of relativeLayoutByGroupId) {
+    groupLayoutById.set(groupId, {
       primaryEntry,
       originX: primaryEntry.pos.x,
       originY: primaryEntry.pos.y,
@@ -554,12 +772,13 @@ export function MultiPageCanvas() {
         primaryLabelY: layout.primaryLabelY - titleClearance,
       },
     });
+    const yDelta = siblingsYDeltaByGroupId.get(groupId) ?? 0;
     for (const box of layout.siblings) {
       const target = siblingEntries.find((e) => e.id === box.id);
       if (target)
         target.pos = {
           x: primaryEntry.pos.x + box.x,
-          y: primaryEntry.pos.y + box.y + titleClearance,
+          y: primaryEntry.pos.y + box.y + titleClearance + yDelta,
         };
     }
   }
@@ -610,7 +829,7 @@ export function MultiPageCanvas() {
       const zoom = clamp(Math.min(targetW / entry.layout.size.width, targetH / entry.layout.size.height), MIN_ZOOM, MAX_ZOOM);
       const x = viewport.width / 2 - (entry.pos.x + entry.layout.size.width / 2) * zoom;
       const y = viewport.height / 2 - (entry.pos.y + entry.layout.size.height / 2) * zoom;
-      setCamera({ x, y, zoom });
+      animateCameraTo({ x, y, zoom });
     }
     clearFocusPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -620,6 +839,7 @@ export function MultiPageCanvas() {
   // canvas-space (same "zoom around a point" math the wheel handler below uses, just centered on
   // the viewport instead of the cursor).
   function setZoomPct(pct: number) {
+    stopCameraAnim();
     const newZoom = clamp(pct / 100, MIN_ZOOM, MAX_ZOOM);
     const cx = viewport.width / 2;
     const cy = viewport.height / 2;
@@ -635,6 +855,7 @@ export function MultiPageCanvas() {
   }
 
   function handleFitToScreen() {
+    stopCameraAnim();
     const fit = computeFitCamera();
     if (fit) setCamera(fit);
   }
@@ -645,20 +866,29 @@ export function MultiPageCanvas() {
     if (!el) return;
     function onWheelNative(e: WheelEvent) {
       e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
-      const rect = el!.getBoundingClientRect();
-      const cursorX = e.clientX - rect.left;
-      const cursorY = e.clientY - rect.top;
-      setCamera((prev) => {
-        const newZoom = clamp(prev.zoom * factor, MIN_ZOOM, MAX_ZOOM);
-        const canvasX = (cursorX - prev.x) / prev.zoom;
-        const canvasY = (cursorY - prev.y) / prev.zoom;
-        return {
-          zoom: newZoom,
-          x: cursorX - canvasX * newZoom,
-          y: cursorY - canvasY * newZoom,
-        };
-      });
+      stopCameraAnim();
+      // A pinch gesture on a trackpad fires wheel events with ctrlKey set (a browser convention,
+      // not an actual held-down key), and holding Ctrl/Cmd with a real scroll wheel does the same
+      // deliberately — either way, that's "zoom". Everything else (a plain two-finger scroll) pans
+      // the camera instead, matching how every other design tool treats the two gestures.
+      if (e.ctrlKey || e.metaKey) {
+        const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+        const rect = el!.getBoundingClientRect();
+        const cursorX = e.clientX - rect.left;
+        const cursorY = e.clientY - rect.top;
+        setCamera((prev) => {
+          const newZoom = clamp(prev.zoom * factor, MIN_ZOOM, MAX_ZOOM);
+          const canvasX = (cursorX - prev.x) / prev.zoom;
+          const canvasY = (cursorY - prev.y) / prev.zoom;
+          return {
+            zoom: newZoom,
+            x: cursorX - canvasX * newZoom,
+            y: cursorY - canvasY * newZoom,
+          };
+        });
+        return;
+      }
+      setCamera((prev) => ({ ...prev, x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
     }
     el.addEventListener('wheel', onWheelNative, { passive: false });
     return () => el.removeEventListener('wheel', onWheelNative);
@@ -788,8 +1018,100 @@ export function MultiPageCanvas() {
     window.addEventListener('mouseup', onUp);
   }
 
-  // Shift-drag on empty canvas rubber-bands a selection box — any scene it overlaps joins
-  // `selectedSceneIds`, live as the box grows, same as shift-clicking each one individually.
+  // Drag-to-reorder the "cluster roots" sharing one canvas view (a bundle's main-size columns) —
+  // the exact same swap-on-center-cross interaction as startSiblingReorderDrag, mirrored onto
+  // `canvasRootOrder` instead of a group's `memberIds`. Reads fresh store state on every move for
+  // the same staleness reasons.
+  function startClusterRootDrag(e: ReactMouseEvent, rootId: string, entry: PageEntry) {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const zoom = camera.zoom;
+    const startPos = entry.pos;
+    const w = entry.layout.size.width;
+    const h = entry.layout.size.height;
+    let order = canvasRootOrder[rootId] ?? clusterRoots.map((r) => r.id);
+    let dragging = false;
+
+    function footprintWidthFresh(state: ReturnType<typeof useAppStore.getState>, root: { id: string; layout: Layout }): number {
+      const groupId = state.pageGroupIdByPage[root.id];
+      const group = groupId ? state.pageGroups[groupId] : null;
+      if (!group || group.memberIds.length < 2) return root.layout.size.width;
+      const siblingBoxes = group.memberIds
+        .slice(1)
+        .map((id) => {
+          const set = state.setsById[id];
+          const layout = set ? state.layoutsById[set.sourceLayoutId] : null;
+          return layout ? { id, width: layout.size.width, height: layout.size.height } : null;
+        })
+        .filter((b): b is { id: string; width: number; height: number } => Boolean(b));
+      return computeGroupLayout(root.layout.size, siblingBoxes).contentWidth;
+    }
+
+    function onMove(ev: globalThis.MouseEvent) {
+      const dxScreen = ev.clientX - startX;
+      const dyScreen = ev.clientY - startY;
+      if (!dragging) {
+        if (Math.hypot(dxScreen, dyScreen) < PAN_THRESHOLD) return;
+        dragging = true;
+      }
+      const x = startPos.x + dxScreen / zoom;
+      const y = startPos.y + dyScreen / zoom;
+      setClusterReorderDrag({ rootId, entryId: entry.id, x, y });
+
+      const state = useAppStore.getState();
+      const liveRootOf = (id: string) =>
+        canvasRootOf({ pageGroupIdByPage: state.pageGroupIdByPage, pageGroups: state.pageGroups, canvasRootByPage: state.canvasRootByPage }, id);
+      const memberEntries = order
+        .map((id) => {
+          if (liveRootOf(id) !== rootId) return null;
+          const set = state.setsById[id];
+          const layout = set ? state.layoutsById[set.sourceLayoutId] : null;
+          const pos = state.pagePositions[id] ?? { x: 0, y: 0 };
+          return set && layout ? { id, layout, pos } : null;
+        })
+        .filter((r): r is { id: string; layout: Layout; pos: PagePosition } => Boolean(r));
+
+      // Same left-to-right cascade as Pass 2's own render pass (anchored at the smallest stored x
+      // among these members), recomputed fresh from the *current* order so the hit test matches
+      // what's actually on screen right now.
+      const anchorX = memberEntries.length ? Math.min(...memberEntries.map((m) => m.pos.x)) : 0;
+      let cursorX = anchorX;
+      const boxes = memberEntries.map((m) => {
+        const width = footprintWidthFresh(state, m);
+        const left = cursorX;
+        cursorX += width + PAGE_GAP;
+        return { id: m.id, left, top: m.pos.y, width, height: m.layout.size.height };
+      });
+
+      // Only swaps once the dragged box's own center point actually lands inside another cluster
+      // root's box — the "middle point dragged over the neighbor" trigger, same as sibling reorder.
+      const draggedCenterX = x + w / 2;
+      const draggedCenterY = y + h / 2;
+      const targetBox = boxes.find((box) => {
+        if (box.id === entry.id) return false;
+        return draggedCenterX >= box.left && draggedCenterX <= box.left + box.width && draggedCenterY >= box.top && draggedCenterY <= box.top + box.height;
+      });
+      if (!targetBox) return;
+      const fromIndex = order.indexOf(entry.id);
+      const toIndex = order.indexOf(targetBox.id);
+      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+      order = arrayMove(order, fromIndex, toIndex);
+      reorderCanvasRoot(rootId, order);
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      setClusterReorderDrag(null);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  // Dragging on empty canvas rubber-bands a selection box — any scene it overlaps joins
+  // `selectedSceneIds`, live as the box grows. A plain click (no movement past the pan threshold)
+  // never starts a box, so it still falls through to handleCanvasClick's deselect-everything.
   function startMarqueeSelect(e: ReactMouseEvent<HTMLDivElement>) {
     const el = outerRef.current;
     if (!el) return;
@@ -802,12 +1124,18 @@ export function MultiPageCanvas() {
     const containerRect = el.getBoundingClientRect();
     const startX = e.clientX - containerRect.left;
     const startY = e.clientY - containerRect.top;
-    // Reuses the pan gesture's own "didn't just click" flag so handleCanvasClick doesn't also
-    // fire its deselect-everything behavior right after the drag finishes.
-    didPanRef.current = true;
-    setMarqueeRect({ x: startX, y: startY, w: 0, h: 0 });
+    const startClientX = e.clientX;
+    const startClientY = e.clientY;
+    let dragging = false;
 
     function onMove(ev: globalThis.MouseEvent) {
+      if (!dragging) {
+        if (Math.hypot(ev.clientX - startClientX, ev.clientY - startClientY) < PAN_THRESHOLD) return;
+        dragging = true;
+        // Reuses the pan gesture's own "didn't just click" flag so handleCanvasClick doesn't also
+        // fire its deselect-everything behavior right after the drag finishes.
+        didPanRef.current = true;
+      }
       const curX = ev.clientX - containerRect.left;
       const curY = ev.clientY - containerRect.top;
       const rect = { x: Math.min(startX, curX), y: Math.min(startY, curY), w: Math.abs(curX - startX), h: Math.abs(curY - startY) };
@@ -834,13 +1162,13 @@ export function MultiPageCanvas() {
   }
 
   function handleCanvasMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
-    if (e.shiftKey) {
+    // Background dragging pans the camera in the hand ("move") tool; in every other tool the same
+    // drag instead rubber-bands a selection box, and a plain click is click-to-deselect.
+    if (activeTool !== 'move') {
       startMarqueeSelect(e);
       return;
     }
-    // Background dragging only pans the camera in the hand ("move") tool — in every other tool a
-    // background click is just click-to-deselect (handleCanvasClick), never a pan.
-    if (activeTool !== 'move') return;
+    stopCameraAnim();
     const startX = e.clientX;
     const startY = e.clientY;
     const startCam = camera;
@@ -925,66 +1253,82 @@ export function MultiPageCanvas() {
     // packShelves) — only this fresh batch is sorted; any sizes already in the group keep
     // whatever order a prior manual drag-to-reorder left them in, and these just append after.
     newIds.sort((a, b) => newHeightById[b] - newHeightById[a]);
+    // Whichever platform this batch's sizes came from (if any) — a mixed-platform batch just takes
+    // the first one, since picking sizes from more than one platform in a single confirm is a rare
+    // edge case, not a meaningful "this group belongs to two platforms" scenario.
+    const platformId = results.find((r) => r.platformId)?.platformId;
     // Only used when this call actually creates a brand-new group (groupPagesWith ignores
     // `name`/`platformId` when extending an existing one) — named after the primary banner
     // itself, so the group reads the same as the size that spawned it. Renamable afterward.
-    groupPagesWith(source.id, newIds, source.set.name);
+    groupPagesWith(source.id, newIds, source.set.name, platformId);
     // If the source was still ungrouped, it just moved off the shared default canvas onto its own
     // — follow it there so the set doesn't vanish right after you added sizes to it. A no-op when
-    // this only extended a group the source (and the active canvas) already belonged to.
-    setActiveCanvas(useAppStore.getState().pageGroupIdByPage[source.id] ?? source.id);
+    // this only extended a group the source (and the active canvas) already belonged to. Reading
+    // the canvas root (not the raw group id) keeps this correct even when the source is bundled
+    // alongside other independent primaries (see canvasRootOf) — otherwise this would jump to
+    // showing *only* the source's own new group, hiding the rest of the bundle.
+    setActiveCanvas(canvasRootOf(useAppStore.getState(), source.id));
     // The source scene was selected (that's what showed the "add sizes" affordance in the first
     // place) — leaving it selected would dim every sibling just generated, reading as if something
     // went wrong. Clear it so the whole new group shows at full opacity.
     selectScene(null);
   }
 
+  // The scene right-click menu's "Duplicate banner" — a plain copy (fresh set/product/element ids)
+  // that joins the source's existing group as a new sibling appended after the current sizes — or,
+  // if the source isn't grouped yet, becomes the primary of a brand-new 2-member group with it —
+  // never a standalone page off to the side.
+  function handleDuplicateScene(entry: PageEntry) {
+    const source = entry.layout;
+    const newLayoutId = nextId('layout');
+    const newSetId = nextId('set');
+    const newProductId = nextId('product');
+    const newLayout: Layout = {
+      ...source,
+      id: newLayoutId,
+      setId: newSetId,
+      productId: newProductId,
+      elements: source.elements.map((el) => ({ ...el, id: nextId('el') })),
+      isSource: true,
+      detached: false,
+      adaptationNotes: [],
+    };
+    const newSet: BannerSet = { id: newSetId, name: entry.set.name, sourceLayoutId: newLayoutId, layoutIds: [newLayoutId], productIds: [] };
+    const rootId = pageGroupIdByPage[entry.id] ?? entry.id;
+    const group = pageGroups[rootId];
+    const sourcePageId = group ? group.memberIds[0] : rootId;
+    upsertLayout(newLayout);
+    loadSet(newSet, { x: entry.pos.x, y: entry.pos.y + source.size.height + PAGE_GAP });
+    groupPagesWith(sourcePageId, [newSetId], setsById[sourcePageId]?.name ?? source.size.label);
+    selectElement(null);
+    selectScene(newSetId);
+    setActiveCanvas(canvasRootOf(useAppStore.getState(), sourcePageId));
+    setActiveLayout(newLayoutId);
+  }
+
+  function handleDeleteScene(entry: PageEntry) {
+    deletePage(entry.id);
+  }
+
   // Once a group has more than one size, adding more happens through the "All size variations"
-  // header's own "+" — the per-page hotspots would just duplicate that and clutter the packed layout.
+  // header's own "+" — the per-page hotspots would just duplicate that and clutter the packed
+  // layout. Checking `memberIds.includes(pageId)` (not just that `pageGroupIdByPage[pageId]`
+  // resolves to *some* group) is belt-and-suspenders: canvas-root sharing (attachStandalonePage)
+  // is a fully separate concern from pack membership now (see canvasRootOf), so it shouldn't be
+  // possible for this to resolve to a group `pageId` isn't actually in — but staying defensive
+  // here is what keeps a bundled-but-ungrouped page's own hotspots working regardless.
   function isMultiMemberGroupPage(pageId: string) {
-    const groupId = pageGroupIdByPage[pageId];
-    return groupId ? (pageGroups[groupId]?.memberIds.length ?? 0) > 1 : false;
+    const group = pageGroups[pageGroupIdByPage[pageId]];
+    return Boolean(group && group.memberIds.includes(pageId) && group.memberIds.length > 1);
   }
 
   // A non-primary member of a multi-member group — these are the "All sizes" pack, draggable to
   // reorder amongst themselves (see startSiblingReorderDrag). The primary itself always keeps the
   // free-form, snap-to-align drag it already had (startPageDrag) — it isn't part of this pack.
   function isReorderableSibling(pageId: string) {
-    const groupId = pageGroupIdByPage[pageId];
-    const group = groupId ? pageGroups[groupId] : null;
-    return Boolean(group && group.memberIds.length > 1 && group.memberIds[0] !== pageId);
+    const group = pageGroups[pageGroupIdByPage[pageId]];
+    return Boolean(group && group.memberIds.length > 1 && group.memberIds.includes(pageId) && group.memberIds[0] !== pageId);
   }
-
-  const groupBoxes = Object.values(pageGroups)
-    .map((group) => {
-      const members = group.memberIds.map((id) => entries.find((e) => e.id === id)).filter((e): e is PageEntry => Boolean(e));
-      if (members.length === 0) return null;
-      const b = members.reduce(
-        (acc, m) => ({
-          minX: Math.min(acc.minX, m.pos.x),
-          minY: Math.min(acc.minY, m.pos.y),
-          maxX: Math.max(acc.maxX, m.pos.x + m.layout.size.width),
-          maxY: Math.max(acc.maxY, m.pos.y + m.layout.size.height),
-        }),
-        { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
-      );
-      const left = camera.x + b.minX * camera.zoom - GROUP_PAD_LEFT;
-      const top = camera.y + b.minY * camera.zoom - GROUP_PAD_TOP;
-      const right = camera.x + b.maxX * camera.zoom + GROUP_PAD_RIGHT;
-      const bottom = camera.y + b.maxY * camera.zoom + GROUP_PAD_BOTTOM;
-      return { group, left, top, width: right - left, height: bottom - top };
-    })
-    .filter(
-      (
-        g,
-      ): g is {
-        group: PageGroup;
-        left: number;
-        top: number;
-        width: number;
-        height: number;
-      } => g !== null,
-    );
 
   return (
     <>
@@ -1005,40 +1349,54 @@ export function MultiPageCanvas() {
         )}
 
         {viewport.width > 0 &&
-          groupBoxes.map(({ group, left, top, width, height }) => (
-            <GroupContainer
-              key={group.id}
-              left={left}
-              top={top}
-              width={width}
-              height={height}
-              zoom={camera.zoom}
-              onSelect={() => selectGroup(group.id)}
-              onDragMove={(dx, dy) => movePagesBy(group.memberIds, dx, dy)}
-            />
-          ))}
+          Array.from(groupLayoutById.entries())
+            .filter(([groupId]) => !bundledGroupIds.has(groupId))
+            .map(([groupId, { primaryEntry, originX, originY, layout }]) => {
+              const left = camera.x + originX * camera.zoom;
+              const labelTop = camera.y + (originY + layout.primaryLabelY) * camera.zoom;
+              const headerTop = camera.y + (originY + layout.headerY) * camera.zoom;
+              const dividerWidth = layout.dividerWidth * camera.zoom;
+              return (
+                <div key={groupId} className="pointer-events-none absolute inset-0">
+                  <div className="absolute text-base text-white/45" style={{ left, top: labelTop }}>
+                    {t('PRIMARY SIZE')}
+                  </div>
+                  {layout.siblings.length > 0 && (
+                    <AllSizesDivider
+                      left={left}
+                      top={headerTop}
+                      width={dividerWidth}
+                      onConfirm={(results) => handleAddAdjacent(primaryEntry, 'right', results)}
+                      sourceLayoutId={primaryEntry.layout.id}
+                      onFocusPrimary={() => requestFocusPage(primaryEntry.id)}
+                      primarySize={primaryEntry.layout.size}
+                    />
+                  )}
+                </div>
+              );
+            })}
 
         {viewport.width > 0 &&
-          Array.from(groupLayoutById.entries()).map(([groupId, { primaryEntry, originX, originY, layout }]) => {
-            const left = camera.x + originX * camera.zoom;
-            const labelTop = camera.y + (originY + layout.primaryLabelY) * camera.zoom;
-            const headerTop = camera.y + (originY + layout.headerY) * camera.zoom;
-            const dividerWidth = layout.dividerWidth * camera.zoom;
+          unifiedHeaders.map((header, i) => {
+            const left = camera.x + header.originX * camera.zoom;
+            const labelTop = camera.y + (header.originY + header.primaryLabelY) * camera.zoom;
+            const headerTop = camera.y + (header.originY + header.headerY) * camera.zoom;
             return (
-              <div key={groupId} className="pointer-events-none absolute inset-0">
+              <div key={i} className="pointer-events-none absolute inset-0">
                 <div className="absolute text-base text-white/45" style={{ left, top: labelTop }}>
                   {t('PRIMARY SIZE')}
                 </div>
-                {layout.siblings.length > 0 && (
-                  <AllSizesDivider
-                    left={left}
-                    top={headerTop}
-                    width={dividerWidth}
-                    onConfirm={(results) => handleAddAdjacent(primaryEntry, 'right', results)}
-                    sourceLayoutId={primaryEntry.layout.id}
-                    onFocusPrimary={() => requestFocusPage(primaryEntry.id)}
-                  />
-                )}
+                <UnifiedAllSizesHeader
+                  left={left}
+                  top={headerTop}
+                  totalWidth={header.totalWidth * camera.zoom}
+                  icons={header.icons.map(({ x, entry }) => ({
+                    x: x * camera.zoom,
+                    entry,
+                    onConfirm: (results) => handleAddAdjacent(entry, 'right', results),
+                    onFocusPrimary: () => requestFocusPage(entry.id),
+                  }))}
+                />
               </div>
             );
           })}
@@ -1046,8 +1404,13 @@ export function MultiPageCanvas() {
         {viewport.width > 0 &&
           entries.map((entry) => {
             const isDraggingThis = reorderDrag?.siblingId === entry.id;
-            const posX = isDraggingThis ? reorderDrag.x : entry.pos.x;
-            const posY = isDraggingThis ? reorderDrag.y : entry.pos.y;
+            // A cluster-root drag only ever floats the one card being dragged — its own "PRIMARY
+            // SIZE" header, divider, and any sibling pack all stay put at their settled cascade slot
+            // (see Pass 2 above) until an actual swap re-sorts them, so only this exact entry's
+            // render position is overridden here, never a sibling riding along underneath it.
+            const isDraggingCluster = clusterReorderDrag?.entryId === entry.id;
+            const posX = isDraggingThis ? reorderDrag.x : isDraggingCluster ? clusterReorderDrag!.x : entry.pos.x;
+            const posY = isDraggingThis ? reorderDrag.y : isDraggingCluster ? clusterReorderDrag!.y : entry.pos.y;
             const groupId = pageGroupIdByPage[entry.id];
             const canReorder = isReorderableSibling(entry.id);
             // Only the *other* siblings in the group currently being reordered ever transition
@@ -1055,6 +1418,11 @@ export function MultiPageCanvas() {
             // these same two once the drag ends, renders with no position transition at all, so
             // panning/zooming the camera moves everything in perfect lockstep, instantly.
             const isReflowingPeer = reorderDrag !== null && reorderDrag.groupId === groupId && !isDraggingThis;
+            // Same idea one level up: every OTHER cluster root (and, if the dragged one is a group's
+            // own primary, its own siblings too, once a swap actually re-sorts them) slides smoothly
+            // into its recomputed slot instead of snapping.
+            const isReflowingClusterPeer = clusterReorderDrag !== null && !isDraggingCluster;
+            const canClusterReorder = !siblingIds.has(entry.id) && clusterRoots.length > 1;
             return (
               <PageCard
                 key={entry.id}
@@ -1068,18 +1436,31 @@ export function MultiPageCanvas() {
                 // click-to-edit-text, etc.) — not just after the separate double-click-to-enter
                 // gesture, which still exists for a scene that's not currently selected.
                 active={entry.id === viewAllActivePageId || selectedSceneIds.includes(entry.id)}
+                entered={entry.id === viewAllActivePageId}
                 isLoading={Boolean(loadingPageIds[entry.id])}
                 isPrimary={pageGroups[pageGroupIdByPage[entry.id]]?.memberIds[0] === entry.id}
                 showCascadeToolbar={pageGroups[pageGroupIdByPage[entry.id]]?.memberIds[0] === entry.id && Boolean(pendingCascadeSetIds[entry.id])}
-                dimmed={!isMultiSceneElementSelection && selectedSceneIds.length > 0 && !selectedSceneIds.includes(entry.id)}
-                dragging={isDraggingThis}
-                reflowing={isReflowingPeer}
+                dimmed={
+                  !isMultiSceneElementSelection &&
+                  selectedSceneIds.length > 0 &&
+                  !selectedSceneIds.includes(entry.id) &&
+                  !(groupId && selectedGroupIds.has(groupId))
+                }
+                dragging={isDraggingThis || isDraggingCluster}
+                reflowing={isReflowingPeer || isReflowingClusterPeer}
                 onActivate={() => setViewAllActivePage(entry.id)}
-                onStartDrag={(e) => (canReorder && groupId ? startSiblingReorderDrag(e, groupId, entry) : startPageDrag(e, entry))}
+                onStartDrag={(e) =>
+                  canReorder && groupId
+                    ? startSiblingReorderDrag(e, groupId, entry)
+                    : canClusterReorder && effectiveActiveId
+                      ? startClusterRootDrag(e, effectiveActiveId, entry)
+                      : startPageDrag(e, entry)
+                }
                 onRename={(name) => renamePage(entry.id, name)}
                 showRightAdd={!isMultiMemberGroupPage(entry.id) && !hasBlockerToRight(entry, entries)}
                 showBottomAdd={!isMultiMemberGroupPage(entry.id) && !hasBlockerBelow(entry, entries)}
                 onAddAdjacent={(edge, results) => handleAddAdjacent(entry, edge, results)}
+                onSceneContextMenu={(e) => setSceneContextMenu({ x: e.clientX, y: e.clientY, entryId: entry.id })}
               />
             );
           })}
@@ -1097,6 +1478,29 @@ export function MultiPageCanvas() {
       <div className="pointer-events-none absolute right-6 bottom-6 z-10">
         <CanvasZoomBar zoomPct={camera.zoom * 100} onSetZoom={setZoomPct} onFitToScreen={handleFitToScreen} snapEnabled={snapEnabled} onToggleSnap={() => setSnapEnabled((v) => !v)} />
       </div>
+
+      {sceneContextMenu &&
+        (() => {
+          const entry = entries.find((e) => e.id === sceneContextMenu.entryId);
+          if (!entry) return null;
+          return (
+            <SceneContextMenu
+              x={sceneContextMenu.x}
+              y={sceneContextMenu.y}
+              onClose={() => setSceneContextMenu(null)}
+              onDuplicate={() => handleDuplicateScene(entry)}
+              onDelete={() => handleDeleteScene(entry)}
+              onPreview={() => setPreviewEntryId(entry.id)}
+            />
+          );
+        })()}
+
+      {previewEntryId &&
+        (() => {
+          const entry = entries.find((e) => e.id === previewEntryId);
+          if (!entry) return null;
+          return <PreviewDialog layout={entry.layout} open onOpenChange={(open) => !open && setPreviewEntryId(null)} />;
+        })()}
     </>
   );
 }

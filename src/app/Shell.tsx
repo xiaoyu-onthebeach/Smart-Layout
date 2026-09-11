@@ -4,7 +4,6 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { useAppStore } from '@/store/useAppStore';
 import { initUndoHistory, undo } from '@/store/undoHistory';
 import { AddBannersPanel } from '@/features/size-select/AddBannersPanel';
-import { ArtboardScene } from '@/features/editor/artboard/ArtboardScene';
 import { MultiPageCanvas } from '@/features/editor/artboard/MultiPageCanvas';
 import { ExportModal } from '@/features/editor/artboard/ExportModal';
 import { TopBar } from './TopBar';
@@ -12,16 +11,12 @@ import { LeftPanel } from './LeftPanel';
 import { PlaygroundsPage } from './PlaygroundsPage';
 import { CanvasStart } from './CanvasStart';
 import { DefaultModeToolbar } from './DefaultModeToolbar';
-import { ModeSwitcher } from './ModeSwitcher';
 import { InspectorPanel } from './InspectorPanel';
 
 export function Shell() {
   const step = useAppStore((s) => s.step);
-  const activeLayoutId = useAppStore((s) => s.activeLayoutId);
-  const canvasMode = useAppStore((s) => s.canvasMode);
   const viewAllActivePageId = useAppStore((s) => s.viewAllActivePageId);
   const selectedSceneIds = useAppStore((s) => s.selectedSceneIds);
-  const currentSet = useAppStore((s) => s.currentSet);
   const pageOrder = useAppStore((s) => s.pageOrder);
   const selectedElements = useAppStore((s) => s.selectedElements);
   const deletePage = useAppStore((s) => s.deletePage);
@@ -32,7 +27,7 @@ export function Shell() {
   // A single click already selects a scene and makes it fully interactive (see MultiPageCanvas's
   // `active` prop), so the toolbar should appear right away too — not wait for the separate
   // double-click that sets `viewAllActivePageId`.
-  const showToolbar = canvasMode === 'editing' || (canvasMode === 'viewAll' && (viewAllActivePageId !== null || selectedSceneIds.length > 0));
+  const showToolbar = viewAllActivePageId !== null || selectedSceneIds.length > 0;
 
   useEffect(() => {
     initUndoHistory();
@@ -92,14 +87,14 @@ export function Shell() {
         return;
       }
 
-      const pageId = canvasMode === 'viewAll' ? viewAllActivePageId : currentSet?.id ?? null;
+      const pageId = viewAllActivePageId;
       if (!pageId) return;
       e.preventDefault();
       deletePage(pageId);
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [canvasMode, viewAllActivePageId, currentSet, selectedElements, deletePage, removeElement, duplicateElement, reorderElement, selectElement]);
+  }, [viewAllActivePageId, selectedElements, deletePage, removeElement, duplicateElement, reorderElement, selectElement]);
 
   if (step === 'playgrounds') return <PlaygroundsPage />;
 
@@ -117,11 +112,8 @@ export function Shell() {
               </div>
               <div className="relative flex-1 overflow-hidden">
                 {step === 'editor' && pageOrder.length === 0 && <CanvasStart />}
-                {step === 'editor' && pageOrder.length > 0 && canvasMode === 'editing' && !activeLayoutId && <CanvasStart />}
-                {step === 'editor' && pageOrder.length > 0 && canvasMode === 'editing' && activeLayoutId && <ArtboardScene />}
-                {step === 'editor' && pageOrder.length > 0 && canvasMode === 'viewAll' && <MultiPageCanvas />}
+                {step === 'editor' && pageOrder.length > 0 && <MultiPageCanvas />}
                 {showToolbar && <DefaultModeToolbar />}
-                {step === 'editor' && activeLayoutId && <ModeSwitcher />}
                 {step === 'editor' && <InspectorPanel />}
               </div>
             </>

@@ -1,4 +1,4 @@
-import type { AppState } from '@/store/types';
+import type { AppState, PagePosition } from '@/store/types';
 
 /**
  * Shared canvas-space layout constants for the view-all canvas — used both by
@@ -64,4 +64,39 @@ export function nextStackY(
     maxBottom = Math.max(maxBottom, bottom);
   }
   return state.pageOrder.length ? maxBottom + gap : 0;
+}
+
+/**
+ * The view-all "canvas root" a page renders under — the id `MultiPageCanvas` groups pages by to
+ * decide what's visible together on one screen. Deliberately independent of `pageGroupIdByPage`
+ * (which tracks *pack* membership — is this page a primary/sibling of some `PageGroup`): a page's
+ * pack membership can change on its own (gaining, losing, or swapping which real group it belongs
+ * to) without it — or its whole pack — ever needing to jump to a different canvas view. A pack
+ * member always inherits its own primary's canvas root, recursively, so an entire pack (primary +
+ * every sibling) moves as one unit even though only the primary ever gets an explicit
+ * `canvasRootByPage` entry (set via `attachStandalonePage`, e.g. bundling several independent
+ * starting sizes onto one shared screen — see BannersTab's "+").
+ */
+export function canvasRootOf(state: Pick<AppState, 'pageGroupIdByPage' | 'pageGroups' | 'canvasRootByPage'>, pageId: string): string {
+  const groupId = state.pageGroupIdByPage[pageId];
+  const group = groupId ? state.pageGroups[groupId] : undefined;
+  if (group) {
+    const primaryId = group.memberIds[0];
+    return state.canvasRootByPage[primaryId] ?? groupId;
+  }
+  return state.canvasRootByPage[pageId] ?? pageId;
+}
+
+/** Where a brand-new "Use as template" scene should land — to the left of every existing top-level
+ * page, top-aligned with the topmost one, so it reads as a distinct, easy-to-spot addition rather
+ * than just another size stacked into the normal flow. */
+export function templateSlot(state: Pick<AppState, 'pageOrder' | 'pagePositions'>, width: number, gap: number): PagePosition {
+  let minX = 0;
+  let minY = 0;
+  for (const pageId of state.pageOrder) {
+    const p = state.pagePositions[pageId] ?? { x: 0, y: 0 };
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+  }
+  return { x: minX - width - gap, y: minY };
 }

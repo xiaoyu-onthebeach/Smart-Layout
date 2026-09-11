@@ -22,6 +22,7 @@ export function RatioIcon({ width, height, className }: { width: number; height:
           height: Math.max(h, 2),
           transform: 'translate(-50%, -50%)',
           border: '1.5px solid #ffffff',
+          borderRadius: 3.5,
         }}
       />
     </div>

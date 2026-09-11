@@ -103,11 +103,6 @@ export function LayerContextMenu({
       <MenuItem label={t('Duplicate layer')} shortcut="⌘D" onClick={act(() => duplicateElement(layoutId, elementId))} />
       <MenuItem label={t('Lock layer')} onClick={act(() => updateElement(layoutId, elementId, { locked: !element.locked }))} />
       <Divider />
-      {/* Split in layers / Re-generate mirror the AI edit toolbar's own mocked actions — visually
-          live, but neither is wired to a real image pipeline in this prototype. */}
-      <MenuItem icon="/icons/AI edit/objects.svg" label={t('Split in layers')} onClick={act(() => {})} />
-      <MenuItem icon="/icons/AI edit/outpaint.svg" label={t('Re-generate')} onClick={act(() => {})} />
-      <Divider />
       <MenuItem label={t('Bring to front')} shortcut="]" onClick={act(() => reorderElement(layoutId, elementId, 'front'))} />
       <MenuItem label={t('Send to back')} shortcut="[" onClick={act(() => reorderElement(layoutId, elementId, 'back'))} />
       <Divider />

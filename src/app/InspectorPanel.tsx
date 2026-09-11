@@ -48,7 +48,7 @@ export function InspectorPanel() {
   if (!content) return null;
 
   return (
-    <div className="pointer-events-none absolute top-20 right-6 bottom-24 flex">
+    <div className="pointer-events-none absolute top-16 right-6 bottom-24 flex">
       <div className="pointer-events-auto flex h-full">{content}</div>
     </div>
   );

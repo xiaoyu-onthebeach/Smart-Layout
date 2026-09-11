@@ -13,7 +13,7 @@ import { ImagePickerDialog } from './ImagePickerDialog';
 import { ImageBox } from './ImageBox';
 import { LayerContextMenu } from './LayerContextMenu';
 
-const EXPAND_DURATION_MS = 2000;
+const EXPAND_DURATION_MS = 5000;
 
 // Quick way to demo text/shape-style layers without hand-building one: double-clicking empty
 // canvas drops in the next sample from this list, cycling back around once it runs out. A plain
@@ -36,6 +36,7 @@ export function ArtboardFrame({
   active,
   onActivate,
   onSceneMouseDown,
+  onSceneContextMenu,
   showEmptyStateHint = true,
   className,
   style,
@@ -48,6 +49,9 @@ export function ArtboardFrame({
   onActivate?: () => void;
   /** View-all only: starts a snap-aware drag of the whole scene, in place of the old select-only click. */
   onSceneMouseDown?: (e: ReactMouseEvent) => void;
+  /** Right-click anywhere on the frame that isn't itself already handled (e.g. an image layer's own
+   * context menu, which stops propagation) — the scene-level "Duplicate banner / Delete / Preview" menu. */
+  onSceneContextMenu?: (e: ReactMouseEvent) => void;
   /** View-all only: hides the "Choose or drag your visual" illustration/text once the camera is zoomed out past legibility. */
   showEmptyStateHint?: boolean;
   className?: string;
@@ -72,16 +76,17 @@ export function ArtboardFrame({
   const selectElement = useAppStore((s) => s.selectElement);
   const isSelected = (elementId: string) => selectedElements.some((r) => r.layoutId === layoutId && r.elementId === elementId);
   // Cross-scene match-select adds matching layers in every sibling size to `selectedElements` (for
-  // bulk-edit purposes) but only the literally-clicked IMAGE should draw a visible outline — its
-  // auto-matched image siblings stay selected without one, so a multi-size image selection shows
-  // exactly one box. Shape/text matches keep their outline everywhere, since those are typically
+  // bulk-edit purposes) but only the literally-clicked BACKGROUND image should draw a visible
+  // outline — its auto-matched background-image siblings stay selected without one, since that
+  // photo is routinely cropped/expanded past the frame's own bounds and an outline chasing it
+  // across every size just reads as visual noise. Every other kind of match (shape/text, or a
+  // decorative non-background image) keeps its outline everywhere, since those are typically
   // edited in lockstep across sizes and benefit from seeing every affected box at once.
   const isAutoMatched = (elementId: string) => autoMatchedElements.some((r) => r.layoutId === layoutId && r.elementId === elementId);
   const showsBoundsBox = (elementId: string) => {
     if (!isSelected(elementId)) return false;
     if (!isAutoMatched(elementId)) return true;
-    const element = layout.elements.find((el) => el.id === elementId);
-    return element?.kind !== 'image';
+    return elementId !== backgroundElementId;
   };
   const pickingFocusForLayoutId = useAppStore((s) => s.pickingFocusForLayoutId);
   const focusPickConfirmed = useAppStore((s) => s.focusPickConfirmed);
@@ -103,6 +108,16 @@ export function ArtboardFrame({
   // The empty-state hint should disappear once *any* image is showing — the primary slot, or a
   // decorative layer dropped in from the Assets panel — not just when the primary slot is filled.
   const hasAnyImage = hasImage || extraElements.some((el) => el.kind === 'image' && el.imageUrl);
+
+  // The "background image" to keep visible while every other layer hides during a focus-rect
+  // drag: the real hero slot if it's filled, otherwise whichever image-kind decorative layer was
+  // added first — a scene built entirely from double-click-dropped samples has no filled hero
+  // slot, so that first drop is standing in for the background instead.
+  const backgroundElementId = hasImage ? imageElement?.id : extraElements.find((el) => el.kind === 'image' && el.imageUrl)?.id;
+  // While the user is actively dragging out the focus rect, every OTHER decorative overlay
+  // (text, shapes, extra images) hides so only the background photo shows — the exact thing the
+  // rect is being drawn against. They come back the moment the rect is confirmed.
+  const hidingLayersForFocusPick = isPickingFocus && Boolean(focusDrawRect);
 
   // Any selected image whose frame spills past the artboard's own bounds gets a dimmed preview of
   // the overflowing part — hidden again the moment it's deselected. Gated on showsBoundsBox (not
@@ -258,6 +273,26 @@ export function ArtboardFrame({
     };
   }
 
+  // Commits the background image straight to the frame's own full bounds — the one-click fix for a
+  // moved/undersized image leaving a gap, as opposed to handleExpandClick above which finishes an
+  // already-drawn Cmd-drag box. Reuses the same pendingExpand + shimmer machinery for a consistent
+  // "generating" beat: setting pendingExpand first makes ImageBox treat this exactly like a
+  // just-finished Cmd-drag for the rest of the animation.
+  function handleExpandToFrameClick(element: LayoutElement) {
+    return (e: ReactMouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (expandingElementId) return;
+      const nextFrame = { x: 0, y: 0, w: nativeWidth, h: nativeHeight };
+      updateElement(layoutId, element.id, { pendingExpand: nextFrame });
+      setExpandingElementId(element.id);
+      setTimeout(() => {
+        updateElement(layoutId, element.id, { frame: nextFrame, pendingExpand: undefined });
+        setExpandingElementId(null);
+      }, EXPAND_DURATION_MS);
+    };
+  }
+
   function nativePointFromEvent(e: { clientX: number; clientY: number }) {
     const rect = frameRef.current!.getBoundingClientRect();
     return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale };
@@ -273,8 +308,16 @@ export function ArtboardFrame({
     const start = nativePointFromEvent(e);
     let current = start;
 
+    // Clamped to the frame's own bounds — dragging past an edge just stops the rect at that edge
+    // instead of growing past it, so it (and the Confirm button anchored to its corner, which
+    // would otherwise render outside this overlay's own overflow-hidden box and disappear) always
+    // stays on screen.
     function onMove(ev: globalThis.MouseEvent) {
-      current = nativePointFromEvent(ev);
+      const raw = nativePointFromEvent(ev);
+      current = {
+        x: Math.max(0, Math.min(nativeWidth, raw.x)),
+        y: Math.max(0, Math.min(nativeHeight, raw.y)),
+      };
       setFocusDrawRect({
         x: Math.min(start.x, current.x),
         y: Math.min(start.y, current.y),
@@ -309,6 +352,12 @@ export function ArtboardFrame({
   }
 
   function handleFrameMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
+    // A right-click's mousedown bubbles the same as a left-click's — without this guard, it would
+    // re-select the scene (and clear any element just selected by a child's own right-click
+    // handler, e.g. the image layer's) a moment before the *actual* right-click menu opens,
+    // discarding the very selection that menu is supposed to act on. Left as a no-op here, it falls
+    // through to the browser's native `contextmenu` event exactly as if this handler didn't exist.
+    if (e.button !== 0) return;
     // Suppresses the browser's native drag-select behavior (e.g. highlighting
     // the empty-state image) in both branches below.
     e.preventDefault();
@@ -400,40 +449,8 @@ export function ArtboardFrame({
 
   const frameCursorClass = !active ? 'cursor-pointer' : activeTool === 'text' ? 'cursor-text' : activeTool === 'shape' ? 'cursor-crosshair' : '';
 
-  // Lets a shift-click reach into an *inactive* (not-yet-selected) scene's preview and add one of
-  // its elements to a cross-scene multi-select. A plain click is left alone to bubble up to the
-  // frame's own handler, which selects the scene — the caller then renders this same frame as
-  // `active` immediately (selection alone is enough, no separate "enter" gesture needed), so any
-  // *following* click already lands on the fully-interactive element, not this handler.
-  function handleInactiveElementMouseDown(elementId: string, e: ReactMouseEvent) {
-    if (!e.shiftKey) return;
-    e.preventDefault();
-    e.stopPropagation();
-    selectElement({ layoutId, elementId }, true);
-  }
-
   return (
     <div className={cn('relative', className)} style={{ width, height, ...style }}>
-      {/* Rendered *outside* the frame's own overflow-hidden box (a sibling, not a descendant) so the
-          overflow is actually visible — the frame's opaque background + its own clipped copy of the
-          same image then paint over this at full opacity for the in-bounds portion, on top. */}
-      {overflowElements.map((el) => (
-        <div
-          key={`overflow-${el.id}`}
-          className="pointer-events-none absolute"
-          style={{
-            left: `${(el.frame.x / nativeWidth) * 100}%`,
-            top: `${(el.frame.y / nativeHeight) * 100}%`,
-            width: `${(el.frame.w / nativeWidth) * 100}%`,
-            height: `${(el.frame.h / nativeHeight) * 100}%`,
-            opacity: 0.15,
-            backgroundImage: `url(${el.imageUrl})`,
-            backgroundSize: 'cover',
-            backgroundPosition: `${(el.focalPoint?.x ?? 0.5) * 100}% ${(el.focalPoint?.y ?? 0.5) * 100}%`,
-            transform: [el.flipX && 'scaleX(-1)', el.flipY && 'scaleY(-1)'].filter(Boolean).join(' ') || undefined,
-          }}
-        />
-      ))}
       {/* The selected image's own outline+handles (SelectionBoundingBox, rendered inside the
           overflow-hidden frame below) get clipped wherever the frame exceeds the canvas — this
           traces the rest of that same outline, unclipped, so the full extent of an overflowing,
@@ -471,6 +488,11 @@ export function ArtboardFrame({
         onDoubleClick={handleFrameDoubleClick}
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleAssetDrop}
+        onContextMenu={(e) => {
+          if (!onSceneContextMenu) return;
+          e.preventDefault();
+          onSceneContextMenu(e);
+        }}
       >
         {active && <ImagePickerDialog open={pickerOpen} onOpenChange={setPickerOpen} onSelect={applyImage} />}
         {active && <ImagePickerDialog open={insertImagePickerOpen} onOpenChange={setInsertImagePickerOpen} onSelect={insertNewImage} />}
@@ -492,6 +514,8 @@ export function ArtboardFrame({
                 sceneSelected={isSceneSelected}
                 expanding={expandingElementId === imageElement.id}
                 onExpandClick={handleExpandClick(imageElement)}
+                onExpandToFrameClick={handleExpandToFrameClick(imageElement)}
+                isBackgroundImage={imageElement.id === backgroundElementId}
                 onSelect={(e) => {
                   selectElement({ layoutId, elementId: imageElement.id }, e.shiftKey);
                   selectScene(layout.setId);
@@ -506,9 +530,11 @@ export function ArtboardFrame({
                 layoutWidth={nativeWidth}
                 layoutHeight={nativeHeight}
                 outlined={showsBoundsBox(imageElement.id)}
+                scale={scale}
                 expanding={expandingElementId === imageElement.id}
                 onExpandClick={handleExpandClick(imageElement)}
-                onMouseDown={(e) => handleInactiveElementMouseDown(imageElement.id, e)}
+                onExpandToFrameClick={handleExpandToFrameClick(imageElement)}
+                isBackgroundImage={imageElement.id === backgroundElementId}
               />
             )}
           </div>
@@ -538,85 +564,88 @@ export function ArtboardFrame({
           </div>
         )}
 
-        {extraElements.map((el) => {
-          if (!active) {
-            return (
-              <ElementRenderer
-                key={el.id}
-                element={el}
-                layoutWidth={nativeWidth}
-                layoutHeight={nativeHeight}
-                selected={showsBoundsBox(el.id)}
-                onMouseDown={(e) => handleInactiveElementMouseDown(el.id, e)}
-              />
-            );
-          }
+        {extraElements
+          .filter((el) => !hidingLayersForFocusPick || el.id === backgroundElementId)
+          .map((el) => {
+            if (!active) {
+              return (
+                <ElementRenderer
+                  key={el.id}
+                  element={el}
+                  layoutWidth={nativeWidth}
+                  layoutHeight={nativeHeight}
+                  selected={showsBoundsBox(el.id)}
+                />
+              );
+            }
 
-          if (el.kind === 'text') {
-            return (
-              <EditableTextElement
-                key={el.id}
-                element={el}
-                layoutId={layoutId}
-                layoutWidth={nativeWidth}
-                layoutHeight={nativeHeight}
-                scale={scale}
-                activeTool={activeTool}
-                selected={showsBoundsBox(el.id)}
-                isEditing={editingTextElementId === el.id}
-                onSelect={(e) => {
-                  selectElement({ layoutId, elementId: el.id }, e.shiftKey);
-                  selectScene(layout.setId);
-                }}
-                onStartEditing={() => setEditingTextElement(el.id)}
-              />
-            );
-          }
+            if (el.kind === 'text') {
+              return (
+                <EditableTextElement
+                  key={el.id}
+                  element={el}
+                  layoutId={layoutId}
+                  layoutWidth={nativeWidth}
+                  layoutHeight={nativeHeight}
+                  scale={scale}
+                  activeTool={activeTool}
+                  selected={showsBoundsBox(el.id)}
+                  isEditing={editingTextElementId === el.id}
+                  onSelect={(e) => {
+                    selectElement({ layoutId, elementId: el.id }, e.shiftKey);
+                    selectScene(layout.setId);
+                  }}
+                  onStartEditing={() => setEditingTextElement(el.id)}
+                />
+              );
+            }
 
-          if (el.kind === 'shape') {
-            return (
-              <SelectableShapeElement
-                key={el.id}
-                element={el}
-                layoutId={layoutId}
-                layoutWidth={nativeWidth}
-                layoutHeight={nativeHeight}
-                scale={scale}
-                activeTool={activeTool}
-                selected={showsBoundsBox(el.id)}
-                onSelect={(e) => {
-                  selectElement({ layoutId, elementId: el.id }, e.shiftKey);
-                  selectScene(layout.setId);
-                }}
-              />
-            );
-          }
+            if (el.kind === 'shape') {
+              return (
+                <SelectableShapeElement
+                  key={el.id}
+                  element={el}
+                  layoutId={layoutId}
+                  layoutWidth={nativeWidth}
+                  layoutHeight={nativeHeight}
+                  scale={scale}
+                  activeTool={activeTool}
+                  selected={showsBoundsBox(el.id)}
+                  onSelect={(e) => {
+                    selectElement({ layoutId, elementId: el.id }, e.shiftKey);
+                    selectScene(layout.setId);
+                  }}
+                />
+              );
+            }
 
-          if (el.kind === 'image') {
-            return (
-              <DraggableImageElement
-                key={el.id}
-                element={el}
-                layoutId={layoutId}
-                layoutWidth={nativeWidth}
-                layoutHeight={nativeHeight}
-                scale={scale}
-                activeTool={activeTool}
-                selected={showsBoundsBox(el.id)}
-                sceneSelected={isSceneSelected}
-                expanding={expandingElementId === el.id}
-                onExpandClick={handleExpandClick(el)}
-                onSelect={(e) => {
-                  selectElement({ layoutId, elementId: el.id }, e.shiftKey);
-                  selectScene(layout.setId);
-                }}
-                onContextMenu={handleImageContextMenu(el.id)}
-              />
-            );
-          }
+            if (el.kind === 'image') {
+              return (
+                <DraggableImageElement
+                  key={el.id}
+                  element={el}
+                  layoutId={layoutId}
+                  layoutWidth={nativeWidth}
+                  layoutHeight={nativeHeight}
+                  scale={scale}
+                  activeTool={activeTool}
+                  selected={showsBoundsBox(el.id)}
+                  sceneSelected={isSceneSelected}
+                  expanding={expandingElementId === el.id}
+                  onExpandClick={handleExpandClick(el)}
+                  onExpandToFrameClick={handleExpandToFrameClick(el)}
+                  isBackgroundImage={el.id === backgroundElementId}
+                  onSelect={(e) => {
+                    selectElement({ layoutId, elementId: el.id }, e.shiftKey);
+                    selectScene(layout.setId);
+                  }}
+                  onContextMenu={handleImageContextMenu(el.id)}
+                />
+              );
+            }
 
-          return <ElementRenderer key={el.id} element={el} layoutWidth={nativeWidth} layoutHeight={nativeHeight} />;
-        })}
+            return <ElementRenderer key={el.id} element={el} layoutWidth={nativeWidth} layoutHeight={nativeHeight} />;
+          })}
 
         {active && drawRect && (
           <div
@@ -632,67 +661,76 @@ export function ArtboardFrame({
       </div>
 
       {isPickingFocus && (
-        <div className="absolute inset-0 z-20 overflow-hidden" onMouseDown={handleFocusRectMouseDown}>
-          {focusDrawRect ? (
-            <>
-              {/* The huge spread shadow dims everything outside this rect — the rect itself stays
-                  un-dimmed, "cut out" of the overlay, since box-shadow never paints under its own box. */}
+        <>
+          <div className="absolute inset-0 z-20 overflow-hidden" onMouseDown={handleFocusRectMouseDown}>
+            {focusDrawRect ? (
+              // The huge spread shadow dims everything outside this rect — the rect itself stays
+              // un-dimmed, "cut out" of the overlay, since box-shadow never paints under its own box.
               <div
-                className="pointer-events-none absolute border border-dashed"
+                className="pointer-events-none absolute border-4"
                 style={{
                   left: `${(focusDrawRect.x / nativeWidth) * 100}%`,
                   top: `${(focusDrawRect.y / nativeHeight) * 100}%`,
                   width: `${(focusDrawRect.w / nativeWidth) * 100}%`,
                   height: `${(focusDrawRect.h / nativeHeight) * 100}%`,
                   borderColor: '#4570FF',
-                  background: 'rgba(45,136,255,0.1)',
+                  borderRadius: 24,
                   boxShadow: '0 0 0 9999px rgba(0,0,0,0.5)',
                 }}
               />
-              <button
-                type="button"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={confirmFocusRect}
-                className="absolute flex h-8 shrink-0 items-center justify-center rounded-full bg-button-primary px-3 text-sm text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)] transition-colors hover:brightness-110"
-                style={{
-                  left: `${((focusDrawRect.x + focusDrawRect.w) / nativeWidth) * 100}%`,
-                  top: `${((focusDrawRect.y + focusDrawRect.h) / nativeHeight) * 100}%`,
-                  transform: 'translate(-100%, 8px)',
-                }}
-              >
-                {t('Confirm')}
-              </button>
-            </>
-          ) : focusPickConfirmed && layout.focusRect ? (
-            // Confirmed this session — the picked rect just stays outlined on top, no dimming and
-            // no buttons in the way now that there's nothing left to decide. Redrawing (mousedown
-            // above) or closing the "Add more sizes" panel are the only ways out from here.
-            // Gated on focusPickConfirmed (reset by startPickingFocus), not just layout.focusRect
-            // existing — otherwise re-entering via "Change" on a scene with an old pick would skip
-            // straight past the instructional pop-up below.
-            <div
-              className="pointer-events-none absolute border border-dashed"
-              style={{
-                left: `${(layout.focusRect.x / nativeWidth) * 100}%`,
-                top: `${(layout.focusRect.y / nativeHeight) * 100}%`,
-                width: `${(layout.focusRect.w / nativeWidth) * 100}%`,
-                height: `${(layout.focusRect.h / nativeHeight) * 100}%`,
-                borderColor: '#4570FF',
-              }}
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+            ) : focusPickConfirmed && layout.focusRect ? (
+              // Confirmed this session — the picked rect just stays outlined on top, no dimming and
+              // no buttons in the way now that there's nothing left to decide. Redrawing (mousedown
+              // above) or closing the "Add more sizes" panel are the only ways out from here.
+              // Gated on focusPickConfirmed (reset by startPickingFocus), not just layout.focusRect
+              // existing — otherwise re-entering via "Change" on a scene with an old pick would skip
+              // straight past the instructional pop-up below.
               <div
-                className="flex flex-col items-center justify-center gap-[18.6px] rounded-2xl border"
-                style={{ width: 314, height: 222, padding: '18.6px 12px', background: 'rgba(38,38,44,0.88)', borderColor: '#40404A' }}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                <img src="/icons/select_area.svg" alt="" className="size-[62px] shrink-0" />
-                <p className="text-center text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Draw a rectangle around the scene focus')}</p>
+                className="pointer-events-none absolute border-4"
+                style={{
+                  left: `${(layout.focusRect.x / nativeWidth) * 100}%`,
+                  top: `${(layout.focusRect.y / nativeHeight) * 100}%`,
+                  width: `${(layout.focusRect.w / nativeWidth) * 100}%`,
+                  height: `${(layout.focusRect.h / nativeHeight) * 100}%`,
+                  borderColor: 'rgba(69,112,255,0.3)',
+                  background: 'rgba(69,112,255,0.1)',
+                  borderRadius: 24,
+                }}
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                <div
+                  className="flex flex-col items-center justify-center gap-[18.6px] rounded-2xl border-4"
+                  style={{ width: 289, height: 222, padding: '18.6px 12px', background: 'rgba(38,38,44,0.7)', borderColor: 'rgba(38,38,44,0.3)' }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <img src="/icons/select_area.svg" alt="" className="size-[90px] shrink-0" />
+                  <p className="text-center text-[15px] font-semibold tracking-[-0.01em] text-white">
+                    {t('Draw a rectangle around the area to keep as the focus in all sizes')}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
+          </div>
+
+          {/* Rendered *outside* the overlay's own overflow-hidden box (a sibling, not a descendant) —
+              same reasoning as the overflow-image outline above — so a rect dragged all the way to a
+              frame edge never clips the button anchored to its corner. */}
+          {focusDrawRect && (
+            <button
+              type="button"
+              onClick={confirmFocusRect}
+              className="absolute z-30 flex h-8 shrink-0 items-center justify-center rounded-full bg-button-primary px-3 text-sm text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)] transition-colors hover:brightness-110"
+              style={{
+                left: `${((focusDrawRect.x + focusDrawRect.w) / nativeWidth) * 100}%`,
+                top: `${((focusDrawRect.y + focusDrawRect.h) / nativeHeight) * 100}%`,
+                transform: 'translate(-100%, 8px)',
+              }}
+            >
+              {t('Confirm')}
+            </button>
           )}
-        </div>
+        </>
       )}
 
       {layerContextMenu && (

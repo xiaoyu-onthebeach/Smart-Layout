@@ -8,7 +8,6 @@ import {
   OpacityRow,
   PanelCard,
   PanelDivider,
-  PanelFooter,
   PanelHeader,
   PanelHeaderIcon,
   PanelSection,
@@ -80,14 +79,6 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
       <PanelSection label={t('Radius')}>
         <RadiusRow value={primary.style.radius ?? 0} onCommit={(radius) => patchStyle({ radius })} />
       </PanelSection>
-
-      <PanelFooter
-        visible={primary.visible}
-        onToggleVisible={() => {
-          const next = !primary.visible;
-          for (const tgt of targets) updateElement(tgt.layoutId, tgt.element.id, { visible: next });
-        }}
-      />
     </PanelCard>
   );
 }

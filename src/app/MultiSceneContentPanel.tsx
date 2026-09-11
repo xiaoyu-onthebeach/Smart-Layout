@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Layers, Pencil, SlidersHorizontal } from 'lucide-react';
+import { Image as ImageIcon, Layers, Type } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import type { Layout } from '@/types';
 import { ImagePickerDialog } from '@/features/editor/artboard/ImagePickerDialog';
-import { ColorRow, PanelCard, PanelDivider, PanelFooter, PanelSection } from '@/features/editor/artboard/PanelKit';
+import { ColorRow, ImageHoverReplace, PanelCard, PanelDivider, PanelExportFooter, PanelSection, SectionIconBadge } from '@/features/editor/artboard/PanelKit';
 import { useT } from '@/lib/i18n';
 
 type ImageUsage = { url: string; layoutIds: Set<string>; targets: { layoutId: string; elementId: string }[] };
@@ -16,15 +16,10 @@ const TEXT_PLACEHOLDERS = ['毎日のスキンケア', 'クーポンで500円OFF
 
 function PlaceholderContentRow({ placeholder }: { placeholder: string }) {
   return (
-    <div className="flex items-center gap-2">
-      <input
-        placeholder={placeholder}
-        className="h-11 flex-1 rounded-lg bg-[#26262C] px-3 text-sm text-chrome-fg shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02)] outline-none placeholder:text-white/45"
-      />
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border text-white/45" style={{ borderColor: '#40404A' }}>
-        <SlidersHorizontal className="size-4" />
-      </span>
-    </div>
+    <input
+      placeholder={placeholder}
+      className="h-11 w-full rounded-lg bg-[#26262C] px-3 text-sm text-chrome-fg shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02)] outline-none placeholder:text-white/45"
+    />
   );
 }
 
@@ -49,7 +44,6 @@ export function MultiSceneContentPanel({ setIds }: { setIds: string[] }) {
     .filter((l): l is Layout => Boolean(l));
 
   if (layouts.length === 0) return null;
-  const allVisible = layouts.every((l) => !l.hidden);
 
   // Images: only the background/hero image (the required slot) across the selection, grouped by
   // URL — the decorative overlay graphics (coupon/logo/headline/button/bottom_banner, all
@@ -107,59 +101,49 @@ export function MultiSceneContentPanel({ setIds }: { setIds: string[] }) {
   return (
     <PanelCard>
       <div className="flex items-center gap-1.5 px-4 pb-1">
-        <div className="flex size-6 shrink-0 items-center justify-center rounded-[4px] border border-chrome-border bg-[#26262C] text-white/70 shadow-[0_1px_8px_1px_rgba(0,0,0,0.24)]">
-          <Layers className="size-3.5" />
-        </div>
-        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-[-0.01em] text-white">
+        <SectionIconBadge>
+          <Layers className="size-3.5 text-white/70" />
+        </SectionIconBadge>
+        <span className="truncate text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Edit content')}</span>
+        <span className="ml-auto shrink-0 text-[11px]" style={{ color: 'rgba(255,255,255,0.65)' }}>
           {language === 'ja' ? `${setIds.length}件のサイズを選択中` : `${setIds.length} sizes selected`}
         </span>
       </div>
 
-      <PanelSection label={t('Images')}>
-        {imageUsages.length === 0 ? (
-          <span className="text-xs text-white/45">{t('No images across these scenes.')}</span>
-        ) : (
-          <div className="flex flex-col gap-4">
-            {imageUsages.map((usage) => (
-              <div key={usage.url} className="flex items-start gap-6">
-                <div
-                  className="size-[100px] shrink-0 rounded-2xl border bg-cover bg-center"
-                  style={{ backgroundImage: `url(${usage.url})`, borderColor: '#40404A', background: '#26262C' }}
-                />
-                <div className="flex h-[100px] flex-col justify-center gap-2">
-                  <span className="text-sm text-white/70">
-                    {language === 'ja' ? `${usage.layoutIds.size}件のシーンで使用中` : `Selected in ${usage.layoutIds.size} sizes`}
-                  </span>
-                  <button
-                    type="button"
-                    className="flex h-8 w-[111px] items-center justify-center gap-2 rounded-lg border text-sm text-white transition-colors hover:bg-white/5"
-                    style={{ borderColor: '#40404A' }}
-                  >
-                    <Pencil className="size-3.5 text-white/45" />
-                    {t('Edit')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setReplacingUrl(usage.url)}
-                    className="flex h-8 w-[111px] items-center justify-center gap-2 rounded-lg border text-sm text-white transition-colors hover:bg-white/5"
-                    style={{ borderColor: '#40404A' }}
-                  >
-                    <Layers className="size-4" />
-                    {t('Replace')}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </PanelSection>
-
-      <PanelSection label={t('Text')}>
+      <PanelSection
+        label={t('Text')}
+        icon={
+          <SectionIconBadge>
+            <Type className="size-3.5 text-white/70" />
+          </SectionIconBadge>
+        }
+      >
         <div className="flex flex-col gap-3">
           {TEXT_PLACEHOLDERS.map((placeholder) => (
             <PlaceholderContentRow key={placeholder} placeholder={placeholder} />
           ))}
         </div>
+      </PanelSection>
+
+      <PanelSection
+        label={t('Image')}
+        icon={
+          <SectionIconBadge>
+            <ImageIcon className="size-3.5 text-white/70" />
+          </SectionIconBadge>
+        }
+      >
+        {imageUsages.length === 0 ? (
+          <span className="text-xs text-white/45">{t('No images across these scenes.')}</span>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {imageUsages.map((usage) => (
+              <ImageHoverReplace key={usage.url} onReplace={() => setReplacingUrl(usage.url)}>
+                <div className="h-[140px] w-full bg-cover bg-center" style={{ backgroundColor: '#26262C', backgroundImage: `url(${usage.url})` }} />
+              </ImageHoverReplace>
+            ))}
+          </div>
+        )}
       </PanelSection>
 
       <PanelDivider />
@@ -176,14 +160,7 @@ export function MultiSceneContentPanel({ setIds }: { setIds: string[] }) {
         )}
       </PanelSection>
 
-      <PanelFooter
-        visible={allVisible}
-        onToggleVisible={() => {
-          for (const l of layouts) updateLayoutStyle(l.id, { hidden: allVisible });
-        }}
-        showDownload
-        onDownload={openExport}
-      />
+      <PanelExportFooter onExport={openExport} />
 
       {activeReplace && (
         <ImagePickerDialog

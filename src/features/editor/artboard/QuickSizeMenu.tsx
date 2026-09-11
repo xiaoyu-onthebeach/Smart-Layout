@@ -5,14 +5,15 @@ import { Button } from '@/components/ui/button';
 import { RatioIcon } from '@/components/RatioIcon';
 import { nearestPreset, platforms, sizePresets } from '@/lib/mock';
 import { NO_RULES_ID } from '@/lib/mock/rulesets';
+import { classifyRatioBucket } from '@/lib/size-class';
 import { STANDARD_RATIOS } from '@/features/size-select/standard-ratios';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 
-export type QuickSizeResult = { width: number; height: number; label: string; presetId?: string; ruleSetId: string };
+export type QuickSizeResult = { width: number; height: number; label: string; presetId?: string; ruleSetId: string; platformId?: string };
 
-type ListItem = { id: string; label: string; width: number; height: number; presetId?: string; ruleSetId: string };
-type ItemGroup = { id: string; name: string; items: ListItem[] };
+export type ListItem = { id: string; label: string; width: number; height: number; presetId?: string; ruleSetId: string; platformId?: string };
+export type ItemGroup = { id: string; name: string; items: ListItem[] };
 
 function buildGroups(): ItemGroup[] {
   const platformGroups: ItemGroup[] = platforms
@@ -21,7 +22,7 @@ function buildGroups(): ItemGroup[] {
       name: platform.name,
       items: sizePresets
         .filter((p) => p.platformId === platform.id)
-        .map((p) => ({ id: `preset-${p.id}`, label: p.label, width: p.width, height: p.height, presetId: p.id, ruleSetId: p.ruleSetId })),
+        .map((p) => ({ id: `preset-${p.id}`, label: p.label, width: p.width, height: p.height, presetId: p.id, ruleSetId: p.ruleSetId, platformId: platform.id })),
     }))
     .filter((g) => g.items.length > 0);
 
@@ -37,7 +38,7 @@ function buildGroups(): ItemGroup[] {
   return [...platformGroups, otherGroup];
 }
 
-const GROUPS = buildGroups();
+export const GROUPS = buildGroups();
 
 export function QuickSizeMenu({
   onConfirm,
@@ -62,6 +63,10 @@ export function QuickSizeMenu({
   // picking at all), it's enabled again.
   const isPicking = pickingFocusForLayoutId === sourceLayoutId && !focusPickConfirmed;
   const sourceLayout = useAppStore((s) => s.layoutsById[sourceLayoutId]);
+  // Only offer sizes in the same square/horizontal/vertical bucket as the scene this picker was
+  // opened from — adding a wildly different-ratio size from here would need adaptation this
+  // prototype doesn't do, and reads as "not actually a variation of this banner" either way.
+  const sourceRatioBucket = sourceLayout ? classifyRatioBucket(sourceLayout.size.width, sourceLayout.size.height) : null;
   const focusRect = sourceLayout?.focusRect;
   const sourceImageUrl = sourceLayout?.elements.find((el) => el.kind === 'image' && el.imageUrl)?.imageUrl;
   const focusThumbPosition = focusRect
@@ -80,9 +85,14 @@ export function QuickSizeMenu({
 
   const filteredGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return GROUPS;
-    return GROUPS.map((g) => ({ ...g, items: g.items.filter((item) => item.label.toLowerCase().includes(q)) })).filter((g) => g.items.length > 0);
-  }, [query]);
+    return GROUPS.map((g) => ({
+      ...g,
+      items: g.items.filter((item) => {
+        if (sourceRatioBucket && classifyRatioBucket(item.width, item.height) !== sourceRatioBucket) return false;
+        return !q || item.label.toLowerCase().includes(q);
+      }),
+    })).filter((g) => g.items.length > 0);
+  }, [query, sourceRatioBucket]);
 
   const totalSelected = selectedIds.size + customEntries.length;
   const canAddCustom = Number(customWidth) > 0 && Number(customHeight) > 0;
@@ -179,7 +189,7 @@ export function QuickSizeMenu({
       ...[...selectedIds]
         .map((id) => byId.get(id))
         .filter((i): i is ListItem => Boolean(i))
-        .map((i) => ({ width: i.width, height: i.height, label: i.label, presetId: i.presetId, ruleSetId: i.ruleSetId })),
+        .map((i) => ({ width: i.width, height: i.height, label: i.label, presetId: i.presetId, ruleSetId: i.ruleSetId, platformId: i.platformId })),
       ...customEntries,
     ];
     if (results.length === 0) return;

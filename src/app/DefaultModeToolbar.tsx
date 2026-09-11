@@ -64,7 +64,7 @@ function RenderedToolButton({
 
 /**
  * Floating bottom toolbar. Selecting a tool just arms it — Text/Shape don't add
- * anything until the user interacts with the artboard itself (see ArtboardScene).
+ * anything until the user interacts with the artboard itself.
  */
 export function DefaultModeToolbar() {
   const t = useT();

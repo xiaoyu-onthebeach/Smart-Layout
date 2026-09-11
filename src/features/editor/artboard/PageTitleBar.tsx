@@ -5,7 +5,7 @@ import { getPreset } from '@/lib/mock';
 import { PlatformMark } from '@/features/size-select/PlatformMark';
 import { useT } from '@/lib/i18n';
 
-/** Title row shared by the single-page editor and the view-all canvas: name + optional platform mark + size pill. */
+/** Title row for a scene on the view-all canvas: name + optional platform mark + size pill. */
 export function PageTitleBar({
   name,
   width,
@@ -56,7 +56,7 @@ export function PageTitleBar({
   if (!visible) return null;
 
   return (
-    <div className={cn(className, onDragHandleMouseDown && 'cursor-move')} onMouseDown={onDragHandleMouseDown}>
+    <div className={cn(className, 'group/bar', onDragHandleMouseDown && 'cursor-move')} onMouseDown={onDragHandleMouseDown}>
       {editing ? (
         <input
           ref={inputRef}

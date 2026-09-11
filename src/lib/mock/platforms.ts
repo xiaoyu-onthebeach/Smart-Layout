@@ -4,6 +4,7 @@ export const platforms: Platform[] = [
   {
     id: 'amazon',
     name: 'Amazon',
+    maxFileSizeMb: 5,
     presetIds: [
       'amazon-brand-hero',
       'amazon-search-banner',
@@ -17,6 +18,7 @@ export const platforms: Platform[] = [
   {
     id: 'rakuten',
     name: 'Rakuten',
+    maxFileSizeMb: 5,
     presetIds: [
       'rakuten-ichiba-top',
       'rakuten-shop-top',
@@ -30,6 +32,7 @@ export const platforms: Platform[] = [
   {
     id: 'yahoo',
     name: 'Yahoo',
+    maxFileSizeMb: 5,
     presetIds: [
       'yahoo-shopping-top',
       'yahoo-display-mrec',
@@ -43,6 +46,7 @@ export const platforms: Platform[] = [
   {
     id: 'qoo10',
     name: 'Qoo10',
+    maxFileSizeMb: 5,
     presetIds: [
       'qoo10-mega-banner',
       'qoo10-shop-banner',
@@ -56,6 +60,7 @@ export const platforms: Platform[] = [
   {
     id: 'tiktok',
     name: 'TikTok Shop',
+    maxFileSizeMb: 5,
     presetIds: [
       'tiktok-product-card',
       'tiktok-story-banner',

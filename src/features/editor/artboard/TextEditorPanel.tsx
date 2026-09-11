@@ -11,7 +11,6 @@ import {
   NumberField,
   PanelCard,
   PanelDivider,
-  PanelFooter,
   PanelHeader,
   PanelHeaderIcon,
   PanelSection,
@@ -167,14 +166,6 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
         <ColorRow color={primary.style.strokeColor ?? '#000000'} onChange={(strokeColor) => patchStyle({ strokeColor })} />
         <NumberField className="w-full" value={String(primary.style.strokeWidth ?? 0)} onCommit={(v) => patchStyle({ strokeWidth: Math.max(0, Number(v) || 0) })} />
       </PanelSection>
-
-      <PanelFooter
-        visible={primary.visible}
-        onToggleVisible={() => {
-          const next = !primary.visible;
-          for (const tgt of targets) updateElement(tgt.layoutId, tgt.element.id, { visible: next });
-        }}
-      />
     </PanelCard>
   );
 }

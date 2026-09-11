@@ -16,7 +16,6 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   selectedSceneIds: [],
   editingTextElementId: null,
   activeTool: 'select',
-  canvasMode: 'viewAll',
   viewAllActivePageId: null,
   selectedGroupId: null,
   loadingPageIds: {},
@@ -42,6 +41,9 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   selectElement: (ref, additive) =>
     set((state) => {
       if (!ref) return { selectedElements: [], autoMatchedElements: [], editingTextElementId: null };
+      // A locked layer can't be selected at all — from the layers panel or the canvas alike, since
+      // both funnel every click through this one action.
+      if (state.layoutsById[ref.layoutId]?.elements.find((el) => el.id === ref.elementId)?.locked) return {};
       if (!additive) {
         // A plain click replaces the selection with just `ref` — plus, while match-select is on,
         // whatever matches it in every other size of the group (see match-select.ts). Shift-click
@@ -75,7 +77,6 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   selectScenes: (setIds) => set({ selectedSceneIds: setIds }),
   setEditingTextElement: (id) => set({ editingTextElementId: id }),
   setActiveTool: (tool) => set({ activeTool: tool }),
-  setCanvasMode: (mode) => set({ canvasMode: mode }),
   // Entering edit mode on a view-all page card should immediately show it as selected (the white
   // outline) — otherwise it silently takes a second click before any selection feedback appears.
   setViewAllActivePage: (setId) =>

@@ -19,6 +19,11 @@ function primarySetIdWithSiblings(state: AppState, layoutId: string): string | n
   return ownerSetId;
 }
 
+/** Whether a frame fully covers a layout's own native bounds — used to latch `hasCoveredFrame`. */
+function frameFillsSize(frame: LayoutElement['frame'], size: { width: number; height: number }): boolean {
+  return frame.x <= 0 && frame.y <= 0 && frame.x + frame.w >= size.width && frame.y + frame.h >= size.height;
+}
+
 /** Leaves the sibling's own layers/content/positions alone; only re-styles elements that also exist on the primary (matched by id). */
 function restyleMatching(primaryElements: LayoutElement[], memberElements: LayoutElement[]): LayoutElement[] {
   return memberElements.map((el) => {
@@ -58,7 +63,20 @@ export const createLayoutsSlice: Slice<LayoutsSlice> = (set, get) => ({
       if (!layout) return state;
       const nextLayoutsById = {
         ...state.layoutsById,
-        [layoutId]: { ...layout, elements: layout.elements.map((el) => (el.id === elementId ? { ...el, ...patch } : el)) },
+        [layoutId]: {
+          ...layout,
+          elements: layout.elements.map((el) => {
+            if (el.id !== elementId) return el;
+            const next = { ...el, ...patch };
+            // Latched permanently the first time this image's frame reaches full coverage —
+            // computed centrally here (rather than at each individual drag/resize/expand call
+            // site) so every current and future way a frame can change stays covered.
+            if (next.kind === 'image' && !next.hasCoveredFrame && frameFillsSize(next.frame, layout.size)) {
+              next.hasCoveredFrame = true;
+            }
+            return next;
+          }),
+        },
       };
       const pendingSetId = primarySetIdWithSiblings(state, layoutId);
       return {

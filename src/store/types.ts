@@ -7,9 +7,6 @@ export type AppStep = 'playgrounds' | 'start' | 'editor' | 'allLayouts';
 /** Bottom-toolbar tool. 'text'/'shape' arm a click/drag placement gesture rather than adding instantly. */
 export type Tool = 'select' | 'move' | 'brush' | 'eraser' | 'text' | 'shape';
 
-/** Editing = single active page, full toolset. View-all = every page laid out on one canvas. */
-export type CanvasMode = 'editing' | 'viewAll';
-
 /** 'full' cascades layers, content, and style; 'styleOnly' re-styles existing matching layers only. */
 export type CascadeMode = 'full' | 'styleOnly';
 
@@ -41,7 +38,6 @@ export type UiSlice = {
   /** The text element currently in contentEditable edit mode (typing/caret), if any. */
   editingTextElementId: string | null;
   activeTool: Tool;
-  canvasMode: CanvasMode;
   /** Which page (BannerSet id) is "live"/editable within the view-all canvas; null = none entered. */
   viewAllActivePageId: string | null;
   /** Which group container is selected in the view-all canvas (click its background, not a page); null = none. */
@@ -94,7 +90,6 @@ export type UiSlice = {
   /** Enters (id) or exits (null) contentEditable edit mode for a text element. */
   setEditingTextElement: (id: string | null) => void;
   setActiveTool: (tool: Tool) => void;
-  setCanvasMode: (mode: CanvasMode) => void;
   setViewAllActivePage: (setId: string | null) => void;
   selectGroup: (groupId: string | null) => void;
   /** Marks a page as loading; auto-clears itself after `durationMs` (default the creation-loading duration). */
@@ -128,6 +123,15 @@ export type SetSlice = {
   pagePositions: Record<string, PagePosition>;
   pageGroups: Record<string, PageGroup>;
   pageGroupIdByPage: Record<string, string>;
+  /** Explicit view-all "canvas root" overrides, set only via `attachStandalonePage` — see
+   * `canvasRootOf` in `src/lib/canvas-layout.ts` for how this combines with pack membership to
+   * resolve any given page's actual canvas root. */
+  canvasRootByPage: Record<string, string>;
+  /** Left-to-right order of the "cluster roots" (independent primaries, or a real group's own
+   * primary) sharing a given canvas root id — the explicit source of truth the drag-to-reorder
+   * gesture between main-size columns updates, mirroring `PageGroup.memberIds` for pack siblings.
+   * A canvas root with no entry here (a lone page, never bundled) falls back to position order. */
+  canvasRootOrder: Record<string, string[]>;
   currentSet: BannerSet | null;
   loadSet: (set: BannerSet, position?: PagePosition) => void;
   selectPage: (setId: string) => void;
@@ -143,6 +147,16 @@ export type SetSlice = {
   movePagesBy: (pageIds: string[], dx: number, dy: number) => void;
   /** Removes a page/scene entirely: its set, layout, canvas position, and group membership. */
   deletePage: (setId: string) => void;
+  /** Makes `pageId` resolve to `rootId` as its view-all "canvas root" (see `canvasRootOf`) —
+   * visible together with everyone else on that same root, entirely independent of `PageGroup`
+   * pack membership, so `pageId` can freely gain, lose, or change its own real group later without
+   * ever leaving this shared canvas view. Used to bundle a freshly created batch of independent
+   * primary sizes (e.g. one square, one horizontal, one vertical) onto one shared canvas view. */
+  attachStandalonePage: (pageId: string, rootId: string) => void;
+  /** Replaces the left-to-right order of every cluster root sharing `rootId`'s canvas view — drives
+   * the drag-to-reorder gesture between main-size columns, the same way `reorderGroupSiblings`
+   * drives it within one group's own pack. A no-op if `rootId` has no explicit order yet. */
+  reorderCanvasRoot: (rootId: string, order: string[]) => void;
 };
 
 export type LayoutsSlice = {

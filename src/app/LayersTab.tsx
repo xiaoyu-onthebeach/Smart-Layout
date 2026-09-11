@@ -1,43 +1,119 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { ChevronLeft, Image as ImageIcon, Type } from 'lucide-react';
+import { ChevronLeft, EyeOff, Image as ImageIcon, Lock } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { layerName } from '@/lib/layer-name';
 import { useT } from '@/lib/i18n';
 import type { Layout, LayoutElement } from '@/types';
 
-function LayerThumb({ element }: { element: LayoutElement }) {
-  if (element.kind === 'image') {
-    if (element.imageUrl) {
-      return <div className="size-8 shrink-0 rounded-md bg-cover bg-center" style={{ backgroundImage: `url(${element.imageUrl})` }} />;
-    }
-    return (
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-white/10 text-white/45">
-        <ImageIcon className="size-4" />
-      </div>
-    );
-  }
-  if (element.kind === 'shape' || element.style.fill) {
-    return <div className="size-8 shrink-0 rounded-md border border-white/10" style={{ background: element.style.fill || '#FFFFFF' }} />;
-  }
+/** Fits inside the 32px thumbnail box with a little margin on every side. */
+const SHAPE_THUMB_MAX = 20;
+
+function ShapeThumb({ element }: { element: LayoutElement }) {
+  const { frame, shape, style } = element;
+  const ratio = frame.w / Math.max(frame.h, 1);
+  const w = Math.max(4, ratio >= 1 ? SHAPE_THUMB_MAX : SHAPE_THUMB_MAX * ratio);
+  const h = Math.max(4, ratio >= 1 ? SHAPE_THUMB_MAX / ratio : SHAPE_THUMB_MAX);
+  // The stroke preview scales down with the shape itself, so a big soft-rounded rect on the
+  // canvas still reads as a rounded rect here rather than looking like a plain circle.
+  const scale = w / frame.w;
+  const radius = shape === 'ellipse' ? 9999 : Math.min((style.radius ?? 0) * scale, Math.min(w, h) / 2);
   return (
-    <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-white/10 text-white/45">
-      <Type className="size-4" />
+    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ background: '#26262C' }}>
+      <div className="shrink-0 border-[1.5px] border-white/70" style={{ width: w, height: h, borderRadius: radius }} />
     </div>
   );
 }
 
-function LayerRow({ element, selected, onClick }: { element: LayoutElement; selected: boolean; onClick: (e: ReactMouseEvent) => void }) {
-  const t = useT();
+function LayerThumb({ element }: { element: LayoutElement }) {
+  if (element.kind === 'image') {
+    if (element.imageUrl) {
+      return <div className="size-8 shrink-0 rounded-lg bg-cover bg-center" style={{ backgroundImage: `url(${element.imageUrl})` }} />;
+    }
+    return (
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white/45">
+        <ImageIcon className="size-4" />
+      </div>
+    );
+  }
+  if (element.kind === 'shape') {
+    return <ShapeThumb element={element} />;
+  }
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn('flex h-10 w-full shrink-0 items-center gap-2 rounded-lg p-1 text-left transition-colors hover:bg-white/5', selected && 'bg-white/5')}
+    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ background: '#26262C' }}>
+      <img src="/icons/layer list/text.svg" alt="" className="size-4" />
+    </div>
+  );
+}
+
+function LayerRow({
+  element,
+  layoutId,
+  selected,
+  onClick,
+}: {
+  element: LayoutElement;
+  layoutId: string;
+  selected: boolean;
+  onClick: (e: ReactMouseEvent) => void;
+}) {
+  const t = useT();
+  const updateElement = useAppStore((s) => s.updateElement);
+  const locked = Boolean(element.locked);
+  const visible = element.visible;
+  // Locked/hidden layers keep their toggle icons visible at all times (otherwise there'd be no way
+  // to tell, or undo, either state without first hovering) — every other row only reveals them on hover.
+  const iconsAlwaysShown = locked || !visible;
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={locked ? undefined : onClick}
+      onKeyDown={(e) => {
+        if (!locked && (e.key === 'Enter' || e.key === ' ')) onClick(e as unknown as ReactMouseEvent);
+      }}
+      className={cn(
+        'group/row flex h-10 w-full shrink-0 items-center gap-2 rounded-lg py-1 pr-4 pl-1 text-left transition-colors',
+        locked ? 'cursor-not-allowed' : 'cursor-pointer',
+        selected ? 'bg-button-primary' : !locked && 'hover:bg-[#26262C]',
+      )}
     >
-      <LayerThumb element={element} />
-      <span className="min-w-0 flex-1 truncate text-[13px] text-white">{t(layerName(element))}</span>
-    </button>
+      <div className={cn('flex min-w-0 flex-1 items-center gap-2', !visible && 'opacity-45')}>
+        <LayerThumb element={element} />
+        <span className="min-w-0 flex-1 truncate text-[13px] tracking-[-0.01em] text-white">{t(layerName(element))}</span>
+      </div>
+
+      <div
+        className={cn(
+          'flex shrink-0 items-center justify-end gap-3 transition-opacity',
+          iconsAlwaysShown ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100',
+        )}
+      >
+        <button
+          type="button"
+          aria-label={locked ? t('Unlock layer') : t('Lock layer')}
+          onClick={(e) => {
+            e.stopPropagation();
+            updateElement(layoutId, element.id, { locked: !locked });
+          }}
+          className="flex size-4 shrink-0 items-center justify-center text-white/85 transition-colors hover:text-white"
+        >
+          {locked ? <Lock className="size-4" /> : <img src="/icons/layer list/Unlock .svg" alt="" className="size-4" />}
+        </button>
+        <button
+          type="button"
+          aria-label={visible ? t('Hide layer') : t('Show layer')}
+          onClick={(e) => {
+            e.stopPropagation();
+            updateElement(layoutId, element.id, { visible: !visible });
+          }}
+          className="flex size-4 shrink-0 items-center justify-center text-white/85 transition-colors hover:text-white"
+        >
+          {visible ? <img src="/icons/layer list/see.svg" alt="" className="size-4" /> : <EyeOff className="size-4" />}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -55,9 +131,9 @@ function isRealLayer(element: LayoutElement): boolean {
 function BackgroundRow({ color }: { color: string }) {
   const t = useT();
   return (
-    <div className="flex h-10 w-full shrink-0 items-center gap-2 rounded-lg p-1 text-left">
-      <div className="size-8 shrink-0 rounded-md border border-white/10" style={{ background: color }} />
-      <span className="min-w-0 flex-1 truncate text-[13px] text-white">{t('Background')}</span>
+    <div className="flex h-10 w-full shrink-0 items-center gap-2 rounded-lg py-1 pr-4 pl-1 text-left">
+      <div className="size-8 shrink-0 rounded-lg border border-white/10" style={{ background: color }} />
+      <span className="min-w-0 flex-1 truncate text-[13px] tracking-[-0.01em] text-white">{t('Background')}</span>
     </div>
   );
 }
@@ -75,7 +151,7 @@ function SceneLayerRows({
     <>
       <BackgroundRow color={layout.backgroundColor || '#FFFFFF'} />
       {layout.elements.filter(isRealLayer).map((el) => (
-        <LayerRow key={el.id} element={el} selected={isSelected(el.id)} onClick={(e) => onSelectElement(el.id, e)} />
+        <LayerRow key={el.id} element={el} layoutId={layout.id} selected={isSelected(el.id)} onClick={(e) => onSelectElement(el.id, e)} />
       ))}
     </>
   );

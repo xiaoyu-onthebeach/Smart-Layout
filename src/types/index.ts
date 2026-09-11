@@ -25,7 +25,7 @@ export type SizePreset = {
 
 export type RuleSet = { id: string; name: string; rules: Rule[] };
 
-export type Platform = { id: string; name: string; presetIds: string[] };
+export type Platform = { id: string; name: string; presetIds: string[]; maxFileSizeMb: number };
 
 export type Product = {
   id: string;
@@ -57,6 +57,14 @@ export type LayoutElement = {
    * gap with an expand affordance until the user commits it, promoting it to `frame`.
    */
   pendingExpand?: { x: number; y: number; w: number; h: number };
+  /**
+   * Image only: true once this element's frame has, at some point, fully covered the scene — set
+   * automatically by `updateElement` whenever a frame update reaches full coverage, and never
+   * cleared afterward. Gates the automatic frame-gap grid/expand affordance, so a freshly placed
+   * image (which starts smaller than the frame by default) doesn't show it before the image has
+   * actually been full-bleed at least once.
+   */
+  hasCoveredFrame?: boolean;
   style: {
     fontSize?: number;
     color?: string;

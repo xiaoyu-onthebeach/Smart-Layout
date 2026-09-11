@@ -1,7 +1,7 @@
 import { Layers } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
-import { ColorRow, PanelCard, PanelFooter, PanelHeader, PanelSection, type EditorTarget } from './PanelKit';
+import { ColorRow, PanelCard, PanelHeader, PanelSection, type EditorTarget } from './PanelKit';
 
 function fillColorOf(target: EditorTarget): string | undefined {
   if (target.element.kind === 'text') return target.element.style.color;
@@ -16,7 +16,6 @@ export function CombinedEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const updateElement = useAppStore((s) => s.updateElement);
   const colorTargets = targets.filter((target) => target.element.kind !== 'image');
   const primaryColorTarget = colorTargets[0];
-  const allVisible = targets.every((target) => target.element.visible);
 
   function setColor(color: string) {
     for (const target of colorTargets) {
@@ -41,14 +40,6 @@ export function CombinedEditorPanel({ targets }: { targets: EditorTarget[] }) {
           <ColorRow color={fillColorOf(primaryColorTarget) ?? '#ffffff'} onChange={setColor} />
         </PanelSection>
       )}
-
-      <PanelFooter
-        visible={allVisible}
-        onToggleVisible={() => {
-          const next = !allVisible;
-          for (const target of targets) updateElement(target.layoutId, target.element.id, { visible: next });
-        }}
-      />
     </PanelCard>
   );
 }

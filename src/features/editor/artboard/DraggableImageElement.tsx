@@ -1,10 +1,15 @@
-import { useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
 import { useElementDrag, MIN_SIZE, type ResizeHandle } from './useElementDrag';
 import { SelectionBoundingBox } from './SelectionBoundingBox';
 import { ImageBox } from './ImageBox';
+
+// How long the frame-gap grid/expand-button stay hidden after a move or resize finishes, before
+// settling into view — long enough that letting go mid-adjustment (to check the result, or pause
+// mid-thought) doesn't immediately pop the affordance in.
+const FRAME_GAP_REVEAL_DELAY_MS = 300;
 
 /** The banner's image element — draggable to move, with 8 handles to resize when selected. */
 export function DraggableImageElement({
@@ -18,6 +23,8 @@ export function DraggableImageElement({
   sceneSelected,
   expanding,
   onExpandClick,
+  onExpandToFrameClick,
+  isBackgroundImage,
   onSelect,
   onContextMenu,
 }: {
@@ -32,6 +39,8 @@ export function DraggableImageElement({
   sceneSelected?: boolean;
   expanding?: boolean;
   onExpandClick?: (e: ReactMouseEvent) => void;
+  onExpandToFrameClick?: (e: ReactMouseEvent) => void;
+  isBackgroundImage?: boolean;
   onSelect: (e: ReactMouseEvent) => void;
   onContextMenu?: (e: ReactMouseEvent) => void;
 }) {
@@ -47,6 +56,28 @@ export function DraggableImageElement({
   // (just 'n'/'e'/'s'/'w') only pins one axis, leaving the other at its default.
   const [expandHandle, setExpandHandle] = useState<ResizeHandle | null>(null);
 
+  // Suppresses the frame-gap grid/expand-button for the duration of a move or resize drag, plus a
+  // short settle delay after release — otherwise they'd flicker in and out mid-drag every time the
+  // image happens to cross the frame's edge.
+  const [isPositioning, setIsPositioning] = useState(false);
+  const revealTimeoutRef = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (revealTimeoutRef.current !== null) window.clearTimeout(revealTimeoutRef.current);
+  }, []);
+  function beginPositioning() {
+    if (revealTimeoutRef.current !== null) {
+      window.clearTimeout(revealTimeoutRef.current);
+      revealTimeoutRef.current = null;
+    }
+    setIsPositioning(true);
+  }
+  function endPositioning() {
+    revealTimeoutRef.current = window.setTimeout(() => {
+      setIsPositioning(false);
+      revealTimeoutRef.current = null;
+    }, FRAME_GAP_REVEAL_DELAY_MS);
+  }
+
   // A plain move shifts the pending-expand box along with the image, so the gap doesn't get left
   // behind at its old spot.
   function startMove(e: ReactMouseEvent) {
@@ -56,6 +87,7 @@ export function DraggableImageElement({
     const startY = e.clientY;
     const startFrame = frame;
     const startPending = pendingExpand;
+    beginPositioning();
     function onMove(ev: globalThis.MouseEvent) {
       const dx = (ev.clientX - startX) / scale;
       const dy = (ev.clientY - startY) / scale;
@@ -67,6 +99,7 @@ export function DraggableImageElement({
     function onUp() {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      endPositioning();
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -118,10 +151,14 @@ export function DraggableImageElement({
       layoutWidth={layoutWidth}
       layoutHeight={layoutHeight}
       cursor={activeTool === 'select' ? 'move' : undefined}
+      scale={scale}
       expanding={expanding}
       isDraggingExpand={isDraggingExpand}
       expandHandle={expandHandle}
       onExpandClick={onExpandClick}
+      onExpandToFrameClick={onExpandToFrameClick}
+      isBackgroundImage={isBackgroundImage}
+      suppressFrameGapAffordance={isPositioning}
       onContextMenu={onContextMenu}
       onMouseDown={(e) => {
         // Let a placement tool (text/shape) click straight through to the frame beneath.
@@ -145,8 +182,14 @@ export function DraggableImageElement({
               startExpandResize(e, handle);
               return;
             }
+            beginPositioning();
             startResize(e, handle, frame);
             if (pendingExpand) updateElement(layoutId, element.id, { pendingExpand: undefined });
+            function onUp() {
+              window.removeEventListener('mouseup', onUp);
+              endPositioning();
+            }
+            window.addEventListener('mouseup', onUp);
           }}
         />
       )}

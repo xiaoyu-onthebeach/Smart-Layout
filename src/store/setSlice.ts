@@ -8,6 +8,8 @@ export const createSetSlice: Slice<SetSlice> = (set, get) => ({
   pagePositions: {},
   pageGroups: {},
   pageGroupIdByPage: {},
+  canvasRootByPage: {},
+  canvasRootOrder: {},
   currentSet: null,
   loadSet: (bannerSet, position) =>
     set((state) => {
@@ -40,7 +42,7 @@ export const createSetSlice: Slice<SetSlice> = (set, get) => ({
     set({ currentSet: bannerSet });
     get().setActiveLayout(bannerSet.sourceLayoutId);
     get().goTo('editor');
-    if (get().canvasMode === 'viewAll') get().requestFocusPage(setId);
+    get().requestFocusPage(setId);
   },
   renamePage: (setId, name) =>
     set((state) => {
@@ -57,13 +59,13 @@ export const createSetSlice: Slice<SetSlice> = (set, get) => ({
   groupPagesWith: (sourcePageId, newPageIds, name, platformId) =>
     set((state) => {
       const existingGroupId = state.pageGroupIdByPage[sourcePageId];
+      const existingGroup = existingGroupId ? state.pageGroups[existingGroupId] : undefined;
 
-      if (existingGroupId) {
-        const group = state.pageGroups[existingGroupId];
+      if (existingGroup) {
         const nextByPage = { ...state.pageGroupIdByPage };
         for (const id of newPageIds) nextByPage[id] = existingGroupId;
         return {
-          pageGroups: { ...state.pageGroups, [existingGroupId]: { ...group, memberIds: [...group.memberIds, ...newPageIds] } },
+          pageGroups: { ...state.pageGroups, [existingGroupId]: { ...existingGroup, memberIds: [...existingGroup.memberIds, ...newPageIds] } },
           pageGroupIdByPage: nextByPage,
         };
       }
@@ -124,7 +126,7 @@ export const createSetSlice: Slice<SetSlice> = (set, get) => ({
       const groupId = state.pageGroupIdByPage[setId];
       let nextGroups = state.pageGroups;
       let nextGroupByPage = state.pageGroupIdByPage;
-      if (groupId) {
+      if (groupId && state.pageGroups[groupId]) {
         const group = state.pageGroups[groupId];
         const remainingMembers = group.memberIds.filter((id) => id !== setId);
         nextGroupByPage = { ...state.pageGroupIdByPage };
@@ -139,19 +141,47 @@ export const createSetSlice: Slice<SetSlice> = (set, get) => ({
         }
       }
 
+      const nextCanvasRootByPage = { ...state.canvasRootByPage };
+      delete nextCanvasRootByPage[setId];
+
+      let nextCanvasRootOrder = state.canvasRootOrder;
+      for (const [rootId, order] of Object.entries(state.canvasRootOrder)) {
+        if (!order.includes(setId)) continue;
+        if (nextCanvasRootOrder === state.canvasRootOrder) nextCanvasRootOrder = { ...state.canvasRootOrder };
+        nextCanvasRootOrder[rootId] = order.filter((id) => id !== setId);
+      }
+
+      const nextPageOrder = state.pageOrder.filter((id) => id !== setId);
+
       return {
         setsById: nextSetsById,
-        pageOrder: state.pageOrder.filter((id) => id !== setId),
+        pageOrder: nextPageOrder,
         pagePositions: nextPositions,
         layoutsById: nextLayoutsById,
         loadingPageIds: nextLoadingPageIds,
         pendingCascadeSetIds: nextPendingCascadeSetIds,
         pageGroups: nextGroups,
         pageGroupIdByPage: nextGroupByPage,
+        canvasRootByPage: nextCanvasRootByPage,
+        canvasRootOrder: nextCanvasRootOrder,
         currentSet: state.currentSet?.id === setId ? null : state.currentSet,
         activeLayoutId: state.activeLayoutId === bannerSet.sourceLayoutId ? null : state.activeLayoutId,
         viewAllActivePageId: state.viewAllActivePageId === setId ? null : state.viewAllActivePageId,
         focusPageId: state.focusPageId === setId ? null : state.focusPageId,
       };
     }),
+  attachStandalonePage: (pageId, rootId) =>
+    set((state) => {
+      const order = state.canvasRootOrder[rootId] ?? [];
+      // The root itself counts as the first "cluster root" in its own order — include it the
+      // first time anything gets attached to it, so the order array always lists every column,
+      // not just the ones attached after the fact.
+      const withRoot = order.includes(rootId) ? order : [rootId, ...order];
+      const nextOrder = withRoot.includes(pageId) ? withRoot : [...withRoot, pageId];
+      return {
+        canvasRootByPage: { ...state.canvasRootByPage, [pageId]: rootId },
+        canvasRootOrder: { ...state.canvasRootOrder, [rootId]: nextOrder },
+      };
+    }),
+  reorderCanvasRoot: (rootId, order) => set((state) => ({ canvasRootOrder: { ...state.canvasRootOrder, [rootId]: order } })),
 });
