@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent 
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { boxShadowCss } from '@/lib/shadow';
 import type { LayoutElement } from '@/types';
 import type { ResizeHandle } from './useElementDrag';
 
@@ -235,6 +236,7 @@ export function ImageBox({
             border: element.style.strokeWidth
               ? `${element.style.strokeWidth}px ${element.style.strokeStyle ?? 'solid'} ${element.style.strokeColor ?? '#000000'}`
               : undefined,
+            boxShadow: boxShadowCss(element.style.dropShadow, element.style.innerShadow),
             boxSizing: 'border-box',
           }}
         />

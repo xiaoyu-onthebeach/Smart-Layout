@@ -1,11 +1,11 @@
 import type { StateCreator } from 'zustand';
-import type { BannerSet, Layout, LayoutElement, Product } from '@/types';
+import type { BannerSet, Layout, LayoutElement, Product, ShapeKind } from '@/types';
 
 /** Top-level app step. Overlays (size-select, add-sizes, bulk-products, export) layer on top of a step. */
 export type AppStep = 'playgrounds' | 'start' | 'editor' | 'allLayouts';
 
 /** Bottom-toolbar tool. 'text'/'shape' arm a click/drag placement gesture rather than adding instantly. */
-export type Tool = 'select' | 'move' | 'brush' | 'eraser' | 'text' | 'shape';
+export type Tool = 'select' | 'move' | 'text' | 'shape';
 
 /** 'full' cascades layers, content, and style; 'styleOnly' re-styles existing matching layers only. */
 export type CascadeMode = 'full' | 'styleOnly';
@@ -21,8 +21,9 @@ export type UiSlice = {
   sizeSelectOpen: boolean;
   addSizesOpen: boolean;
   bulkProductsOpen: boolean;
-  exportOpen: boolean;
   generating: boolean;
+  /** True while a triggered export is being rasterized/downloaded — shows the header's spinner. */
+  downloading: boolean;
   /** Every currently-selected element, each qualified by its own layout — may span multiple scenes. */
   selectedElements: SelectedElementRef[];
   /**
@@ -38,6 +39,8 @@ export type UiSlice = {
   /** The text element currently in contentEditable edit mode (typing/caret), if any. */
   editingTextElementId: string | null;
   activeTool: Tool;
+  /** Which shape kind the armed 'shape' tool draws — set via the bottom toolbar's shape picker. */
+  shapeToolKind: ShapeKind;
   /** Which page (BannerSet id) is "live"/editable within the view-all canvas; null = none entered. */
   viewAllActivePageId: string | null;
   /** Which group container is selected in the view-all canvas (click its background, not a page); null = none. */
@@ -77,9 +80,8 @@ export type UiSlice = {
   closeAddSizes: () => void;
   openBulkProducts: () => void;
   closeBulkProducts: () => void;
-  openExport: () => void;
-  closeExport: () => void;
   setGenerating: (value: boolean) => void;
+  setDownloading: (value: boolean) => void;
   /** Selects `ref` — replaces the selection, unless `additive` (shift-click), which toggles it in/out of the current set. Pass `null` to clear. */
   selectElement: (ref: SelectedElementRef | null, additive?: boolean) => void;
   setActiveLayout: (id: string | null) => void;
@@ -90,6 +92,7 @@ export type UiSlice = {
   /** Enters (id) or exits (null) contentEditable edit mode for a text element. */
   setEditingTextElement: (id: string | null) => void;
   setActiveTool: (tool: Tool) => void;
+  setShapeToolKind: (kind: ShapeKind) => void;
   setViewAllActivePage: (setId: string | null) => void;
   selectGroup: (groupId: string | null) => void;
   /** Marks a page as loading; auto-clears itself after `durationMs` (default the creation-loading duration). */

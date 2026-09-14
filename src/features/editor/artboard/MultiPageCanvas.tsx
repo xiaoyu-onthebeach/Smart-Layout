@@ -13,7 +13,6 @@ import { CanvasZoomBar } from './CanvasZoomBar';
 import { PageTitleBar } from './PageTitleBar';
 import { QuickSizeMenu, type QuickSizeResult } from './QuickSizeMenu';
 import { SceneContextMenu } from './SceneContextMenu';
-import { PreviewDialog } from './PreviewDialog';
 import {
   canvasRootOf,
   PAGE_GAP,
@@ -208,11 +207,11 @@ function AddSizeIconButton({
         />
       </button>
       {hovered && (
-        <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 flex -translate-x-1/2 flex-col items-center">
-          <div className="w-[184px] rounded-md px-2 py-1 text-center text-sm text-white" style={{ background: 'rgba(38,38,44,0.88)' }}>
+        <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 flex w-max min-w-[50px] max-w-[308px] -translate-x-1/2 flex-col items-center">
+          <div className="rounded-md px-2 py-1 text-center text-sm text-white tracking-[-0.01em] leading-[140%]" style={{ background: '#50505D' }}>
             {t(tooltip ?? 'Add more variations of this banner in different sizes')}
           </div>
-          <div className="h-2 w-4" style={{ background: 'rgba(38,38,44,0.88)', clipPath: 'polygon(50% 100%, 0 0, 100% 0)' }} />
+          <div className="h-2 w-4" style={{ background: '#50505D', clipPath: 'polygon(50% 100%, 0 0, 100% 0)' }} />
         </div>
       )}
     </div>
@@ -396,6 +395,8 @@ function PageCard({
   showBottomAdd,
   onAddAdjacent,
   onRename,
+  renaming,
+  onRenamingChange,
   onSceneContextMenu,
 }: {
   entry: PageEntry;
@@ -430,6 +431,9 @@ function PageCard({
   showBottomAdd: boolean;
   onAddAdjacent: (edge: 'right' | 'bottom', results: QuickSizeResult[]) => void;
   onRename: (name: string) => void;
+  /** Controlled rename-mode state, lifted up so the scene's own right-click menu can also enter it. */
+  renaming: boolean;
+  onRenamingChange: (renaming: boolean) => void;
   /** Right-click anywhere on the scene that isn't already its own image layer's context menu. */
   onSceneContextMenu: (e: ReactMouseEvent) => void;
 }) {
@@ -438,7 +442,7 @@ function PageCard({
   return (
     <div
       className={cn('group/card absolute', reflowing ? 'transition-[opacity,left,top] duration-150' : 'transition-opacity')}
-      style={{ left, top, width, height, opacity: dimmed ? 0.6 : 1, zIndex: dragging ? 10 : undefined }}
+      style={{ left, top, width, height, opacity: layout.hidden ? 0.25 : dimmed ? 0.6 : 1, zIndex: dragging ? 10 : undefined }}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={onActivate}
@@ -455,6 +459,8 @@ function PageCard({
         onDragHandleMouseDown={onStartDrag}
         isPrimary={isPrimary}
         onRename={onRename}
+        editing={renaming}
+        onEditingChange={onRenamingChange}
         visible={scale >= 0.4}
       />
       {showCascadeToolbar && scale >= 0.4 && (isHovered || active) && (
@@ -505,6 +511,7 @@ export function MultiPageCanvas() {
   const groupPagesWith = useAppStore((s) => s.groupPagesWith);
   const reorderGroupSiblings = useAppStore((s) => s.reorderGroupSiblings);
   const renamePage = useAppStore((s) => s.renamePage);
+  const updateLayoutStyle = useAppStore((s) => s.updateLayoutStyle);
   const movePagesBy = useAppStore((s) => s.movePagesBy);
   const startPageLoading = useAppStore((s) => s.startPageLoading);
   const viewAllActivePageId = useAppStore((s) => s.viewAllActivePageId);
@@ -557,7 +564,9 @@ export function MultiPageCanvas() {
   // of its siblings, even when the whole pack visually rides along with the drag.
   const [clusterReorderDrag, setClusterReorderDrag] = useState<{ rootId: string; entryId: string; x: number; y: number } | null>(null);
   const [sceneContextMenu, setSceneContextMenu] = useState<{ x: number; y: number; entryId: string } | null>(null);
-  const [previewEntryId, setPreviewEntryId] = useState<string | null>(null);
+  // Lifted out of PageTitleBar so the scene's own right-click menu can also enter rename mode, not
+  // just a double-click on the name.
+  const [renamingEntryId, setRenamingEntryId] = useState<string | null>(null);
   const didPanRef = useRef(false);
   const fitKeyRef = useRef<string | null>(null);
   const cameraAnimRef = useRef<number | null>(null);
@@ -1457,6 +1466,8 @@ export function MultiPageCanvas() {
                       : startPageDrag(e, entry)
                 }
                 onRename={(name) => renamePage(entry.id, name)}
+                renaming={renamingEntryId === entry.id}
+                onRenamingChange={(v) => setRenamingEntryId(v ? entry.id : null)}
                 showRightAdd={!isMultiMemberGroupPage(entry.id) && !hasBlockerToRight(entry, entries)}
                 showBottomAdd={!isMultiMemberGroupPage(entry.id) && !hasBlockerBelow(entry, entries)}
                 onAddAdjacent={(edge, results) => handleAddAdjacent(entry, edge, results)}
@@ -1487,19 +1498,15 @@ export function MultiPageCanvas() {
             <SceneContextMenu
               x={sceneContextMenu.x}
               y={sceneContextMenu.y}
+              hidden={Boolean(entry.layout.hidden)}
               onClose={() => setSceneContextMenu(null)}
+              onEdit={() => setViewAllActivePage(entry.id)}
+              onToggleHidden={() => updateLayoutStyle(entry.layout.id, { hidden: !entry.layout.hidden })}
+              onRename={() => setRenamingEntryId(entry.id)}
               onDuplicate={() => handleDuplicateScene(entry)}
               onDelete={() => handleDeleteScene(entry)}
-              onPreview={() => setPreviewEntryId(entry.id)}
             />
           );
-        })()}
-
-      {previewEntryId &&
-        (() => {
-          const entry = entries.find((e) => e.id === previewEntryId);
-          if (!entry) return null;
-          return <PreviewDialog layout={entry.layout} open onOpenChange={(open) => !open && setPreviewEntryId(null)} />;
         })()}
     </>
   );

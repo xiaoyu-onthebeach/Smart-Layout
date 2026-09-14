@@ -1,15 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { useT } from '@/lib/i18n';
 
-function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
+function MenuItem({ label, icon, onClick }: { label: string; icon?: string; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className="flex h-8 w-full shrink-0 items-center gap-2 rounded-lg px-3 text-left text-sm text-white transition-colors hover:bg-white/10"
     >
+      {icon && <img src={icon} alt="" className="size-5 shrink-0" />}
       <span className="min-w-0 flex-1 truncate">{label}</span>
     </button>
+  );
+}
+
+function Divider() {
+  return (
+    <div className="flex h-2 w-full shrink-0 items-center">
+      <div className="h-px w-full" style={{ background: '#40404A' }} />
+    </div>
   );
 }
 
@@ -18,17 +27,24 @@ function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
 export function SceneContextMenu({
   x,
   y,
+  hidden,
   onClose,
+  onEdit,
+  onToggleHidden,
+  onRename,
   onDuplicate,
   onDelete,
-  onPreview,
 }: {
   x: number;
   y: number;
+  /** Whether this scene is currently hidden on the canvas — flips the "Hide"/"Show" label. */
+  hidden: boolean;
   onClose: () => void;
+  onEdit: () => void;
+  onToggleHidden: () => void;
+  onRename: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
-  onPreview: () => void;
 }) {
   const t = useT();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -68,7 +84,7 @@ export function SceneContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 flex w-56 flex-col gap-0 rounded-lg border p-1"
+      className="fixed z-50 flex w-max flex-col gap-0 rounded-lg border p-1"
       style={{
         left: pos.left,
         top: pos.top,
@@ -79,9 +95,13 @@ export function SceneContextMenu({
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
+      <MenuItem label={t('Edit banner')} onClick={act(onEdit)} />
+      <MenuItem label={hidden ? t('Show banner') : t('Hide banner')} onClick={act(onToggleHidden)} />
+      <Divider />
+      <MenuItem label={t('Rename banner')} onClick={act(onRename)} />
       <MenuItem label={t('Duplicate banner')} onClick={act(onDuplicate)} />
-      <MenuItem label={t('Delete')} onClick={act(onDelete)} />
-      <MenuItem label={t('Preview')} onClick={act(onPreview)} />
+      <Divider />
+      <MenuItem label={t('Remove banner')} icon="/icons/dropdown/delete.svg" onClick={act(onDelete)} />
     </div>
   );
 }

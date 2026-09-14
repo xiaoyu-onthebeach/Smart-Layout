@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronsDownUp, ChevronsUpDown, Plus } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { ChevronDown, Plus } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { RatioIcon } from '@/components/RatioIcon';
 import { PlatformMark } from '@/features/size-select/PlatformMark';
 import { cn } from '@/lib/utils';
@@ -9,88 +10,13 @@ import { nextId, createEmptyLayout } from '@/lib/create-layout';
 import { nearestPreset } from '@/lib/mock';
 import { NO_RULES_ID } from '@/lib/mock/rulesets';
 import { canvasRootOf, PAGE_GAP } from '@/lib/canvas-layout';
-import { classifyRatioBucket, type RatioBucket } from '@/lib/size-class';
+import { nextAvailableName } from '@/lib/main-size-naming';
 import type { BannerSet } from '@/types';
-import type { AppState } from '@/store/types';
 
-/** Disambiguates a new scene's name against every existing one — "Main Square", then "Main Square
- * 2", "Main Square 3", etc. — since standalone main sizes never share a real PageGroup (and so
- * never inherit a group's own naming) even when bundled onto one canvas view. */
-function nextAvailableName(state: AppState, baseLabel: string): string {
-  const existingNames = new Set(Object.values(state.setsById).map((s) => s.name));
-  if (!existingNames.has(baseLabel)) return baseLabel;
-  let n = 2;
-  while (existingNames.has(`${baseLabel} ${n}`)) n++;
-  return `${baseLabel} ${n}`;
-}
-
-/** The "Add a main banner size" dropdown's three options — each adds just that one new primary,
- * to the right of whatever's already on the current canvas view. */
-const MAIN_SIZE_OPTIONS: { width: number; height: number; label: string }[] = [
-  { width: 600, height: 600, label: 'Main Square' },
-  { width: 1000, height: 600, label: 'Main Horizontal' },
-  { width: 600, height: 1000, label: 'Main Vertical' },
-];
-
-const BUCKET_ORDER: RatioBucket[] = ['square', 'horizontal', 'vertical'];
-const BUCKET_LABEL: Record<RatioBucket, string> = { square: 'Square sizes', horizontal: 'Horizontal sizes', vertical: 'Vertical sizes' };
-
-/** The left panel's "+" — opens a small popover offering the three starting-primary ratios,
- * matching the same card shell (bg #19191D, inset box-shadow) used elsewhere in this panel. */
-function AddMainSizeMenu({ onSelect }: { onSelect: (option: (typeof MAIN_SIZE_OPTIONS)[number]) => void }) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDocMouseDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', onDocMouseDown);
-    return () => document.removeEventListener('mousedown', onDocMouseDown);
-  }, [open]);
-
-  return (
-    <div ref={ref}>
-      <button
-        type="button"
-        aria-label={t('Add banner')}
-        onClick={() => setOpen((v) => !v)}
-        className="flex size-6 shrink-0 items-center justify-center rounded-full bg-button-primary text-white shadow-[0px_1px_2px_rgba(0,0,0,0.03),0px_1px_6px_-1px_rgba(0,0,0,0.02),0px_2px_4px_rgba(0,0,0,0.02)] transition-opacity hover:opacity-80"
-      >
-        <Plus className="size-3.5" />
-      </button>
-      {open && (
-        // Anchored to the whole "All banners" card (the nearest `relative` ancestor — see
-        // LeftPanel), not this button — it should sit just outside the card's own right edge, not
-        // float below the button and over the list underneath it.
-        <div
-          className="absolute top-0 left-full z-30 ml-2 flex w-[167px] flex-col items-start gap-1 rounded-xl p-2"
-          style={{ background: '#19191D', boxShadow: 'inset -1px 1px 3px rgba(255,255,255,0.12)' }}
-        >
-          <span className="w-full truncate px-1 text-[11px] font-semibold tracking-[-0.01em] text-white/45 uppercase">{t('Add a main banner size')}</span>
-          {MAIN_SIZE_OPTIONS.map((option) => (
-            <button
-              key={option.label}
-              type="button"
-              onClick={() => {
-                onSelect(option);
-                setOpen(false);
-              }}
-              className="flex h-12 w-full shrink-0 items-center gap-3 rounded-lg py-1 text-left transition-colors hover:bg-white/5"
-            >
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg" style={{ background: '#2F2F37' }}>
-                <RatioIcon width={option.width} height={option.height} />
-              </div>
-              <span className="truncate text-[13px] text-white">{t(option.label)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+/** Every new main size added via the left panel's "+" starts at this size — a plain empty frame,
+ * disambiguated against existing names (see nextAvailableName) rather than offering a choice of
+ * starting ratio. */
+const DEFAULT_MAIN_SIZE = { width: 600, height: 600, label: 'Main Square' };
 
 function BannerRow({
   width,
@@ -129,17 +55,16 @@ function BannerRow({
 }
 
 /**
- * A "Square/Horizontal/Vertical sizes" group row — the ratio icon and size caption reflect
- * whichever page in the bucket happens to be first (its own representative), which the caller
- * excludes from `children` since a plain child row for that same size would just repeat this
- * header. Clicking the row itself always opens that representative size, same as any other row;
- * the chevron is a separate hit target that only toggles expand/collapse, once a second size lands
- * in the same bucket and there's actually something to expand into.
+ * One primary's own row, plus every size that's actually been added *from* it (its real
+ * `PageGroup` siblings — never a ratio/shape grouping, and never another primary's own sizes).
+ * The ratio icon, size caption, and displayed name reflect the primary itself; clicking the row
+ * always opens it, same as any other row; the chevron is a separate hit target that only toggles
+ * expand/collapse, once it actually has added sizes to expand into.
  */
 function CategoryRow({
-  bucket,
   representativeWidth,
   representativeHeight,
+  representativeName,
   hasMultiple,
   expanded,
   selected,
@@ -147,9 +72,10 @@ function CategoryRow({
   onSelectSingle,
   children,
 }: {
-  bucket: RatioBucket;
   representativeWidth: number;
   representativeHeight: number;
+  /** The primary scene's own name — the row always reads as "which scene", matching what it links to. */
+  representativeName: string;
   hasMultiple: boolean;
   expanded: boolean;
   selected: boolean;
@@ -157,7 +83,6 @@ function CategoryRow({
   onSelectSingle: () => void;
   children: ReactNode;
 }) {
-  const t = useT();
   return (
     <div className="flex w-full shrink-0 flex-col gap-1">
       <button
@@ -169,6 +94,7 @@ function CategoryRow({
           <span
             role="button"
             tabIndex={0}
+            aria-label={representativeName}
             onClick={(e) => {
               e.stopPropagation();
               onToggle();
@@ -179,7 +105,7 @@ function CategoryRow({
           </span>
         )}
         <RatioIcon width={representativeWidth} height={representativeHeight} />
-        <span className="min-w-0 flex-1 truncate text-sm text-white">{t(BUCKET_LABEL[bucket])}</span>
+        <span className="min-w-0 flex-1 truncate text-sm text-white">{representativeName}</span>
         <span className="shrink-0 text-xs text-white/45">
           {representativeWidth}x{representativeHeight}
         </span>
@@ -207,7 +133,7 @@ export function BannersTab() {
   const loadSet = useAppStore((s) => s.loadSet);
   const attachStandalonePage = useAppStore((s) => s.attachStandalonePage);
 
-  const [collapsedBuckets, setCollapsedBuckets] = useState<Set<RatioBucket>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   function handleRowClick(setId: string) {
     selectPage(setId);
@@ -215,11 +141,11 @@ export function BannersTab() {
     setActiveCanvas(canvasRootOf(useAppStore.getState(), setId));
   }
 
-  function toggleBucket(bucket: RatioBucket) {
-    setCollapsedBuckets((prev) => {
+  function toggleGroup(primaryId: string) {
+    setCollapsedGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(bucket)) next.delete(bucket);
-      else next.add(bucket);
+      if (next.has(primaryId)) next.delete(primaryId);
+      else next.add(primaryId);
       return next;
     });
   }
@@ -235,23 +161,23 @@ export function BannersTab() {
   // going forward: the moment that specific page later grows its own "all sizes" pack, its own id
   // becomes a real PageGroup id, which is a wholly separate concern from *canvas-root* membership
   // (see canvasRootOf) — without this lock, the bundle would fall apart the instant that happens.
-  function handleAddMainSize(option: (typeof MAIN_SIZE_OPTIONS)[number]) {
+  function handleAddMainSize() {
     const state = useAppStore.getState();
     const setId = nextId('set');
     const productId = nextId('product');
-    // A second "Main Square" (etc.) never joins the first as a real PageGroup — see the anchor
-    // logic below, which only ever shares a *canvas view*, not pack membership — so its name needs
-    // its own disambiguation instead of the collision a real group's siblings would otherwise avoid
-    // by not needing distinct names at all.
-    const label = nextAvailableName(state, t(option.label));
+    // A second "Main Square" never joins the first as a real PageGroup — see the anchor logic
+    // below, which only ever shares a *canvas view*, not pack membership — so its name needs its
+    // own disambiguation instead of the collision a real group's siblings would otherwise avoid by
+    // not needing distinct names at all.
+    const label = nextAvailableName(state, t(DEFAULT_MAIN_SIZE.label));
     const layout = createEmptyLayout({
       setId,
       productId,
-      width: option.width,
-      height: option.height,
+      width: DEFAULT_MAIN_SIZE.width,
+      height: DEFAULT_MAIN_SIZE.height,
       label,
       presetId: undefined,
-      ruleSetId: nearestPreset(option.width, option.height)?.preset.ruleSetId ?? NO_RULES_ID,
+      ruleSetId: nearestPreset(DEFAULT_MAIN_SIZE.width, DEFAULT_MAIN_SIZE.height)?.preset.ruleSetId ?? NO_RULES_ID,
       language,
     });
     const bannerSet: BannerSet = { id: setId, name: label, sourceLayoutId: layout.id, layoutIds: [layout.id], productIds: [] };
@@ -319,58 +245,84 @@ export function BannersTab() {
     );
   }
 
-  const buckets = new Map<RatioBucket, string[]>();
+  // Every top-level "cluster root" — a bare standalone page, or a real PageGroup's own primary —
+  // gets exactly one row, with that group's actual added sizes (its real siblings) as children.
+  // Deliberately NOT grouped by shape/ratio: two unrelated square primaries stay two separate rows,
+  // and a primary's own added sizes never get split off into a same-ratio bucket elsewhere.
+  const groups: { primaryId: string; siblingIds: string[] }[] = [];
+  const seen = new Set<string>();
   for (const id of pageOrder) {
-    const bannerSet = setsById[id];
-    const layout = bannerSet ? layoutsById[bannerSet.sourceLayoutId] : null;
-    if (!bannerSet || !layout) continue;
-    const bucket = classifyRatioBucket(layout.size.width, layout.size.height);
-    const list = buckets.get(bucket) ?? [];
-    list.push(id);
-    buckets.set(bucket, list);
+    if (seen.has(id)) continue;
+    const group = pageGroups[pageGroupIdByPage[id]];
+    const isMultiMemberGroup = Boolean(group && group.memberIds.length > 1);
+    if (isMultiMemberGroup && group!.memberIds[0] === id) {
+      groups.push({ primaryId: id, siblingIds: group!.memberIds.slice(1) });
+      for (const memberId of group!.memberIds) seen.add(memberId);
+    } else if (!isMultiMemberGroup) {
+      groups.push({ primaryId: id, siblingIds: [] });
+      seen.add(id);
+    }
+    // Otherwise `id` is a sibling whose own primary hasn't been visited yet — shouldn't happen in
+    // practice (a primary is always created before its own siblings), so just skip; it'll be
+    // captured once its primary's own turn comes up.
   }
 
-  // Only buckets with more than one size are actually collapsible — a lone primary has no chevron
-  // at all (see CategoryRow), so it shouldn't count against "everything is collapsed".
-  const collapsibleBuckets = BUCKET_ORDER.filter((b) => (buckets.get(b)?.length ?? 0) > 1);
-  const allCollapsed = collapsibleBuckets.length > 0 && collapsibleBuckets.every((b) => collapsedBuckets.has(b));
+  // Only groups that actually have added sizes are collapsible — a lone primary has no chevron at
+  // all (see CategoryRow), so it shouldn't count against "everything is collapsed".
+  const collapsibleGroupIds = groups.filter((g) => g.siblingIds.length > 0).map((g) => g.primaryId);
+  const allCollapsed = collapsibleGroupIds.length > 0 && collapsibleGroupIds.every((id) => collapsedGroups.has(id));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="flex h-6 w-full shrink-0 items-center justify-between gap-[44px] px-1">
-        <span className="truncate text-[11px] font-semibold tracking-[-0.01em] text-white/45 uppercase">{t('All banners')}</span>
+        <span className="truncate text-[11px] font-semibold tracking-[-0.01em] text-white/45 uppercase">{t('Banners')}</span>
         <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             aria-label={allCollapsed ? t('Expand all') : t('Collapse all')}
-            onClick={() => setCollapsedBuckets(allCollapsed ? new Set() : new Set(collapsibleBuckets))}
+            onClick={() => setCollapsedGroups(allCollapsed ? new Set() : new Set(collapsibleGroupIds))}
             className="flex size-6 shrink-0 items-center justify-center text-white/45 transition-colors hover:text-white"
           >
-            {allCollapsed ? <ChevronsUpDown className="size-3" /> : <ChevronsDownUp className="size-3" />}
+            <img
+              src="/icons/collapse-top.svg"
+              alt=""
+              className="size-3"
+              style={{ transform: `rotate(${allCollapsed ? 270 : 90}deg)` }}
+            />
           </button>
-          <AddMainSizeMenu onSelect={handleAddMainSize} />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={t('Add banner')}
+                onClick={handleAddMainSize}
+                className="flex size-6 shrink-0 items-center justify-center rounded-full bg-button-primary text-white shadow-[0px_1px_2px_rgba(0,0,0,0.03),0px_1px_6px_-1px_rgba(0,0,0,0.02),0px_2px_4px_rgba(0,0,0,0.02)] transition-opacity hover:opacity-80"
+              >
+                <Plus className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">{t('Add new main banner')}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
       <div className="flex w-full shrink-0 flex-col gap-1 pt-1">
-        {BUCKET_ORDER.map((bucket) => {
-          const ids = buckets.get(bucket);
-          if (!ids || ids.length === 0) return null;
-          const first = setsById[ids[0]];
-          const firstLayout = first ? layoutsById[first.sourceLayoutId] : null;
-          if (!firstLayout) return null;
+        {groups.map(({ primaryId, siblingIds }) => {
+          const primarySet = setsById[primaryId];
+          const primaryLayout = primarySet ? layoutsById[primarySet.sourceLayoutId] : null;
+          if (!primarySet || !primaryLayout) return null;
           return (
             <CategoryRow
-              key={bucket}
-              bucket={bucket}
-              representativeWidth={firstLayout.size.width}
-              representativeHeight={firstLayout.size.height}
-              hasMultiple={ids.length > 1}
-              expanded={!collapsedBuckets.has(bucket)}
-              selected={selectedSceneIds.includes(ids[0])}
-              onToggle={() => toggleBucket(bucket)}
-              onSelectSingle={() => handleRowClick(ids[0])}
+              key={primaryId}
+              representativeWidth={primaryLayout.size.width}
+              representativeHeight={primaryLayout.size.height}
+              representativeName={primarySet.name}
+              hasMultiple={siblingIds.length > 0}
+              expanded={!collapsedGroups.has(primaryId)}
+              selected={selectedSceneIds.includes(primaryId)}
+              onToggle={() => toggleGroup(primaryId)}
+              onSelectSingle={() => handleRowClick(primaryId)}
             >
-              {ids.slice(1).map((id) => renderRow(id))}
+              {siblingIds.map((id) => renderRow(id))}
             </CategoryRow>
           );
         })}

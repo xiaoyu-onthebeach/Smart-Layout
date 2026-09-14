@@ -52,7 +52,7 @@
   --chrome-border-subtle: #26262c;
   --chrome-fg: #ffffff;
   --chrome-fg-muted: rgba(255, 255, 255, 0.65);
-  --chrome-active: #2d88ff;
+  --chrome-active: #4570ff;
 }
 
 .dark {
@@ -100,7 +100,7 @@
   --chrome-border-subtle: #26262c;
   --chrome-fg: #ffffff;
   --chrome-fg-muted: rgba(255, 255, 255, 0.65);
-  --chrome-active: #2d88ff;
+  --chrome-active: #4570ff;
 }
 
 @theme inline {
@@ -161,6 +161,17 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  /* Every number input in this app (custom width/height fields, radius, etc.) uses its own
+     up/down control elsewhere in the UI, if any at all — the native spinner is just visual noise
+     that only appears on hover. */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
   }
 }
 

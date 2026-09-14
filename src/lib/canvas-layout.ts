@@ -87,6 +87,16 @@ export function canvasRootOf(state: Pick<AppState, 'pageGroupIdByPage' | 'pageGr
   return state.canvasRootByPage[pageId] ?? pageId;
 }
 
+/** Whether the scene a given layout belongs to is a "primary size banner" — a bare standalone page,
+ * or a real group's own primary (`memberIds[0]`) — as opposed to one of that group's own added
+ * sizes. Used to gate primary-only editor controls (e.g. Position mode) off of a sibling's panel. */
+export function isPrimaryBannerLayout(state: Pick<AppState, 'layoutsById' | 'pageGroupIdByPage' | 'pageGroups'>, layoutId: string): boolean {
+  const setId = state.layoutsById[layoutId]?.setId;
+  if (!setId) return false;
+  const group = state.pageGroups[state.pageGroupIdByPage[setId]];
+  return !group || group.memberIds[0] === setId;
+}
+
 /** Where a brand-new "Use as template" scene should land — to the left of every existing top-level
  * page, top-aligned with the topmost one, so it reads as a distinct, easy-to-spot addition rather
  * than just another size stacked into the normal flow. */

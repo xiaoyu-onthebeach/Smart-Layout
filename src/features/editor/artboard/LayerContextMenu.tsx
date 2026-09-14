@@ -88,7 +88,7 @@ export function LayerContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 flex w-56 flex-col gap-0 rounded-lg border p-1"
+      className="fixed z-50 flex w-max flex-col gap-0 rounded-lg border p-1"
       style={{
         left: pos.left,
         top: pos.top,
@@ -103,21 +103,40 @@ export function LayerContextMenu({
       <MenuItem label={t('Duplicate layer')} shortcut="⌘D" onClick={act(() => duplicateElement(layoutId, elementId))} />
       <MenuItem label={t('Lock layer')} onClick={act(() => updateElement(layoutId, elementId, { locked: !element.locked }))} />
       <Divider />
-      <MenuItem label={t('Bring to front')} shortcut="]" onClick={act(() => reorderElement(layoutId, elementId, 'front'))} />
-      <MenuItem label={t('Send to back')} shortcut="[" onClick={act(() => reorderElement(layoutId, elementId, 'back'))} />
+      <MenuItem
+        label={t('Bring to front')}
+        shortcut="]"
+        icon="/icons/dropdown/send-to-front.svg"
+        onClick={act(() => reorderElement(layoutId, elementId, 'front'))}
+      />
+      <MenuItem
+        label={t('Send to back')}
+        shortcut="["
+        icon="/icons/dropdown/send-to-bottom.svg"
+        onClick={act(() => reorderElement(layoutId, elementId, 'back'))}
+      />
       <Divider />
-      <MenuItem label={t('Flip horizontal')} onClick={act(() => updateElement(layoutId, elementId, { flipX: !element.flipX }))} />
-      <MenuItem label={t('Flip vertical')} onClick={act(() => updateElement(layoutId, elementId, { flipY: !element.flipY }))} />
+      <MenuItem
+        label={t('Flip horizontal')}
+        icon="/icons/dropdown/flip-horizontal.svg"
+        onClick={act(() => updateElement(layoutId, elementId, { flipX: !element.flipX }))}
+      />
+      <MenuItem
+        label={t('Flip vertical')}
+        icon="/icons/dropdown/flip-vertical.svg"
+        onClick={act(() => updateElement(layoutId, elementId, { flipY: !element.flipY }))}
+      />
       <Divider />
       <MenuItem
         label={t('Insert new image')}
+        icon="/icons/dropdown/add-image.svg"
         onClick={() => {
           onInsertNewImage();
           onClose();
         }}
       />
       <Divider />
-      <MenuItem label={t('Delete layer')} onClick={act(() => removeElement(layoutId, elementId))} />
+      <MenuItem label={t('Delete layer')} icon="/icons/dropdown/delete.svg" onClick={act(() => removeElement(layoutId, elementId))} />
     </div>
   );
 }

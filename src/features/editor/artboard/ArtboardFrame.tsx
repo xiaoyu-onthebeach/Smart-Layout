@@ -4,7 +4,7 @@ import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { nextId } from '@/lib/create-layout';
 import { useApplyImage } from '@/hooks/useApplyImage';
-import type { Layout, LayoutElement } from '@/types';
+import type { Layout, LayoutElement, ShapeKind } from '@/types';
 import { ElementRenderer } from './ElementRenderer';
 import { DraggableImageElement } from './DraggableImageElement';
 import { EditableTextElement } from './EditableTextElement';
@@ -21,6 +21,22 @@ const EXPAND_DURATION_MS = 5000;
 // something that needs to persist or react to anything.
 const SAMPLE_COMPONENT_URLS = ['/samples/bottom_banner.svg', '/samples/button.svg', '/samples/coupon.svg', '/samples/headline.svg', '/samples/logo.svg'];
 let nextSampleComponentIndex = 0;
+
+/** The frame a shape-tool drag should produce — plain bounding box for rect/ellipse, but a 1px-
+ * thick bar along whichever axis the drag moved further on for 'line' (this data model has no
+ * rotation, so an arbitrary-angle line isn't representable; snapping to the drag's dominant axis
+ * is the closest a frame-only shape can get to "draw a line by dragging"). */
+function shapeDragFrame(kind: ShapeKind, start: { x: number; y: number }, current: { x: number; y: number }) {
+  const dragW = Math.abs(current.x - start.x);
+  const dragH = Math.abs(current.y - start.y);
+  if (kind === 'line') {
+    if (dragW >= dragH) {
+      return { x: Math.min(start.x, current.x), y: (start.y + current.y) / 2 - 0.5, w: Math.max(dragW, 1), h: 1 };
+    }
+    return { x: (start.x + current.x) / 2 - 0.5, y: Math.min(start.y, current.y), w: 1, h: Math.max(dragH, 1) };
+  }
+  return { x: Math.min(start.x, current.x), y: Math.min(start.y, current.y), w: dragW, h: dragH };
+}
 
 /**
  * The banner frame — shared by the single-page editor and the view-all canvas.
@@ -70,6 +86,7 @@ export function ArtboardFrame({
   const setEditingTextElement = useAppStore((s) => s.setEditingTextElement);
   const activeTool = useAppStore((s) => s.activeTool);
   const setActiveTool = useAppStore((s) => s.setActiveTool);
+  const shapeToolKind = useAppStore((s) => s.shapeToolKind);
   const selectedElements = useAppStore((s) => s.selectedElements);
   const autoMatchedElements = useAppStore((s) => s.autoMatchedElements);
   const editingTextElementId = useAppStore((s) => s.editingTextElementId);
@@ -94,8 +111,9 @@ export function ArtboardFrame({
   const updateLayoutStyle = useAppStore((s) => s.updateLayoutStyle);
 
   const frameRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const addUploadedAsset = useAppStore((s) => s.addUploadedAsset);
   const [drawRect, setDrawRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [expandingElementId, setExpandingElementId] = useState<string | null>(null);
   const [focusDrawRect, setFocusDrawRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const isPickingFocus = pickingFocusForLayoutId === layoutId;
@@ -136,6 +154,13 @@ export function ArtboardFrame({
   function applyImage(url: string) {
     if (!imageElement) return;
     applyImageToElement(layoutId, imageElement.id, url, nativeWidth, nativeHeight);
+  }
+  // "upload" in the empty-state hint skips the visuals-library modal entirely — it's just a plain
+  // OS file picker, same object-URL flow the modal's own Upload tab already uses.
+  function handleUploadFile(file: File) {
+    const url = URL.createObjectURL(file);
+    addUploadedAsset(url);
+    applyImage(url);
   }
 
   // Lets an asset tile dragged from the left panel drop straight onto any frame — active or not,
@@ -410,12 +435,7 @@ export function ArtboardFrame({
 
       function onMove(ev: globalThis.MouseEvent) {
         current = nativePointFromEvent(ev);
-        setDrawRect({
-          x: Math.min(start.x, current.x),
-          y: Math.min(start.y, current.y),
-          w: Math.abs(current.x - start.x),
-          h: Math.abs(current.y - start.y),
-        });
+        setDrawRect(shapeDragFrame(shapeToolKind, start, current));
       }
       function onUp() {
         window.removeEventListener('mousemove', onMove);
@@ -423,13 +443,19 @@ export function ArtboardFrame({
         const dragW = Math.abs(current.x - start.x);
         const dragH = Math.abs(current.y - start.y);
         const small = dragW < 10 && dragH < 10;
-        const frame = small
-          ? { x: start.x - nativeWidth * 0.1, y: start.y - nativeHeight * 0.1, w: nativeWidth * 0.2, h: nativeHeight * 0.2 }
-          : { x: Math.min(start.x, current.x), y: Math.min(start.y, current.y), w: dragW, h: dragH };
+        // A plain click (no drag) drops a default-sized shape centered on the click point — 'line'
+        // gets its own thin, wide default instead of the square rect/ellipse use, since a line
+        // renders as a plain filled bar (see ElementRenderer) and a square one is indistinguishable
+        // from a small rectangle.
+        const smallFrame =
+          shapeToolKind === 'line'
+            ? { x: start.x - nativeWidth * 0.15, y: start.y - nativeHeight * 0.01, w: nativeWidth * 0.3, h: nativeHeight * 0.02 }
+            : { x: start.x - nativeWidth * 0.1, y: start.y - nativeHeight * 0.1, w: nativeWidth * 0.2, h: nativeHeight * 0.2 };
+        const frame = small ? smallFrame : shapeDragFrame(shapeToolKind, start, current);
         const element: LayoutElement = {
           id: nextId('el'),
           kind: 'shape',
-          shape: 'rect',
+          shape: shapeToolKind,
           slot: null,
           frame,
           // Defaults match the prototype's reference shape: a soft gray, generously rounded rect.
@@ -494,8 +520,19 @@ export function ArtboardFrame({
           onSceneContextMenu(e);
         }}
       >
-        {active && <ImagePickerDialog open={pickerOpen} onOpenChange={setPickerOpen} onSelect={applyImage} />}
         {active && <ImagePickerDialog open={insertImagePickerOpen} onOpenChange={setInsertImagePickerOpen} onSelect={insertNewImage} />}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onMouseDown={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (file) handleUploadFile(file);
+          }}
+        />
 
         {imageElement && hasImage && (
           // The marker (not a real layout element) lets handleFrameDoubleClick treat a double-click
@@ -544,6 +581,7 @@ export function ArtboardFrame({
           <div data-empty-hint className="absolute inset-0 flex flex-col items-center justify-center gap-6 px-8 text-center">
             <img src="/icons/Layer/layout.svg" alt="" className="size-[120px]" />
             <p className="max-w-[272px] text-xl leading-[1.4] font-medium text-chrome-fg-muted">
+              {t('Drag from the library or')}{' '}
               {active ? (
                 <button
                   type="button"
@@ -551,15 +589,14 @@ export function ArtboardFrame({
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setPickerOpen(true);
+                    fileInputRef.current?.click();
                   }}
                 >
-                  {t('Choose')}
+                  {t('Upload')}
                 </button>
               ) : (
-                <span className="text-button-primary">{t('Choose')}</span>
-              )}{' '}
-              {t('or drag your visual')}
+                <span className="text-button-primary">{t('Upload')}</span>
+              )}
             </p>
           </div>
         )}
@@ -667,14 +704,14 @@ export function ArtboardFrame({
               // The huge spread shadow dims everything outside this rect — the rect itself stays
               // un-dimmed, "cut out" of the overlay, since box-shadow never paints under its own box.
               <div
-                className="pointer-events-none absolute border-4"
+                className="pointer-events-none absolute border-3"
                 style={{
                   left: `${(focusDrawRect.x / nativeWidth) * 100}%`,
                   top: `${(focusDrawRect.y / nativeHeight) * 100}%`,
                   width: `${(focusDrawRect.w / nativeWidth) * 100}%`,
                   height: `${(focusDrawRect.h / nativeHeight) * 100}%`,
                   borderColor: '#4570FF',
-                  borderRadius: 24,
+                  borderRadius: 16,
                   boxShadow: '0 0 0 9999px rgba(0,0,0,0.5)',
                 }}
               />
@@ -686,7 +723,7 @@ export function ArtboardFrame({
               // existing — otherwise re-entering via "Change" on a scene with an old pick would skip
               // straight past the instructional pop-up below.
               <div
-                className="pointer-events-none absolute border-4"
+                className="pointer-events-none absolute border-3"
                 style={{
                   left: `${(layout.focusRect.x / nativeWidth) * 100}%`,
                   top: `${(layout.focusRect.y / nativeHeight) * 100}%`,
@@ -694,7 +731,7 @@ export function ArtboardFrame({
                   height: `${(layout.focusRect.h / nativeHeight) * 100}%`,
                   borderColor: 'rgba(69,112,255,0.3)',
                   background: 'rgba(69,112,255,0.1)',
-                  borderRadius: 24,
+                  borderRadius: 16,
                 }}
               />
             ) : (

@@ -49,7 +49,7 @@ export function CanvasStart() {
       <div className="flex flex-col items-center gap-3">
         <h2 className="text-[28px] font-bold text-white">{t('Create your first banner')}</h2>
         <p className="max-w-[440px] text-base text-white/70">
-          {t('Create a primary banner, and adapt to all requried sizes easily.')}
+          {t('Create a primary banner, and adapt to different sizes.')}
         </p>
       </div>
       <button

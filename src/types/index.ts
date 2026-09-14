@@ -42,6 +42,8 @@ export type Product = {
 export type ElementKind = 'image' | 'text' | 'shape';
 export type ShapeKind = 'rect' | 'ellipse' | 'line';
 
+export type ShadowStyle = { enabled: boolean; x: number; y: number; blur: number; color: string; opacity: number };
+
 export type LayoutElement = {
   id: string;
   kind: ElementKind;
@@ -85,6 +87,9 @@ export type LayoutElement = {
     opacity?: number;
     /** Text only — 'vertical-rl' stacks characters top-to-bottom (traditional Japanese layout). */
     writingMode?: 'horizontal-tb' | 'vertical-rl';
+    dropShadow?: ShadowStyle;
+    /** Image/shape only — CSS `inset` shadows have no text equivalent, so this is a no-op on text. */
+    innerShadow?: ShadowStyle;
   };
   visible: boolean;
   locked?: boolean;

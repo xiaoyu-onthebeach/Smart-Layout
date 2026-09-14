@@ -3,6 +3,7 @@ import { AlignCenter, AlignLeft, AlignRight } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import type { LayoutElement } from '@/types';
 import { layerName } from '@/lib/layer-name';
+import { isPrimaryBannerLayout } from '@/lib/canvas-layout';
 import { useT } from '@/lib/i18n';
 import {
   ColorRow,
@@ -19,6 +20,7 @@ import {
   PositionSection,
   SegmentedControl,
   SelectField,
+  ShadowSection,
   type EditorTarget,
 } from './PanelKit';
 
@@ -46,7 +48,11 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const t = useT();
   const language = useAppStore((s) => s.language);
   const updateElement = useAppStore((s) => s.updateElement);
+  const layoutsById = useAppStore((s) => s.layoutsById);
+  const pageGroupIdByPage = useAppStore((s) => s.pageGroupIdByPage);
+  const pageGroups = useAppStore((s) => s.pageGroups);
   const primary = targets[0].element;
+  const isPrimaryBanner = isPrimaryBannerLayout({ layoutsById, pageGroupIdByPage, pageGroups }, targets[0].layoutId);
   const [contentDraft, setContentDraft] = useState(primary.content ?? '');
 
   useEffect(() => setContentDraft(primary.content ?? ''), [primary.id, primary.content]);
@@ -71,7 +77,7 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
     <PanelCard>
       <PanelHeader icon={<PanelHeaderIcon src="/icons/edit_panel/editing.svg" />} title={title} trailing={<MatchSelectButton targets={targets} />} />
 
-      <PositionSection x={primary.frame.x} y={primary.frame.y} />
+      <PositionSection x={primary.frame.x} y={primary.frame.y} showPositionMode={isPrimaryBanner} resetKey={primary.id} />
 
       <PanelDivider />
 
@@ -166,6 +172,10 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
         <ColorRow color={primary.style.strokeColor ?? '#000000'} onChange={(strokeColor) => patchStyle({ strokeColor })} />
         <NumberField className="w-full" value={String(primary.style.strokeWidth ?? 0)} onCommit={(v) => patchStyle({ strokeWidth: Math.max(0, Number(v) || 0) })} />
       </PanelSection>
+
+      <PanelDivider />
+
+      <ShadowSection dropShadow={primary.style.dropShadow} innerShadow={primary.style.innerShadow} onPatch={patchStyle} />
     </PanelCard>
   );
 }

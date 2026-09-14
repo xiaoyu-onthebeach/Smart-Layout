@@ -1,6 +1,7 @@
 import { useAppStore } from '@/store/useAppStore';
 import type { LayoutElement } from '@/types';
 import { layerName } from '@/lib/layer-name';
+import { isPrimaryBannerLayout } from '@/lib/canvas-layout';
 import { useT } from '@/lib/i18n';
 import {
   BORDER_STYLE_ICONS,
@@ -15,6 +16,7 @@ import {
   RadiusRow,
   SegmentedControl,
   MatchSelectButton,
+  ShadowSection,
   type EditorTarget,
 } from './PanelKit';
 
@@ -27,7 +29,11 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const t = useT();
   const language = useAppStore((s) => s.language);
   const updateElement = useAppStore((s) => s.updateElement);
+  const layoutsById = useAppStore((s) => s.layoutsById);
+  const pageGroupIdByPage = useAppStore((s) => s.pageGroupIdByPage);
+  const pageGroups = useAppStore((s) => s.pageGroups);
   const primary = targets[0].element;
+  const isPrimaryBanner = isPrimaryBannerLayout({ layoutsById, pageGroupIdByPage, pageGroups }, targets[0].layoutId);
 
   function patchStyle(patch: Partial<LayoutElement['style']>) {
     for (const tgt of targets) updateElement(tgt.layoutId, tgt.element.id, { style: { ...tgt.element.style, ...patch } });
@@ -56,7 +62,7 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
     <PanelCard>
       <PanelHeader icon={<PanelHeaderIcon src="/icons/edit_panel/shape%20header.svg" />} title={title} trailing={<MatchSelectButton targets={targets} />} />
 
-      <PositionSection x={primary.frame.x} y={primary.frame.y} />
+      <PositionSection x={primary.frame.x} y={primary.frame.y} showPositionMode={isPrimaryBanner} resetKey={primary.id} />
 
       <PanelDivider />
 
@@ -79,6 +85,10 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
       <PanelSection label={t('Radius')}>
         <RadiusRow value={primary.style.radius ?? 0} onCommit={(radius) => patchStyle({ radius })} />
       </PanelSection>
+
+      <PanelDivider />
+
+      <ShadowSection dropShadow={primary.style.dropShadow} innerShadow={primary.style.innerShadow} onPatch={patchStyle} />
     </PanelCard>
   );
 }

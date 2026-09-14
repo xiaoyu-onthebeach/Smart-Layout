@@ -33,7 +33,6 @@ export function MultiSceneContentPanel({ setIds }: { setIds: string[] }) {
   const layoutsById = useAppStore((s) => s.layoutsById);
   const updateLayoutStyle = useAppStore((s) => s.updateLayoutStyle);
   const updateElement = useAppStore((s) => s.updateElement);
-  const openExport = useAppStore((s) => s.openExport);
   const [replacingUrl, setReplacingUrl] = useState<string | null>(null);
 
   const layouts = setIds
@@ -160,7 +159,7 @@ export function MultiSceneContentPanel({ setIds }: { setIds: string[] }) {
         )}
       </PanelSection>
 
-      <PanelExportFooter onExport={openExport} />
+      <PanelExportFooter layouts={layouts} />
 
       {activeReplace && (
         <ImagePickerDialog

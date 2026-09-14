@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getPreset } from '@/lib/mock';
 import { PlatformMark } from '@/features/size-select/PlatformMark';
@@ -15,6 +14,8 @@ export function PageTitleBar({
   onDragHandleMouseDown,
   isPrimary,
   onRename,
+  editing,
+  onEditingChange,
   visible = true,
 }: {
   name: string;
@@ -28,14 +29,18 @@ export function PageTitleBar({
   onDragHandleMouseDown?: (e: ReactMouseEvent<HTMLDivElement>) => void;
   /** True for the original scene a group was spun off from — the one other sizes were generated from. */
   isPrimary?: boolean;
-  /** When provided, hovering the name reveals a pencil that turns it into an editable field. */
+  /** When provided, double-clicking the name (or the scene right-click menu's "Rename") turns it
+   * into an editable field. */
   onRename?: (name: string) => void;
+  /** Controlled rename-mode state — lifted up so the scene's own right-click menu can also enter
+   * it, not just a double-click on the name. */
+  editing: boolean;
+  onEditingChange: (editing: boolean) => void;
   /** View-all only: hides the name/logo/size pill once the camera is zoomed out past legibility. */
   visible?: boolean;
 }) {
   const t = useT();
   const platformId = presetId ? getPreset(presetId)?.platformId : undefined;
-  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(name);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -48,7 +53,7 @@ export function PageTitleBar({
   }, [editing, name]);
 
   function commit() {
-    setEditing(false);
+    onEditingChange(false);
     const trimmed = draft.trim();
     if (trimmed && trimmed !== name) onRename?.(trimmed);
   }
@@ -67,7 +72,7 @@ export function PageTitleBar({
           onBlur={commit}
           onKeyDown={(e) => {
             if (e.key === 'Enter') commit();
-            if (e.key === 'Escape') setEditing(false);
+            if (e.key === 'Escape') onEditingChange(false);
           }}
           className="min-w-0 flex-1 rounded-sm bg-chrome-border-subtle px-1 text-sm text-chrome-fg outline-none"
         />
@@ -78,21 +83,16 @@ export function PageTitleBar({
           ) : (
             platformId && <PlatformMark platformId={platformId} className="size-4 shrink-0" />
           )}
-          <span className="truncate text-sm text-chrome-fg">{name}</span>
-          {onRename && (
-            <button
-              type="button"
-              aria-label={t('Rename')}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditing(true);
-              }}
-              className="shrink-0 text-chrome-fg-muted opacity-0 transition-opacity hover:text-chrome-fg group-hover/name:opacity-100"
-            >
-              <Pencil className="size-3" />
-            </button>
-          )}
+          <span
+            className="truncate text-sm text-chrome-fg"
+            onDoubleClick={(e) => {
+              if (!onRename) return;
+              e.stopPropagation();
+              onEditingChange(true);
+            }}
+          >
+            {name}
+          </span>
         </div>
       )}
 

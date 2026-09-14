@@ -1,11 +1,13 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import type { Layout } from '@/types';
 import { createAdaptedLayout } from '@/lib/create-layout';
 import { getPreset } from '@/lib/mock';
-import { BORDER_STYLE_ICONS, PanelCard, PanelDivider, PanelHeaderIcon, PanelSection, SegmentedControl } from './PanelKit';
+import { autoMainSizeRename } from '@/lib/main-size-naming';
+import { BORDER_STYLE_ICONS, PanelCard, PanelDivider, PanelExportFooter, PanelHeaderIcon, PanelSection, SegmentedControl } from './PanelKit';
+import { ColorPickerPopover } from './ColorPickerPopover';
 import { SizeChangeMenu } from './SizeChangeMenu';
 import type { QuickSizeResult } from './QuickSizeMenu';
 
@@ -34,24 +36,18 @@ function InlineRow({ label, children }: { label: string; children: ReactNode }) 
  * hairline, rather than a separate swatch button beside a field (the shared `ColorRow`'s layout). */
 function InlineColorField({ color, onChange }: { color: string; onChange: (color: string) => void }) {
   const t = useT();
-  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="flex h-9 shrink-0 items-center justify-between rounded-lg px-2" style={{ width: VALUE_COL_WIDTH, background: '#26262C' }}>
       <div className="flex min-w-0 items-center gap-2">
-        <button
-          type="button"
-          aria-label={t('Color')}
-          onClick={() => inputRef.current?.click()}
-          className="size-6 shrink-0 rounded-full border border-black/20"
-          style={{ background: color }}
-        />
+        <ColorPickerPopover color={color} onChange={onChange}>
+          <button type="button" aria-label={t('Color')} className="size-6 shrink-0 rounded-full border border-black/20" style={{ background: color }} />
+        </ColorPickerPopover>
         <span className="truncate text-sm text-white uppercase">{color}</span>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <div className="h-4 w-px shrink-0" style={{ background: '#40404A' }} />
         <span className="text-sm text-white/65">100%</span>
       </div>
-      <input ref={inputRef} type="color" value={color} onChange={(e) => onChange(e.target.value)} className="sr-only" tabIndex={-1} />
     </div>
   );
 }
@@ -113,7 +109,9 @@ export function SceneEditorPanel({ layout, setId }: { layout: Layout; setId: str
   const t = useT();
   const updateLayoutStyle = useAppStore((s) => s.updateLayoutStyle);
   const setsById = useAppStore((s) => s.setsById);
-  const openExport = useAppStore((s) => s.openExport);
+  const pageGroups = useAppStore((s) => s.pageGroups);
+  const pageGroupIdByPage = useAppStore((s) => s.pageGroupIdByPage);
+  const renamePage = useAppStore((s) => s.renamePage);
   const upsertLayout = useAppStore((s) => s.upsertLayout);
 
   const bannerName = (setId ? setsById[setId]?.name : undefined) ?? t('New Banner');
@@ -139,6 +137,19 @@ export function SceneEditorPanel({ layout, setId }: { layout: Layout; setId: str
       ruleSetId: result.ruleSetId,
     });
     upsertLayout({ ...adapted, id: layout.id });
+
+    // A main-size banner's own auto-generated name ("Main Square", "Main Square 2", ...) tracks
+    // its shape — but only a cluster root (a bare primary, never one of its own added/sibling
+    // sizes), and only while the name still looks auto-generated (see autoMainSizeRename), so a
+    // name typed in by hand is never overwritten.
+    if (!setId) return;
+    const group = pageGroups[pageGroupIdByPage[setId]];
+    const isSibling = Boolean(group && group.memberIds.length > 1 && group.memberIds[0] !== setId);
+    if (isSibling) return;
+    const currentName = setsById[setId]?.name;
+    if (!currentName) return;
+    const renamed = autoMainSizeRename({ setsById }, currentName, result.width, result.height);
+    if (renamed) renamePage(setId, renamed);
   }
 
   const currentSizeLabel = layout.size.presetId ? (getPreset(layout.size.presetId)?.label ?? layout.size.label) : layout.size.label;
@@ -148,7 +159,7 @@ export function SceneEditorPanel({ layout, setId }: { layout: Layout; setId: str
       <div className="flex items-center justify-between gap-1.5 px-4 pb-1">
         <div className="flex min-w-0 items-center gap-1.5">
           <PanelHeaderIcon src="/icons/edit_panel/banner%20header.svg" />
-          <span className="min-w-0 truncate text-lg font-semibold text-white">{bannerName}</span>
+          <span className="min-w-0 truncate text-[13px] font-semibold text-white">{bannerName}</span>
         </div>
       </div>
 
@@ -186,19 +197,7 @@ export function SceneEditorPanel({ layout, setId }: { layout: Layout; setId: str
 
       <BannerRadiusRow value={layout.radius ?? 0} onCommit={(radius) => updateLayoutStyle(layout.id, { radius })} />
 
-      <PanelDivider />
-
-      <div className="flex flex-col gap-4 px-4">
-        <button
-          type="button"
-          onClick={openExport}
-          className="flex h-8 w-full items-center justify-center gap-2 rounded-full text-[13px] text-white transition-colors hover:brightness-110"
-          style={{ background: '#26262C' }}
-        >
-          <img src="/icons/download%2024.svg" alt="" className="size-4" />
-          {t('Export')}
-        </button>
-      </div>
+      <PanelExportFooter layouts={[layout]} />
     </PanelCard>
   );
 }

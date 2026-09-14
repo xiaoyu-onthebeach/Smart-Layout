@@ -6,7 +6,9 @@ import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { layoutHasSiblingSizes } from '@/lib/match-select';
 import { useT } from '@/lib/i18n';
-import type { LayoutElement } from '@/types';
+import { exportLayout, type ExportFileType } from '@/lib/export-image';
+import { ColorPickerPopover } from './ColorPickerPopover';
+import type { Layout, LayoutElement, ShadowStyle } from '@/types';
 
 /** One selected element, paired with the scene (layout) it lives in — a multi-select can span scenes. */
 export type EditorTarget = { element: LayoutElement; layoutId: string };
@@ -16,7 +18,7 @@ export function PanelCard({ width = 279, gap = 8, children }: { width?: number; 
   return (
     <div
       data-panel-card
-      className="flex h-full min-h-0 flex-col items-stretch overflow-y-auto rounded-xl border border-[#26262C] py-4"
+      className="flex max-h-full min-h-0 flex-col items-stretch overflow-y-auto rounded-xl border border-[#26262C] py-4"
       style={{ width, gap, background: '#19191D' }}
     >
       {children}
@@ -248,10 +250,29 @@ function AnchorPreviewFrame({ shape, vertical, horizontal }: { shape: PreviewSha
  * position-mode picker (Smart, or Anchored to specific edges). Purely visual for now: nothing here
  * is wired to real behavior yet (no anchor/pinning concept exists in the layout engine), so every
  * control is a self-contained, no-op preview of what the interaction would look like.
+ *
+ * `showPositionMode` also doubles as "is this a primary size banner" — a sibling's own added sizes
+ * never get the mode picker at all (see `isPrimaryBannerLayout`), so there's no "smart" default to
+ * preserve for them; a primary defaults to Anchored (with its anchor picker already open) rather
+ * than Smart, since anchoring — not cascading behavior — is what a primary's own position choice
+ * is actually for.
  */
-export function PositionSection({ x, y, showPositionMode = true }: { x: number; y: number; showPositionMode?: boolean }) {
+export function PositionSection({
+  x,
+  y,
+  showPositionMode = true,
+  resetKey,
+}: {
+  x: number;
+  y: number;
+  showPositionMode?: boolean;
+  /** Re-defaults `mode` (back to Anchored, for a primary) whenever this changes — pass the
+   * selected element's own id so switching selection resets the preview instead of carrying over
+   * whatever mode a previously-selected element was left in. */
+  resetKey?: string;
+}) {
   const t = useT();
-  const [mode, setMode] = useState<PositionMode>('smart');
+  const [mode, setMode] = useState<PositionMode>(showPositionMode ? 'anchored' : 'smart');
   const [vertical, setVertical] = useState<VerticalAnchor>('center');
   const [horizontal, setHorizontal] = useState<HorizontalAnchor>('center');
   const [showPreview, setShowPreview] = useState(false);
@@ -259,6 +280,11 @@ export function PositionSection({ x, y, showPositionMode = true }: { x: number; 
   const [flyoutPos, setFlyoutPos] = useState<{ left: number; top: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const anchorBoxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMode(showPositionMode ? 'anchored' : 'smart');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPositionMode, resetKey]);
 
   useEffect(() => {
     if (mode !== 'anchored') setShowPreview(false);
@@ -453,21 +479,158 @@ export function PanelDivider() {
 
 export function ColorRow({ color, onChange }: { color: string; onChange: (color: string) => void }) {
   const t = useT();
-  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="flex items-center gap-2">
-      <button
-        type="button"
-        aria-label={t('Color')}
-        onClick={() => inputRef.current?.click()}
-        className="size-8 shrink-0 rounded-full border border-black/20"
-        style={{ background: color }}
-      />
+      <ColorPickerPopover color={color} onChange={onChange}>
+        <button type="button" aria-label={t('Color')} className="size-8 shrink-0 rounded-full border border-black/20" style={{ background: color }} />
+      </ColorPickerPopover>
       <div className="flex h-8 flex-1 items-center gap-2 rounded-lg border border-chrome-border bg-chrome-border-subtle px-3 text-sm text-chrome-fg">
         <span className="flex-1 truncate uppercase">{color}</span>
         <span className="shrink-0 text-white/45">100%</span>
       </div>
-      <input ref={inputRef} type="color" value={color} onChange={(e) => onChange(e.target.value)} className="sr-only" tabIndex={-1} />
+    </div>
+  );
+}
+
+const DEFAULT_SHADOW: ShadowStyle = { enabled: true, x: 0, y: 4, blur: 4, color: '#000000', opacity: 100 };
+
+/** Compact on/off pill matching the shadow rows' own spec — a bespoke button rather than the
+ * shared `Switch` (components/ui/switch.tsx), whose fixed size/color variants don't hit this
+ * spec's exact 28x16 track + 12x12 thumb + #2D88FF/25%-white track colors. */
+function ShadowSwitch({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className="relative h-4 w-7 shrink-0 rounded-full p-0.5 transition-colors"
+      style={{ background: checked ? '#2D88FF' : 'rgba(255,255,255,0.25)' }}
+    >
+      <span
+        className="block size-3 rounded-full transition-transform"
+        style={{ background: '#26262C', filter: 'drop-shadow(0px 2px 4px rgba(0,35,11,0.2))', transform: checked ? 'translateX(12px)' : 'translateX(0)' }}
+      />
+    </button>
+  );
+}
+
+/** A 51px number field with a small caption ("x"/"y") to its left, bottom-aligned — the shadow
+ * panel's own "Number input - Advanced" shape, distinct from the plain centered `NumberField`. */
+function LabeledNumberInput({ label, value, onCommit }: { label: string; value: string; onCommit: (value: string) => void }) {
+  return (
+    <div className="flex h-8 w-[51px] shrink-0 items-end gap-2 rounded-md border px-2 pb-1" style={{ background: '#26262C', borderColor: '#40404A' }}>
+      <span className="text-xs text-white/45">{label}</span>
+      <input
+        defaultValue={value}
+        key={value}
+        onBlur={(e) => onCommit(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        className="w-0 min-w-0 flex-1 bg-transparent text-right text-base font-bold text-white outline-none"
+      />
+    </div>
+  );
+}
+
+/** The shadow row's own "Color" field — a 24px swatch + chevron (opens the shared color picker)
+ * beside an opacity number field, distinct from `ColorRow`'s wider pill layout elsewhere. */
+function ShadowColorField({
+  color,
+  opacity,
+  onColorChange,
+  onOpacityCommit,
+}: {
+  color: string;
+  opacity: number;
+  onColorChange: (color: string) => void;
+  onOpacityCommit: (value: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <ColorPickerPopover color={color} onChange={onColorChange}>
+        <button type="button" className="flex h-8 w-[60px] shrink-0 items-center gap-2 rounded-md border py-0 pr-2 pl-1" style={{ background: '#26262C', borderColor: '#40404A' }}>
+          <span className="size-6 shrink-0 rounded" style={{ background: color }} />
+          <ChevronDown className="size-3.5 shrink-0 text-white" />
+        </button>
+      </ColorPickerPopover>
+      <NumberField className="w-[51px] shrink-0" value={String(opacity)} onCommit={onOpacityCommit} />
+    </div>
+  );
+}
+
+function ShadowRow({
+  icon,
+  label,
+  shadow,
+  onChange,
+}: {
+  icon: string;
+  label: string;
+  shadow: ShadowStyle | undefined;
+  onChange: (next: ShadowStyle) => void;
+}) {
+  const t = useT();
+  const enabled = shadow?.enabled ?? false;
+  const current = shadow ?? DEFAULT_SHADOW;
+
+  function patch(fields: Partial<ShadowStyle>) {
+    onChange({ ...current, ...fields, enabled: true });
+  }
+
+  return (
+    <div className="flex flex-col">
+      <div className="flex h-10 shrink-0 items-center gap-2">
+        <img src={icon} alt="" className="size-4 shrink-0" />
+        <span className={cn('flex-1 truncate text-[13px] tracking-[-0.01em]', enabled ? 'text-white' : 'text-white/65')}>{label}</span>
+        <ShadowSwitch checked={enabled} onChange={(next) => onChange({ ...current, enabled: next })} label={label} />
+      </div>
+      {enabled && (
+        <div className="flex flex-col gap-1 pb-1 pl-5">
+          <div className="flex h-10 shrink-0 items-center gap-1">
+            <span className="flex-1 text-[13px] text-white/65">{t('Position')}</span>
+            <LabeledNumberInput label="x" value={String(current.x)} onCommit={(v) => patch({ x: Math.round(Number(v) || 0) })} />
+            <LabeledNumberInput label="y" value={String(current.y)} onCommit={(v) => patch({ y: Math.round(Number(v) || 0) })} />
+          </div>
+          <div className="flex h-10 shrink-0 items-center gap-1">
+            <span className="flex-1 text-[13px] text-white/65">{t('Blur')}</span>
+            <NumberField className="w-[51px] shrink-0" value={String(current.blur)} onCommit={(v) => patch({ blur: Math.max(0, Math.round(Number(v) || 0)) })} />
+          </div>
+          <div className="flex h-10 shrink-0 items-center gap-1">
+            <span className="flex-1 text-[13px] text-white/65">{t('Color')}</span>
+            <ShadowColorField
+              color={current.color}
+              opacity={current.opacity}
+              onColorChange={(color) => patch({ color })}
+              onOpacityCommit={(v) => patch({ opacity: Math.min(100, Math.max(0, Math.round(Number(v) || 0))) })}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Text/Shape/Image editor panels' own "Shadow" section — Drop shadow renders as a real CSS
+ * `box-shadow` (or `text-shadow` on text, which has no `inset` mode, so Inner shadow is a stored
+ * no-op there) via ElementRenderer; see src/lib/shadow.ts for how the two combine. */
+export function ShadowSection({
+  dropShadow,
+  innerShadow,
+  onPatch,
+}: {
+  dropShadow: ShadowStyle | undefined;
+  innerShadow: ShadowStyle | undefined;
+  onPatch: (patch: { dropShadow?: ShadowStyle; innerShadow?: ShadowStyle }) => void;
+}) {
+  const t = useT();
+  return (
+    <div className="flex flex-col gap-1 px-4">
+      <span className="text-xs font-semibold text-white">{t('Shadow')}</span>
+      <div className="flex flex-col gap-1">
+        <ShadowRow icon="/icons/shadow-outer.svg" label={t('Drop shadow')} shadow={dropShadow} onChange={(next) => onPatch({ dropShadow: next })} />
+        <ShadowRow icon="/icons/shadow-inner.svg" label={t('Inner shadow')} shadow={innerShadow} onChange={(next) => onPatch({ innerShadow: next })} />
+      </div>
     </div>
   );
 }
@@ -678,19 +841,78 @@ export function SelectField({
   );
 }
 
+const EXPORT_FILE_TYPES: ExportFileType[] = ['PNG', 'JPG'];
+
+/** The footer's own format dropdown — fixed 139px per spec, distinct from the shared `SelectField`
+ * (which has a border/flex-1 that don't fit this row's fixed-width + borderless look). */
+function ExportFormatSelect({ value, onChange }: { value: ExportFileType; onChange: (value: ExportFileType) => void }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex h-8 w-[139px] shrink-0 items-center justify-between rounded-lg px-3 text-xs text-white"
+          style={{ background: '#26262C' }}
+        >
+          <span>{value}</span>
+          <ChevronDown className="size-3.5 shrink-0 text-white/45" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" sideOffset={6} className="w-[139px] border-chrome-border bg-[#26262C]/95 p-1 text-chrome-fg backdrop-blur-lg">
+        <div className="flex flex-col gap-0.5">
+          {EXPORT_FILE_TYPES.map((opt) => (
+            <PopoverClose asChild key={opt}>
+              <button
+                type="button"
+                onClick={() => onChange(opt)}
+                className={cn(
+                  'flex h-8 shrink-0 items-center rounded-md px-3 text-left text-xs transition-colors hover:bg-white/10',
+                  opt === value ? 'text-white' : 'text-white/70',
+                )}
+              >
+                {opt}
+              </button>
+            </PopoverClose>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** Bottom-of-panel export action — only the scene/banner-level panels (SceneEditorPanel,
- * MultiSceneContentPanel) get this; the per-layer panels don't have anything to export on their own. */
-export function PanelExportFooter({ onExport }: { onExport: () => void }) {
+ * MultiSceneContentPanel) get this; the per-layer panels don't have anything to export on their own.
+ * Renders straight to a browser download (no intermediate settings dialog) — the store's own
+ * `downloading` flag drives the header's spinner for the duration. */
+export function PanelExportFooter({ layouts }: { layouts: Layout[] }) {
   const t = useT();
+  const downloading = useAppStore((s) => s.downloading);
+  const setDownloading = useAppStore((s) => s.setDownloading);
+  const [fileType, setFileType] = useState<ExportFileType>('PNG');
+
+  async function handleExport() {
+    if (downloading || layouts.length === 0) return;
+    setDownloading(true);
+    try {
+      for (const layout of layouts) await exportLayout(layout, fileType);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <>
       <PanelDivider />
-      <div className="px-4">
+      {/* +pt-2 on top of the card's own flex `gap` (8px) brings this row's clearance from the
+          divider above up to 16px — matching the card's own bottom py-4 clearance below it. */}
+      <div className="flex items-center gap-4 px-4 pt-2">
+        <ExportFormatSelect value={fileType} onChange={setFileType} />
         <button
           type="button"
-          onClick={onExport}
-          className="flex h-8 w-full items-center justify-center gap-2 rounded-full text-[13px] text-white transition-colors hover:brightness-110"
-          style={{ background: '#26262C' }}
+          onClick={handleExport}
+          disabled={downloading}
+          className="flex h-8 flex-1 items-center justify-center gap-2 rounded-lg text-[13px] text-white transition-colors hover:brightness-110 disabled:opacity-60"
+          style={{ background: '#4570FF' }}
         >
           <img src="/icons/download%2024.svg" alt="" className="size-4" />
           {t('Export')}

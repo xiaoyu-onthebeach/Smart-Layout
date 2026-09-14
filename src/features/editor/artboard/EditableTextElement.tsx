@@ -2,6 +2,7 @@ import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
+import { textShadowCss } from '@/lib/shadow';
 import { useElementDrag } from './useElementDrag';
 import { SelectionBoundingBox } from './SelectionBoundingBox';
 
@@ -114,6 +115,7 @@ export function EditableTextElement({
           textAlign: 'center',
           outline: 'none',
           cursor: isEditing ? 'text' : undefined,
+          textShadow: textShadowCss(style.dropShadow),
         }}
       >
         {element.content}

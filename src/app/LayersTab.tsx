@@ -20,7 +20,7 @@ function ShapeThumb({ element }: { element: LayoutElement }) {
   const radius = shape === 'ellipse' ? 9999 : Math.min((style.radius ?? 0) * scale, Math.min(w, h) / 2);
   return (
     <div className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ background: '#26262C' }}>
-      <div className="shrink-0 border-[1.5px] border-white/70" style={{ width: w, height: h, borderRadius: radius }} />
+      <div className="shrink-0 border-[1.5px] border-white/45" style={{ width: w, height: h, borderRadius: radius }} />
     </div>
   );
 }
@@ -173,7 +173,7 @@ export function LayersTab({ setId, onBack }: { setId: string; onBack: () => void
       <button type="button" onClick={onBack} className="flex h-6 w-full shrink-0 items-center gap-1 px-1 text-left transition-colors hover:text-white">
         <span className="text-[11px] font-semibold tracking-[-0.01em] text-white/70 uppercase">{t('Back')}</span>
         <ChevronLeft className="size-3 shrink-0 text-white/45" />
-        <span className="text-[11px] font-semibold tracking-[-0.01em] text-white uppercase">{t('Layers')}</span>
+        <span className="min-w-0 truncate text-[11px] font-semibold tracking-[-0.01em] text-white uppercase">{bannerSet?.name ?? t('Layers')}</span>
       </button>
       <div className="h-px w-full shrink-0" style={{ background: '#40404A' }} />
 

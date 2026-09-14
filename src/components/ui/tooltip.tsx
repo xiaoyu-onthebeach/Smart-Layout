@@ -42,14 +42,20 @@ function TooltipContent({
         data-slot="tooltip-content"
         sideOffset={sideOffset}
         className={cn(
-          "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-in rounded-md border border-chrome-border px-3 py-1.5 text-xs text-balance text-white fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          "z-50 w-fit min-w-[50px] max-w-[308px] origin-(--radix-tooltip-content-transform-origin) animate-in rounded-md px-2 py-1 text-sm text-balance text-white tracking-[-0.01em] leading-[140%] fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className
         )}
-        style={{ background: '#26262C' }}
+        style={{ background: '#50505D' }}
         {...props}
       >
         {children}
-        <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px]" style={{ background: '#26262C' }} />
+        {/* Radix renders this as an SVG polygon with no `fill` of its own, so it defaults to the
+            SVG spec's own black — `background` alone (still needed for the two small corners the
+            triangle doesn't cover) never reaches the polygon itself, only `fill` does. */}
+        <TooltipPrimitive.Arrow
+          className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px]"
+          style={{ background: '#50505D', fill: '#50505D' }}
+        />
       </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>
   )

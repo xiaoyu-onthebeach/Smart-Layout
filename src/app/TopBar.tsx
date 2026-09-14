@@ -14,6 +14,7 @@ const DOCUMENT_TITLE = 'Winter EC Campaign 2027';
 export function TopBar() {
   const language = useAppStore((s) => s.language);
   const setLanguage = useAppStore((s) => s.setLanguage);
+  const downloading = useAppStore((s) => s.downloading);
   const t = useT();
 
   return (
@@ -24,6 +25,8 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-2 p-3">
+        {downloading && <img src="/icons/dropdown/Downloading.svg" alt="" className="size-6 animate-spin" />}
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button

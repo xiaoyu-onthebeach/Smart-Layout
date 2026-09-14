@@ -1,6 +1,7 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { boxShadowCss, textShadowCss } from '@/lib/shadow';
 import type { LayoutElement } from '@/types';
 
 /**
@@ -41,7 +42,7 @@ export function ElementRenderer({
     return (
       <div
         onMouseDown={onMouseDown}
-        style={pos}
+        style={{ ...pos, boxShadow: boxShadowCss(style.dropShadow, style.innerShadow) }}
         className={cn('group/img overflow-hidden', interactive && 'ring-0', selected && 'outline outline-[1.5px] outline-button-primary')}
       >
         {element.imageUrl ? (
@@ -91,6 +92,7 @@ export function ElementRenderer({
           borderRadius: element.shape === 'ellipse' ? '9999px' : style.radius ? `${style.radius}px` : undefined,
           border: style.strokeWidth ? `${style.strokeWidth}px ${style.strokeStyle ?? 'solid'} ${style.strokeColor ?? '#000000'}` : undefined,
           opacity: style.opacity !== undefined ? style.opacity / 100 : undefined,
+          boxShadow: boxShadowCss(style.dropShadow, style.innerShadow),
           boxSizing: 'border-box',
         }}
       >
@@ -125,6 +127,7 @@ export function ElementRenderer({
         letterSpacing: style.letterSpacing ? `${style.letterSpacing}px` : undefined,
         textDecoration: style.textDecoration && style.textDecoration !== 'none' ? style.textDecoration : undefined,
         WebkitTextStroke: style.strokeWidth ? `${style.strokeWidth}px ${style.strokeColor ?? '#000000'}` : undefined,
+        textShadow: textShadowCss(style.dropShadow),
         paddingInline: isPill ? '0.6em' : undefined,
         whiteSpace: 'nowrap',
         overflow: 'hidden',

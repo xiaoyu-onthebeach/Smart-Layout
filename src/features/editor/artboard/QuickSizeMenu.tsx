@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState, cloneElement, type MouseEvent as ReactMouseEvent, type ReactElement } from 'react';
-import { Search, Check, ChevronDown, Plus, Sliders, X } from 'lucide-react';
+import { Search, Check, ChevronDown, Plus, X } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { Button } from '@/components/ui/button';
 import { RatioIcon } from '@/components/RatioIcon';
 import { nearestPreset, platforms, sizePresets } from '@/lib/mock';
 import { NO_RULES_ID } from '@/lib/mock/rulesets';
-import { classifyRatioBucket } from '@/lib/size-class';
 import { STANDARD_RATIOS } from '@/features/size-select/standard-ratios';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
@@ -63,10 +62,6 @@ export function QuickSizeMenu({
   // picking at all), it's enabled again.
   const isPicking = pickingFocusForLayoutId === sourceLayoutId && !focusPickConfirmed;
   const sourceLayout = useAppStore((s) => s.layoutsById[sourceLayoutId]);
-  // Only offer sizes in the same square/horizontal/vertical bucket as the scene this picker was
-  // opened from — adding a wildly different-ratio size from here would need adaptation this
-  // prototype doesn't do, and reads as "not actually a variation of this banner" either way.
-  const sourceRatioBucket = sourceLayout ? classifyRatioBucket(sourceLayout.size.width, sourceLayout.size.height) : null;
   const focusRect = sourceLayout?.focusRect;
   const sourceImageUrl = sourceLayout?.elements.find((el) => el.kind === 'image' && el.imageUrl)?.imageUrl;
   const focusThumbPosition = focusRect
@@ -87,12 +82,9 @@ export function QuickSizeMenu({
     const q = query.trim().toLowerCase();
     return GROUPS.map((g) => ({
       ...g,
-      items: g.items.filter((item) => {
-        if (sourceRatioBucket && classifyRatioBucket(item.width, item.height) !== sourceRatioBucket) return false;
-        return !q || item.label.toLowerCase().includes(q);
-      }),
+      items: g.items.filter((item) => !q || item.label.toLowerCase().includes(q)),
     })).filter((g) => g.items.length > 0);
-  }, [query, sourceRatioBucket]);
+  }, [query]);
 
   const totalSelected = selectedIds.size + customEntries.length;
   const canAddCustom = Number(customWidth) > 0 && Number(customHeight) > 0;
@@ -218,34 +210,23 @@ export function QuickSizeMenu({
       {open && (
         <div
           ref={panelRef}
-          className="fixed top-20 right-6 bottom-24 z-30 flex w-[312px] flex-col gap-3 rounded-xl border p-4 text-chrome-fg"
-          style={{ background: 'rgba(38,38,44,0.88)', borderColor: '#40404A', backdropFilter: 'blur(16px)', boxShadow: '0 4px 32px 4px rgba(0,0,0,0.24)' }}
+          className="fixed top-20 right-6 z-30 flex max-h-[calc(100vh-176px)] w-[319px] flex-col gap-1 rounded-xl p-2 text-chrome-fg"
+          style={{ background: '#19191D', boxShadow: 'inset -1px 1px 3px rgba(255,255,255,0.12)' }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <span className="shrink-0 text-[11px] font-semibold tracking-[-0.01em] text-white uppercase">{t('Add more sizes')}</span>
+          <span className="shrink-0 px-1 text-[11px] font-semibold tracking-[-0.01em] text-white/45 uppercase">{t('Add more variations')}</span>
 
-          <div className="flex h-8 shrink-0 items-center gap-2 rounded-full border border-chrome-border bg-chrome-border-subtle px-3">
-            <Search className="size-4 text-white/70" />
-            <input
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t('Search sizes')}
-              className="w-full bg-transparent text-sm text-chrome-fg placeholder:text-white/25 outline-none"
-            />
-          </div>
-
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-            <div className="flex flex-col gap-2 px-1">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sm text-white">{t('Scene focus point')}</span>
-                <span className="text-xs text-white/45">{t('Image expands around your selected area.')}</span>
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pt-2">
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1">
+                <span className="text-[13px] font-semibold text-white">{t('Select focus area')}</span>
+                <span className="text-[13px] text-white/45">{t('Image expands around your selected area.')}</span>
               </div>
               {focusRect ? (
                 <div className="flex items-center gap-2 rounded-lg p-2" style={{ background: '#26262C' }}>
                   <div
-                    className="size-10 shrink-0 rounded-lg bg-cover"
-                    style={{ backgroundImage: sourceImageUrl ? `url(${sourceImageUrl})` : undefined, backgroundPosition: focusThumbPosition }}
+                    className="size-10 shrink-0 rounded-lg border bg-cover"
+                    style={{ borderColor: '#40404A', backgroundImage: sourceImageUrl ? `url(${sourceImageUrl})` : undefined, backgroundPosition: focusThumbPosition }}
                   />
                   <span className="min-w-0 flex-1 truncate text-sm text-white">{t('Scene focus')}</span>
                   <button
@@ -276,141 +257,148 @@ export function QuickSizeMenu({
 
             <div className="h-px w-full shrink-0" style={{ background: '#40404A' }} />
 
-            <span className="px-1 text-sm text-white">{t('All sizes')}</span>
+            <div className="flex flex-col gap-2">
+              <span className="text-[13px] font-semibold text-white">{t('Select sizes')}</span>
 
-            <div className="flex flex-col gap-1">
-              {customEntries.map((entry, i) => (
-                <div key={`custom-${i}`} className="flex h-10 shrink-0 items-center gap-2 rounded-lg bg-white/5 px-3">
-                  <RatioIcon width={entry.width} height={entry.height} />
-                  <span className="min-w-0 flex-1 truncate text-sm text-chrome-fg">{entry.label}</span>
-                  <button type="button" onClick={() => removeCustomEntry(i)} className="text-white/45 hover:text-white">
-                    <X className="size-4" />
+              {customMode ? (
+                <div className="flex items-center gap-2 pb-1">
+                  <input
+                    autoFocus
+                    type="number"
+                    min={1}
+                    value={customWidth}
+                    onChange={(e) => setCustomWidth(e.target.value)}
+                    placeholder={t('Width')}
+                    className="h-8 w-full min-w-0 rounded-lg border border-chrome-border bg-chrome-bg px-3 text-[13px] text-chrome-fg placeholder:text-white/45 outline-none"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={customHeight}
+                    onChange={(e) => setCustomHeight(e.target.value)}
+                    placeholder={t('Height')}
+                    onKeyDown={(e) => e.key === 'Enter' && addCustomEntry()}
+                    className="h-8 w-full min-w-0 rounded-lg border border-chrome-border bg-chrome-bg px-3 text-[13px] text-chrome-fg placeholder:text-white/45 outline-none"
+                  />
+                  <button
+                    type="button"
+                    aria-label={t('Add custom size')}
+                    onClick={addCustomEntry}
+                    disabled={!canAddCustom}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full bg-button-primary text-white transition-opacity disabled:opacity-40"
+                  >
+                    <Plus className="size-4" />
                   </button>
                 </div>
-              ))}
-
-              {filteredGroups.map((group) => {
-                const selectedCount = group.items.filter((i) => selectedIds.has(i.id)).length;
-                const allSelected = selectedCount === group.items.length;
-                const partiallySelected = selectedCount > 0 && !allSelected;
-                const expanded = expandedGroupId === group.id;
-                const groupDisplayName = group.id === 'other' ? t('Other sizes') : group.name;
-                return (
-                  <div key={group.id} className="flex flex-col gap-0.5">
-                    <div className="flex h-8 w-full shrink-0 items-center gap-2 px-1">
-                      <button
-                        type="button"
-                        aria-label={language === 'ja' ? `${groupDisplayName}のサイズをすべて選択` : `Select all ${group.name} sizes`}
-                        onClick={() => toggleGroup(group)}
-                        className={cn(
-                          'flex size-4 shrink-0 items-center justify-center rounded-[3px] border',
-                          allSelected || partiallySelected ? 'border-button-primary bg-button-primary' : 'border-white/30',
-                        )}
-                      >
-                        {allSelected && <Check className="size-3 text-white" />}
-                        {partiallySelected && <div className="h-0.5 w-2 rounded-full bg-white" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setExpandedGroupId(expanded ? null : group.id)}
-                        className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md text-left transition-colors hover:bg-white/5"
-                      >
-                        {group.id !== 'other' && <img src={`/icons/ec-platform-icon/${group.id}.svg`} alt="" className="size-5 shrink-0 rounded" />}
-                        <span className="min-w-0 flex-1 truncate text-sm text-[#D9D9D9]">{groupDisplayName}</span>
-                        <ChevronDown className={cn('size-4 shrink-0 text-white/70 transition-transform', !expanded && '-rotate-90')} />
-                      </button>
-                    </div>
-
-                    {expanded &&
-                      group.items.map((item) => {
-                        const checked = selectedIds.has(item.id);
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => toggleItem(item)}
-                            className="flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-left transition-colors hover:bg-white/10"
-                          >
-                            <span
-                              className={cn(
-                                'flex size-4 shrink-0 items-center justify-center rounded-[3px] border',
-                                checked ? 'border-button-primary bg-button-primary' : 'border-white/30',
-                              )}
-                            >
-                              {checked && <Check className="size-3 text-white" />}
-                            </span>
-                            <RatioIcon width={item.width} height={item.height} />
-                            <span className="min-w-0 flex-1 truncate text-sm text-chrome-fg">{item.label}</span>
-                            <span className="shrink-0 text-xs text-white/45">
-                              {item.width}x{item.height}
-                            </span>
-                          </button>
-                        );
-                      })}
+              ) : (
+                <div className="flex items-center gap-2 pb-1">
+                  <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-full border border-chrome-border bg-chrome-border-subtle px-3">
+                    <Search className="size-4 shrink-0 text-white/70" />
+                    <input
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder={t('Search sizes')}
+                      className="w-full min-w-0 bg-transparent text-[13px] text-chrome-fg placeholder:text-white/25 outline-none"
+                    />
                   </div>
-                );
-              })}
-              {filteredGroups.length === 0 && (
-                <div className="px-3 py-4 text-center text-sm text-white/45">
-                  {language === 'ja' ? `"${query}"に一致するサイズがありません` : `No sizes match "${query}"`}
+                  <button
+                    type="button"
+                    onClick={() => setCustomMode(true)}
+                    className="flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-[13px] text-white transition-colors hover:brightness-110"
+                    style={{ background: '#2F2F37' }}
+                  >
+                    <Plus className="size-4 shrink-0" />
+                    {t('Custom')}
+                  </button>
                 </div>
               )}
-            </div>
 
-            <div className="h-px w-full shrink-0" style={{ background: '#40404A' }} />
+              <div className="flex flex-col gap-1">
+                {customEntries.map((entry, i) => (
+                  <div key={`custom-${i}`} className="flex h-10 shrink-0 items-center gap-2 rounded-lg bg-white/5 px-3">
+                    <RatioIcon width={entry.width} height={entry.height} />
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-white">{entry.label}</span>
+                    <button type="button" onClick={() => removeCustomEntry(i)} className="text-white/45 hover:text-white">
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                ))}
 
-            {customMode ? (
-              <div className="flex items-center gap-2 px-1">
-                <input
-                  autoFocus
-                  type="number"
-                  min={1}
-                  value={customWidth}
-                  onChange={(e) => setCustomWidth(e.target.value)}
-                  placeholder={t('Width')}
-                  className="h-10 w-full min-w-0 rounded-lg border border-chrome-border bg-chrome-bg px-3 text-sm text-chrome-fg placeholder:text-white/45 outline-none"
-                />
-                <input
-                  type="number"
-                  min={1}
-                  value={customHeight}
-                  onChange={(e) => setCustomHeight(e.target.value)}
-                  placeholder={t('Height')}
-                  onKeyDown={(e) => e.key === 'Enter' && addCustomEntry()}
-                  className="h-10 w-full min-w-0 rounded-lg border border-chrome-border bg-chrome-bg px-3 text-sm text-chrome-fg placeholder:text-white/45 outline-none"
-                />
-                <button
-                  type="button"
-                  aria-label={t('Add custom size')}
-                  onClick={addCustomEntry}
-                  disabled={!canAddCustom}
-                  className="flex size-10 shrink-0 items-center justify-center rounded-full bg-button-primary text-white transition-opacity disabled:opacity-40"
-                >
-                  <Plus className="size-4" />
-                </button>
+                <div className="flex flex-col gap-1">
+                  {filteredGroups.map((group) => {
+                    const selectedCount = group.items.filter((i) => selectedIds.has(i.id)).length;
+                    const allSelected = selectedCount === group.items.length;
+                    const expanded = expandedGroupId === group.id;
+                    const groupDisplayName = group.id === 'other' ? t('Other sizes') : group.name;
+                    return (
+                      <div
+                        key={group.id}
+                        className={cn('flex flex-col rounded-lg', expanded && 'overflow-hidden')}
+                        style={expanded ? { background: '#131316' } : undefined}
+                      >
+                        <button
+                          type="button"
+                          aria-label={language === 'ja' ? `${groupDisplayName}のサイズをすべて選択` : `Select all ${group.name} sizes`}
+                          onClick={() => toggleGroup(group)}
+                          className="flex h-[38px] w-full shrink-0 items-center gap-2 p-2 text-left transition-colors hover:bg-white/5"
+                        >
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedGroupId(expanded ? null : group.id);
+                            }}
+                            className="flex size-4 shrink-0 items-center justify-center"
+                          >
+                            <ChevronDown className={cn('size-4 text-white transition-transform', !expanded && '-rotate-90')} />
+                          </span>
+                          {group.id !== 'other' && <img src={`/icons/ec-platform-icon/${group.id}.svg`} alt="" className="size-5 shrink-0 rounded" />}
+                          <span className="min-w-0 flex-1 truncate text-[13px] text-[#D9D9D9]">{groupDisplayName}</span>
+                          {allSelected && <Check className="size-4 shrink-0 text-white" />}
+                        </button>
+
+                        {expanded &&
+                          group.items.map((item) => {
+                            const checked = selectedIds.has(item.id);
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => toggleItem(item)}
+                                className={cn('flex h-10 shrink-0 items-center gap-2 py-2 pr-2 pl-8 text-left transition-colors', checked ? 'bg-white/10' : 'hover:bg-white/10')}
+                              >
+                                <RatioIcon width={item.width} height={item.height} />
+                                <span className="min-w-0 flex-1 truncate text-[13px] text-white">{item.label}</span>
+                                <span className="shrink-0 text-xs text-white/45">
+                                  {item.width}x{item.height}
+                                </span>
+                                {checked && <Check className="size-4 shrink-0 text-white" />}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    );
+                  })}
+                </div>
+                {filteredGroups.length === 0 && (
+                  <div className="px-3 py-4 text-center text-sm text-white/45">
+                    {language === 'ja' ? `"${query}"に一致するサイズがありません` : `No sizes match "${query}"`}
+                  </div>
+                )}
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setCustomMode(true)}
-                className="flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-left transition-colors hover:bg-white/10"
-              >
-                <Sliders className="size-4 shrink-0 text-white" />
-                <span className="min-w-0 flex-1 truncate text-sm text-chrome-fg">{t('Custom size')}</span>
-                <Plus className="size-4 shrink-0 text-white" />
-              </button>
-            )}
+            </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2 pt-1">
+          <div className="flex shrink-0 items-center gap-2 px-1 pt-1">
             <button
               type="button"
               onClick={closePanel}
-              className="flex h-8 flex-1 items-center justify-center rounded-lg bg-chrome-border-subtle text-sm text-white transition-colors hover:bg-white/10"
+              className="flex h-8 shrink-0 items-center justify-center rounded-full bg-chrome-border-subtle px-6 text-[13px] font-semibold text-white transition-colors hover:bg-white/10"
             >
               {t('Cancel')}
             </button>
-            <Button size="sm" onClick={confirm} disabled={totalSelected === 0} className="flex-[2]">
+            <Button size="sm" onClick={confirm} disabled={totalSelected === 0} className="min-w-0 flex-1 text-[13px] font-semibold">
               {language === 'ja' ? `${totalSelected}件のサイズを追加` : `Add ${totalSelected} size${totalSelected === 1 ? '' : 's'}`}
             </Button>
           </div>

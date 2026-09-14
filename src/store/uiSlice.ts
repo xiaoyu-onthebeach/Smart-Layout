@@ -8,14 +8,15 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   sizeSelectOpen: false,
   addSizesOpen: false,
   bulkProductsOpen: false,
-  exportOpen: false,
   generating: false,
+  downloading: false,
   selectedElements: [],
   autoMatchedElements: [],
   activeLayoutId: null,
   selectedSceneIds: [],
   editingTextElementId: null,
   activeTool: 'select',
+  shapeToolKind: 'rect',
   viewAllActivePageId: null,
   selectedGroupId: null,
   loadingPageIds: {},
@@ -35,9 +36,8 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   closeAddSizes: () => set({ addSizesOpen: false }),
   openBulkProducts: () => set({ bulkProductsOpen: true }),
   closeBulkProducts: () => set({ bulkProductsOpen: false }),
-  openExport: () => set({ exportOpen: true }),
-  closeExport: () => set({ exportOpen: false }),
   setGenerating: (value) => set({ generating: value }),
+  setDownloading: (value) => set({ downloading: value }),
   selectElement: (ref, additive) =>
     set((state) => {
       if (!ref) return { selectedElements: [], autoMatchedElements: [], editingTextElementId: null };
@@ -77,6 +77,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   selectScenes: (setIds) => set({ selectedSceneIds: setIds }),
   setEditingTextElement: (id) => set({ editingTextElementId: id }),
   setActiveTool: (tool) => set({ activeTool: tool }),
+  setShapeToolKind: (kind) => set({ shapeToolKind: kind }),
   // Entering edit mode on a view-all page card should immediately show it as selected (the white
   // outline) — otherwise it silently takes a second click before any selection feedback appears.
   setViewAllActivePage: (setId) =>

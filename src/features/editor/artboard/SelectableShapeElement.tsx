@@ -1,6 +1,7 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
+import { boxShadowCss } from '@/lib/shadow';
 import { useElementDrag } from './useElementDrag';
 import { SelectionBoundingBox } from './SelectionBoundingBox';
 
@@ -52,6 +53,7 @@ export function SelectableShapeElement({
           borderRadius: element.shape === 'ellipse' ? '9999px' : style.radius ? `${style.radius}px` : undefined,
           border: style.strokeWidth ? `${style.strokeWidth}px solid ${style.strokeColor ?? '#000000'}` : undefined,
           opacity: style.opacity !== undefined ? style.opacity / 100 : undefined,
+          boxShadow: boxShadowCss(style.dropShadow, style.innerShadow),
           boxSizing: 'border-box',
         }}
       >

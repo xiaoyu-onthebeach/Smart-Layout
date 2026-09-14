@@ -5,7 +5,6 @@ import { useAppStore } from '@/store/useAppStore';
 import { initUndoHistory, undo } from '@/store/undoHistory';
 import { AddBannersPanel } from '@/features/size-select/AddBannersPanel';
 import { MultiPageCanvas } from '@/features/editor/artboard/MultiPageCanvas';
-import { ExportModal } from '@/features/editor/artboard/ExportModal';
 import { TopBar } from './TopBar';
 import { LeftPanel } from './LeftPanel';
 import { PlaygroundsPage } from './PlaygroundsPage';
@@ -127,7 +126,6 @@ export function Shell() {
         <TopBar />
       </div>
       <AddBannersPanel />
-      <ExportModal />
       <Toaster />
     </TooltipProvider>
   );
