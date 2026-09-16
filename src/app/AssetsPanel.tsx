@@ -32,7 +32,7 @@ export function AssetsPanel() {
   const libraryItems = SAMPLE_IMAGES.filter((item) => !q || item.label.toLowerCase().includes(q));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2 rounded-xl p-2" style={{ background: '#19191D', boxShadow: 'inset -1px 1px 3px rgba(255,255,255,0.12)' }}>
+    <div className="flex min-h-0 flex-1 flex-col gap-2 rounded-xl border-[0.5px] p-2" style={{ background: '#19191D', borderColor: '#26262C' }}>
       <div className="flex h-8 w-full shrink-0 items-center p-1">
         <div className="flex h-6 flex-1 items-center rounded-md">
           {TABS.map((item) => (

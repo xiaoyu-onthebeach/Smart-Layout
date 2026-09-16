@@ -8,25 +8,24 @@ import { MultiPageCanvas } from '@/features/editor/artboard/MultiPageCanvas';
 import { TopBar } from './TopBar';
 import { LeftPanel } from './LeftPanel';
 import { PlaygroundsPage } from './PlaygroundsPage';
-import { CanvasStart } from './CanvasStart';
 import { DefaultModeToolbar } from './DefaultModeToolbar';
 import { InspectorPanel } from './InspectorPanel';
 
 export function Shell() {
   const step = useAppStore((s) => s.step);
   const viewAllActivePageId = useAppStore((s) => s.viewAllActivePageId);
-  const selectedSceneIds = useAppStore((s) => s.selectedSceneIds);
-  const pageOrder = useAppStore((s) => s.pageOrder);
   const selectedElements = useAppStore((s) => s.selectedElements);
   const deletePage = useAppStore((s) => s.deletePage);
   const removeElement = useAppStore((s) => s.removeElement);
   const duplicateElement = useAppStore((s) => s.duplicateElement);
   const reorderElement = useAppStore((s) => s.reorderElement);
   const selectElement = useAppStore((s) => s.selectElement);
-  // A single click already selects a scene and makes it fully interactive (see MultiPageCanvas's
-  // `active` prop), so the toolbar should appear right away too — not wait for the separate
-  // double-click that sets `viewAllActivePageId`.
-  const showToolbar = viewAllActivePageId !== null || selectedSceneIds.length > 0;
+  const setSelectedElements = useAppStore((s) => s.setSelectedElements);
+  const groupElements = useAppStore((s) => s.groupElements);
+  // The toolbar is a permanent fixture of the playground, not something that waits for a
+  // selection — with nothing selected it still mounts, just narrowed to Select/Move only (see
+  // DefaultModeToolbar's own `hasSceneSelected` check, which adds Text/Shape once a scene is).
+  const showToolbar = step === 'editor';
 
   useEffect(() => {
     initUndoHistory();
@@ -54,7 +53,22 @@ export function Shell() {
       // layer context menu advertises next to each item. All are no-ops with nothing selected.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd' && selectedElements.length > 0) {
         e.preventDefault();
-        for (const ref of selectedElements) duplicateElement(ref.layoutId, ref.elementId);
+        const state = useAppStore.getState();
+        // A group is a same-layout concept — regroup each layout's own copies separately (only
+        // when that layout's selected refs are exactly one intact group) rather than treating a
+        // cross-scene match-selection as one group spanning every scene.
+        const byLayout = new Map<string, string[]>();
+        for (const ref of selectedElements) byLayout.set(ref.layoutId, [...(byLayout.get(ref.layoutId) ?? []), ref.elementId]);
+        const newRefs: { layoutId: string; elementId: string }[] = [];
+        for (const [layoutId, elementIds] of byLayout) {
+          const els = elementIds.map((id) => state.layoutsById[layoutId]?.elements.find((el) => el.id === id)).filter((el) => el !== undefined);
+          const sharedGroupId = els[0]?.groupId;
+          const isIntactGroup = els.length > 1 && Boolean(sharedGroupId) && els.every((el) => el.groupId === sharedGroupId);
+          const newIds = elementIds.map((id) => duplicateElement(layoutId, id));
+          if (isIntactGroup) groupElements(layoutId, newIds);
+          for (const elementId of newIds) newRefs.push({ layoutId, elementId });
+        }
+        setSelectedElements(newRefs);
         return;
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && selectedElements.length > 0) {
@@ -93,7 +107,7 @@ export function Shell() {
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [viewAllActivePageId, selectedElements, deletePage, removeElement, duplicateElement, reorderElement, selectElement]);
+  }, [viewAllActivePageId, selectedElements, deletePage, removeElement, duplicateElement, reorderElement, selectElement, setSelectedElements, groupElements]);
 
   if (step === 'playgrounds') return <PlaygroundsPage />;
 
@@ -110,8 +124,7 @@ export function Shell() {
                 <LeftPanel />
               </div>
               <div className="relative flex-1 overflow-hidden">
-                {step === 'editor' && pageOrder.length === 0 && <CanvasStart />}
-                {step === 'editor' && pageOrder.length > 0 && <MultiPageCanvas />}
+                {step === 'editor' && <MultiPageCanvas />}
                 {showToolbar && <DefaultModeToolbar />}
                 {step === 'editor' && <InspectorPanel />}
               </div>

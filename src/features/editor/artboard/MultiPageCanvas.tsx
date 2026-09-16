@@ -15,6 +15,7 @@ import { QuickSizeMenu, type QuickSizeResult } from './QuickSizeMenu';
 import { SceneContextMenu } from './SceneContextMenu';
 import {
   canvasRootOf,
+  isPrimaryPage,
   PAGE_GAP,
   PAGE_TITLE_RESERVE,
   PRIMARY_LABEL_RESERVE,
@@ -26,14 +27,6 @@ import {
 import { applyPrototypeSizeFill } from '@/lib/prototype-size-fill';
 import { buildOverlayElements } from '@/lib/overlay-elements';
 import { computeGroupLayout } from '@/lib/group-layout';
-import { classifyRatioBucket, type RatioBucket } from '@/lib/size-class';
-
-/** Per-ratio hover copy for the "add more sizes" icon next to a main size's own "ALL SIZES" row. */
-const ADD_SIZE_TOOLTIP_BY_BUCKET: Record<RatioBucket, string> = {
-  square: 'Add more square size variations',
-  horizontal: 'Add more horizontal size variations',
-  vertical: 'Add more vertical size variations',
-};
 
 const PADDING = 96;
 const MAX_FIT_ZOOM = 1;
@@ -146,33 +139,21 @@ function hasBlockerBelow(entry: PageEntry, others: PageEntry[]) {
 }
 
 /**
- * The "add more sizes" circular icon — shared by the hotspot below a scene and the "ALL SIZES"
- * divider. Default state is a plain dark circle; hovering it swaps to the pre-built yellow
- * `add size.svg` asset. Tooltip is hand-rolled (not the shared Radix Tooltip) because this button
- * is always wrapped by QuickSizeMenu's trigger-cloning, which expects to clone a single clickable
- * element directly — nesting a Tooltip/TooltipTrigger in between would break that.
+ * The "add more sizes" circular icon — the "ALL SIZES" divider's own small "+", one per column.
+ * Default state is a plain dark circle; hovering it swaps to the pre-built yellow `add size.svg`
+ * asset. Tooltip is hand-rolled (not the shared Radix Tooltip) because this button is always
+ * wrapped by QuickSizeMenu's trigger-cloning, which expects to clone a single clickable element
+ * directly — nesting a Tooltip/TooltipTrigger in between would break that.
  */
 function AddSizeIconButton({
   onClick,
-  size = 10,
   onHoverChange,
-  tooltip,
 }: {
   onClick?: (e: ReactMouseEvent) => void;
-  size?: 7 | 10;
   onHoverChange?: (hovered: boolean) => void;
-  /** Overrides the default generic hover copy — e.g. a main size's own ratio-specific message. */
-  tooltip?: string;
 }) {
   const t = useT();
   const [hovered, setHovered] = useState(false);
-  const sizeClass = size === 10 ? 'size-10' : 'size-7';
-  // /icons/add size.svg reserves ~22% of its own viewBox as drop-shadow padding around its filled
-  // circle, so stretching the image to the button's own box (inset-0) leaves a visible ring of the
-  // gray button showing at the edges — scale the image up by the same ratio (35 / 27.4238, the
-  // svg's full viewBox vs. its filled circle) and center it so the circle itself, not the padded
-  // image box, exactly covers the button.
-  const hoverIconPx = size === 10 ? 51 : 36;
 
   function setHover(value: boolean) {
     setHovered(value);
@@ -192,24 +173,15 @@ function AddSizeIconButton({
           setHover(false);
           onClick?.(e);
         }}
-        className={cn(
-          'relative flex shrink-0 items-center justify-center rounded-full shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)]',
-          sizeClass,
-        )}
-        style={{ background: '#26262C' }}
+        className="relative flex size-7 shrink-0 items-center justify-center rounded-full shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)] transition-colors"
+        style={{ background: hovered ? '#4570FF' : '#26262C' }}
       >
-        <Plus className={cn('size-4 text-white transition-opacity', hovered && 'opacity-0')} />
-        <img
-          src="/icons/add%20size.svg"
-          alt=""
-          className={cn('pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity', hovered ? 'opacity-100' : 'opacity-0')}
-          style={{ width: hoverIconPx, height: hoverIconPx }}
-        />
+        <img src="/icons/Button%2040/More-size.svg" alt="" className="size-4" />
       </button>
       {hovered && (
         <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 flex w-max min-w-[50px] max-w-[308px] -translate-x-1/2 flex-col items-center">
           <div className="rounded-md px-2 py-1 text-center text-sm text-white tracking-[-0.01em] leading-[140%]" style={{ background: '#50505D' }}>
-            {t(tooltip ?? 'Add more variations of this banner in different sizes')}
+            {t('Add more sizes')}
           </div>
           <div className="h-2 w-4" style={{ background: '#50505D', clipPath: 'polygon(50% 100%, 0 0, 100% 0)' }} />
         </div>
@@ -218,43 +190,24 @@ function AddSizeIconButton({
   );
 }
 
-/** The "ALL SIZES" section header's divider row — its own component so the add-icon's hover state can also brighten the divider line, per the reference design. */
-function AllSizesDivider({
-  left,
-  top,
-  width,
-  onConfirm,
-  sourceLayoutId,
-  onFocusPrimary,
-  primarySize,
-}: {
-  left: number;
-  top: number;
-  width: number;
-  onConfirm: (results: QuickSizeResult[]) => void;
-  sourceLayoutId: string;
-  /** Recenters the camera on the primary scene — the primary can be scrolled out of view for a large group, so opening this menu brings it back on screen. */
-  onFocusPrimary: () => void;
-  /** This group's own primary dimensions — picks the ratio-specific hover copy for the "+" icon. */
-  primarySize: { width: number; height: number };
-}) {
+/** The hotspot below a scene card — a wide labeled pill (not the small hover-circle the "ALL
+ * SIZES" divider uses above), always legible rather than hover-revealed-as-an-icon, matching the
+ * reference design's "Button 40 / Primary text" component. */
+function AddMoreSizesButton({ onClick }: { onClick?: (e: ReactMouseEvent) => void }) {
   const t = useT();
-  const [hovered, setHovered] = useState(false);
   return (
-    <div className="absolute flex items-center gap-3" style={{ left, top, width }}>
-      <span className="shrink-0 text-base text-white/45">{t('ALL SIZES')}</span>
-      <div className="pointer-events-auto shrink-0">
-        <QuickSizeMenu onConfirm={onConfirm} sourceLayoutId={sourceLayoutId}>
-          <AddSizeIconButton
-            size={7}
-            onHoverChange={setHovered}
-            onClick={onFocusPrimary}
-            tooltip={ADD_SIZE_TOOLTIP_BY_BUCKET[classifyRatioBucket(primarySize.width, primarySize.height)]}
-          />
-        </QuickSizeMenu>
-      </div>
-      <div className="h-px min-w-0 flex-1 transition-colors" style={{ background: hovered ? 'rgba(255,255,255,0.45)' : '#40404A' }} />
-    </div>
+    <button
+      type="button"
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.(e);
+      }}
+      className="flex h-[47px] shrink-0 items-center gap-2 rounded-full bg-[#4570FF] px-6 pb-px text-white shadow-[0px_1px_2px_rgba(0,0,0,0.03),0px_1px_6px_-1px_rgba(0,0,0,0.02),0px_2px_4px_rgba(0,0,0,0.02)] transition-colors hover:bg-[#2C52DA]"
+    >
+      <img src="/icons/Button%2040/More-size.svg" alt="" className="size-6 shrink-0" />
+      <span className="text-[15px] leading-6 font-semibold tracking-[-0.01em]">{t('Add more sizes')}</span>
+    </button>
   );
 }
 
@@ -263,12 +216,14 @@ const ADD_ICON_GAP = 8; // fixed screen px — the line stops this far short of 
 const ALL_SIZES_LABEL_RESERVE = 100; // approximate screen-px width reserved for the "ALL SIZES" text before the line begins
 
 /**
- * One shared "ALL SIZES" header spanning every column of a bundle of primaries created together
- * (see BannersTab's "+") — a single divider line running the full row, punctuated by one "+" per
- * column (each still independently starting *that* column's own group), rather than each column
- * getting its own separate header. The line renders as discrete segments between icons (not one
- * continuous line with icons drawn on top) so the canvas's dotted background shows through in the
- * `ADD_ICON_GAP` on either side of each circle, matching the reference design.
+ * The "ALL SIZES" row's divider line + one "+" icon per column — used both for a single group's
+ * own header (one icon) and for a bundle of primaries created together (see BannersTab's "+")
+ * sharing one line across every column that has sizes, rather than each column getting its own
+ * separate header. Each icon's own `x` is expected to already be centered on that column's own
+ * primary card (see MultiPageCanvas's Pass 4, which centers the primary the same way). The line
+ * renders as discrete segments between icons (not one continuous line with icons drawn on top) so
+ * the canvas's dotted background shows through in the `ADD_ICON_GAP` on either side of each circle,
+ * matching the reference design.
  */
 function UnifiedAllSizesHeader({
   left,
@@ -285,7 +240,6 @@ function UnifiedAllSizesHeader({
 }) {
   const t = useT();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const tooltipFor = (entry: PageEntry) => ADD_SIZE_TOOLTIP_BY_BUCKET[classifyRatioBucket(entry.layout.size.width, entry.layout.size.height)];
   return (
     <div className="pointer-events-none absolute" style={{ left, top, width: totalWidth, height: 0 }}>
       {/* Vertical centering here is done with explicit `top` offsets, not `transform: translateY`
@@ -308,12 +262,7 @@ function UnifiedAllSizesHeader({
             )}
             <div className="pointer-events-auto absolute" style={{ left: icon.x - ADD_ICON_SIZE / 2, top: -ADD_ICON_SIZE / 2 }}>
               <QuickSizeMenu onConfirm={icon.onConfirm} sourceLayoutId={icon.entry.layout.id}>
-                <AddSizeIconButton
-                  size={7}
-                  onHoverChange={(v) => setHoveredIndex(v ? i : null)}
-                  onClick={icon.onFocusPrimary}
-                  tooltip={tooltipFor(icon.entry)}
-                />
+                <AddSizeIconButton onHoverChange={(v) => setHoveredIndex(v ? i : null)} onClick={icon.onFocusPrimary} />
               </QuickSizeMenu>
             </div>
           </div>
@@ -367,7 +316,7 @@ function AddPageHotspot({ edge, sourceLayoutId, onConfirm }: { edge: 'right' | '
             <Plus className="size-4" />
           </button>
         ) : (
-          <AddSizeIconButton />
+          <AddMoreSizesButton />
         )}
       </QuickSizeMenu>
     </div>
@@ -406,10 +355,12 @@ function PageCard({
   height: number;
   scale: number;
   active: boolean;
-  /** True only once truly "entered" (double-clicked) — unlike `active` (also true from a plain
-   * single-select), this is what unlocks ArtboardFrame's full inner-layer interactivity (drag the
-   * image, edit text in place, etc.). A merely-selected-but-not-entered card stays a static preview
-   * so dragging it always moves the whole card instead of grabbing a layer underneath. */
+  /** True once this card is the single "active" one (`viewAllActivePageId`) — unlike `active` below
+   * (also true for every card in a shift-multi-selection), this is what unlocks ArtboardFrame's full
+   * inner-layer interactivity (drag the image, edit text in place, etc.), set by a plain single
+   * click landing on this card (see ArtboardFrame's own `handleFrameMouseDown`). A multi-selected
+   * but not-entered card stays a static preview so dragging it always moves the whole card instead
+   * of grabbing a layer underneath. */
   entered: boolean;
   isLoading: boolean;
   isPrimary: boolean;
@@ -442,10 +393,9 @@ function PageCard({
   return (
     <div
       className={cn('group/card absolute', reflowing ? 'transition-[opacity,left,top] duration-150' : 'transition-opacity')}
-      style={{ left, top, width, height, opacity: layout.hidden ? 0.25 : dimmed ? 0.6 : 1, zIndex: dragging ? 10 : undefined }}
+      style={{ left, top, width, height, opacity: dimmed ? 0.6 : 1, zIndex: dragging ? 10 : undefined }}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
-      onDoubleClick={onActivate}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -519,6 +469,9 @@ export function MultiPageCanvas() {
   const focusPageId = useAppStore((s) => s.focusPageId);
   const requestFocusPage = useAppStore((s) => s.requestFocusPage);
   const clearFocusPage = useAppStore((s) => s.clearFocusPage);
+  const revealPageId = useAppStore((s) => s.revealPageId);
+  const requestRevealPage = useAppStore((s) => s.requestRevealPage);
+  const clearRevealPage = useAppStore((s) => s.clearRevealPage);
   const selectGroup = useAppStore((s) => s.selectGroup);
   const activeCanvasRootId = useAppStore((s) => s.activeCanvasRootId);
   const setActiveCanvas = useAppStore((s) => s.setActiveCanvas);
@@ -669,9 +622,12 @@ export function MultiPageCanvas() {
       .slice(1)
       .map((id) => entries.find((e) => e.id === id))
       .filter((e): e is PageEntry => Boolean(e));
+    // A hidden sibling stays a pack member (siblingIds below still claims its id, so it never gets
+    // mistaken for its own standalone cluster root) but drops out of the packed column entirely —
+    // its slot isn't reserved, so the visible siblings after it shift up to close the gap.
     const layout = computeGroupLayout(
       primaryEntry.layout.size,
-      siblingEntries.map((e) => ({ id: e.id, width: e.layout.size.width, height: e.layout.size.height })),
+      siblingEntries.filter((e) => !e.layout.hidden).map((e) => ({ id: e.id, width: e.layout.size.width, height: e.layout.size.height })),
     );
     relativeLayoutByGroupId.set(group.id, { primaryEntry, siblingEntries, layout });
     for (const s of siblingEntries) siblingIds.add(s.id);
@@ -718,12 +674,15 @@ export function MultiPageCanvas() {
   // the dragged card's own on-screen position (applied at final render) floats free.
 
   // Pass 3: group cluster roots created together (see BannersTab's "+") by their shared
-  // canvasRootByPage value. Once at least one bundle member has grown its own sibling pack, the
-  // whole bundle gets ONE shared "PRIMARY SIZE"/"ALL SIZES" header spanning every column instead of
-  // each column growing its own separately — and every grouped member's own sibling pack is shifted
-  // to start at one shared line, so every column's "All sizes" row begins at the same Y regardless
-  // of how tall its own primary happens to be. A lone (unbundled) cluster root, or a bundle where
-  // nothing has sizes yet, is untouched here and keeps its ordinary single-column treatment below.
+  // canvasRootByPage value. Once at least *two* bundle members have grown their own sibling pack,
+  // those members get ONE shared "PRIMARY SIZE"/"ALL SIZES" header spanning just their columns —
+  // and each of *their* own sibling packs is shifted to start at one shared line, so every included
+  // column's "All sizes" row begins at the same Y regardless of how tall its own primary happens to
+  // be. A bundle member with no sizes of its own yet is left out of this shared line entirely (even
+  // if it sits between two members that do have one) — it keeps its own single-column "Add more
+  // sizes" pill until it has sizes to report, joining the shared line only once it does. A lone
+  // (unbundled) cluster root, or a bundle where fewer than two members have sizes, is untouched
+  // here and keeps its ordinary single-column treatment below.
   type UnifiedHeader = {
     originX: number;
     originY: number;
@@ -744,9 +703,13 @@ export function MultiPageCanvas() {
     bundleByKey.set(key, list);
   }
   for (const bundle of bundleByKey.values()) {
-    if (bundle.length < 2) continue;
-    const sorted = [...bundle].sort((a, b) => a.pos.x - b.pos.x);
-    if (!sorted.some((root) => groupIdByPrimaryId.has(root.id))) continue;
+    // Only a bundle member that has *actually* grown its own sibling pack joins the shared,
+    // connected line — a freshly-added primary with nothing added yet stays its own separate
+    // column (with just its own "Add more sizes" pill below it) until it has sizes of its own to
+    // report, rather than being swept into a line/icon that doesn't apply to it yet.
+    const withSizes = bundle.filter((root) => groupIdByPrimaryId.has(root.id));
+    if (withSizes.length < 2) continue;
+    const sorted = [...withSizes].sort((a, b) => a.pos.x - b.pos.x);
 
     const originX = sorted[0].pos.x;
     const originY = sorted[0].pos.y;
@@ -770,24 +733,33 @@ export function MultiPageCanvas() {
   }
 
   // Pass 4: now that every cluster root's `.pos` (and every bundle's Y-alignment delta) is final,
-  // anchor each group's siblings relative to its (possibly just-reflowed) primary.
+  // anchor each group's siblings relative to its (possibly just-reflowed) primary — both the
+  // primary card and the sibling pack simply left-align to the group's origin, whichever is
+  // narrower. `originX`/`originY` stay the group's true left edge throughout — used unchanged
+  // below for the "PRIMARY SIZE"/"ALL SIZES" label and divider, which still span the group's full
+  // `contentWidth` starting there.
   for (const [groupId, { primaryEntry, siblingEntries, layout }] of relativeLayoutByGroupId) {
+    const originX = primaryEntry.pos.x;
+    const originY = primaryEntry.pos.y;
     groupLayoutById.set(groupId, {
       primaryEntry,
-      originX: primaryEntry.pos.x,
-      originY: primaryEntry.pos.y,
+      originX,
+      originY,
       layout: {
         ...layout,
         primaryLabelY: layout.primaryLabelY - titleClearance,
       },
     });
     const yDelta = siblingsYDeltaByGroupId.get(groupId) ?? 0;
+
+    primaryEntry.pos = { x: originX, y: originY };
+
     for (const box of layout.siblings) {
       const target = siblingEntries.find((e) => e.id === box.id);
       if (target)
         target.pos = {
-          x: primaryEntry.pos.x + box.x,
-          y: primaryEntry.pos.y + box.y + titleClearance + yDelta,
+          x: originX + box.x,
+          y: originY + box.y + titleClearance + yDelta,
         };
     }
   }
@@ -843,6 +815,21 @@ export function MultiPageCanvas() {
     clearFocusPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusPageId, viewport.width, viewport.height]);
+
+  // Duplicating a scene requests this instead of `focusPageId` — a plain pan to bring the new copy
+  // into view, at whatever zoom the canvas is already at, rather than `focusPageId`'s zoom-to-fill.
+  useEffect(() => {
+    if (!revealPageId || viewport.width === 0) return;
+    const entry = entries.find((e) => e.id === revealPageId);
+    if (entry) {
+      const zoom = camera.zoom;
+      const x = viewport.width / 2 - (entry.pos.x + entry.layout.size.width / 2) * zoom;
+      const y = viewport.height / 2 - (entry.pos.y + entry.layout.size.height / 2) * zoom;
+      animateCameraTo({ x, y, zoom });
+    }
+    clearRevealPage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealPageId, viewport.width, viewport.height]);
 
   // Zoom bar: jump to an exact zoom level, keeping the viewport's own center point fixed in
   // canvas-space (same "zoom around a point" math the wheel handler below uses, just centered on
@@ -994,7 +981,7 @@ export function MultiPageCanvas() {
         .map((id) => {
           const set = state.setsById[id];
           const layout = set ? state.layoutsById[set.sourceLayoutId] : null;
-          return layout ? { id, width: layout.size.width, height: layout.size.height } : null;
+          return layout && !layout.hidden ? { id, width: layout.size.width, height: layout.size.height } : null;
         })
         .filter((b): b is { id: string; width: number; height: number } => Boolean(b));
       const packed = computeGroupLayout(primaryLayout.size, siblingBoxes);
@@ -1052,7 +1039,7 @@ export function MultiPageCanvas() {
         .map((id) => {
           const set = state.setsById[id];
           const layout = set ? state.layoutsById[set.sourceLayoutId] : null;
-          return layout ? { id, width: layout.size.width, height: layout.size.height } : null;
+          return layout && !layout.hidden ? { id, width: layout.size.width, height: layout.size.height } : null;
         })
         .filter((b): b is { id: string; width: number; height: number } => Boolean(b));
       return computeGroupLayout(root.layout.size, siblingBoxes).contentWidth;
@@ -1309,9 +1296,31 @@ export function MultiPageCanvas() {
     upsertLayout(newLayout);
     loadSet(newSet, { x: entry.pos.x, y: entry.pos.y + source.size.height + PAGE_GAP });
     groupPagesWith(sourcePageId, [newSetId], setsById[sourcePageId]?.name ?? source.size.label);
+    // groupPagesWith always appends the new sibling at the very end of the pack order — slot it in
+    // right after the specific size that was actually duplicated instead, so it visually lands
+    // directly below what was right-clicked (the pack stacks siblings vertically in member order),
+    // regardless of where that happened to sit in a larger group.
+    const groupIdAfter = useAppStore.getState().pageGroupIdByPage[sourcePageId];
+    const groupAfter = groupIdAfter ? useAppStore.getState().pageGroups[groupIdAfter] : undefined;
+    if (groupAfter) {
+      const siblingIds = groupAfter.memberIds.slice(1).filter((id) => id !== newSetId);
+      const insertAfterIndex = entry.id === groupAfter.memberIds[0] ? -1 : siblingIds.indexOf(entry.id);
+      const nextSiblingIds =
+        insertAfterIndex === -1
+          ? [newSetId, ...siblingIds]
+          : [...siblingIds.slice(0, insertAfterIndex + 1), newSetId, ...siblingIds.slice(insertAfterIndex + 1)];
+      reorderGroupSiblings(groupIdAfter, nextSiblingIds);
+    }
+    // The general auto-fit effect keys on `entries.length` and would otherwise zoom out to frame
+    // the whole (now one-bigger) set the instant this lands — pre-seed its key with what that
+    // effect will compute next render so it sees no change and skips, then separately request a
+    // plain pan (current zoom kept as-is) to bring just the new copy into view.
+    const nextRootId = canvasRootOf(useAppStore.getState(), sourcePageId);
+    fitKeyRef.current = `${nextRootId}:${entries.length + 1}:${viewport.width}:${viewport.height}`;
+    requestRevealPage(newSetId);
     selectElement(null);
     selectScene(newSetId);
-    setActiveCanvas(canvasRootOf(useAppStore.getState(), sourcePageId));
+    setActiveCanvas(nextRootId);
     setActiveLayout(newLayoutId);
   }
 
@@ -1371,14 +1380,20 @@ export function MultiPageCanvas() {
                     {t('PRIMARY SIZE')}
                   </div>
                   {layout.siblings.length > 0 && (
-                    <AllSizesDivider
+                    <UnifiedAllSizesHeader
                       left={left}
                       top={headerTop}
-                      width={dividerWidth}
-                      onConfirm={(results) => handleAddAdjacent(primaryEntry, 'right', results)}
-                      sourceLayoutId={primaryEntry.layout.id}
-                      onFocusPrimary={() => requestFocusPage(primaryEntry.id)}
-                      primarySize={primaryEntry.layout.size}
+                      totalWidth={dividerWidth}
+                      icons={[
+                        {
+                          // Centered on the group's own contentWidth — exactly where Pass 4 above
+                          // also centers the primary card itself, so the icon and the primary line up.
+                          x: dividerWidth / 2,
+                          entry: primaryEntry,
+                          onConfirm: (results) => handleAddAdjacent(primaryEntry, 'right', results),
+                          onFocusPrimary: () => requestFocusPage(primaryEntry.id),
+                        },
+                      ]}
                     />
                   )}
                 </div>
@@ -1412,6 +1427,9 @@ export function MultiPageCanvas() {
 
         {viewport.width > 0 &&
           entries.map((entry) => {
+            // "Hide banner" removes the scene from the canvas entirely, rather than just dimming it
+            // — its own data (and its slot in any sibling pack) is untouched, only rendering skips it.
+            if (entry.layout.hidden) return null;
             const isDraggingThis = reorderDrag?.siblingId === entry.id;
             // A cluster-root drag only ever floats the one card being dragged — its own "PRIMARY
             // SIZE" header, divider, and any sibling pack all stay put at their settled cascade slot
@@ -1447,7 +1465,7 @@ export function MultiPageCanvas() {
                 active={entry.id === viewAllActivePageId || selectedSceneIds.includes(entry.id)}
                 entered={entry.id === viewAllActivePageId}
                 isLoading={Boolean(loadingPageIds[entry.id])}
-                isPrimary={pageGroups[pageGroupIdByPage[entry.id]]?.memberIds[0] === entry.id}
+                isPrimary={isPrimaryPage({ pageGroupIdByPage, pageGroups }, entry.id)}
                 showCascadeToolbar={pageGroups[pageGroupIdByPage[entry.id]]?.memberIds[0] === entry.id && Boolean(pendingCascadeSetIds[entry.id])}
                 dimmed={
                   !isMultiSceneElementSelection &&

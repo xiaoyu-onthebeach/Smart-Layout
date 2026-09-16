@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { ArrowRight, ChevronDown } from 'lucide-react';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import type { CascadeMode } from '@/store/types';
 
+// Shared by the trigger and its dropdown so the popover lines up exactly with the field that opened it.
+const SELECT_WIDTH = 160;
+
 const MODE_OPTIONS: { value: CascadeMode; label: string; icon: string }[] = [
-  { value: 'full', label: 'Layers & properties', icon: '/icons/group-layers.svg' },
+  { value: 'full', label: 'All properties', icon: '/icons/group-layers.svg' },
   { value: 'styleOnly', label: 'Style only', icon: '/icons/style.svg' },
 ];
 
@@ -34,7 +36,7 @@ export function CascadeToolbar({ setId }: { setId: string }) {
       }}
     >
       <span className="flex shrink-0 items-center gap-2 py-2 text-sm font-semibold whitespace-nowrap text-white">
-        <img src="/icons/apply-change.svg" alt="" className="size-[22px] shrink-0" />
+        <img src="/icons/apply-change.svg" alt="" className="size-[28px] shrink-0" />
         {t('Apply changes to all sizes')}
       </span>
 
@@ -44,8 +46,8 @@ export function CascadeToolbar({ setId }: { setId: string }) {
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="flex h-8 w-[204px] shrink-0 items-center gap-2 rounded-lg border px-3 text-sm text-white"
-            style={{ borderColor: '#40404A' }}
+            className="flex h-8 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm text-white"
+            style={{ width: SELECT_WIDTH, borderColor: '#40404A' }}
           >
             <img src={activeOption.icon} alt="" className="size-4 shrink-0" />
             <span className="min-w-0 flex-1 truncate text-left tracking-[-0.01em]">{t(activeOption.label)}</span>
@@ -55,8 +57,8 @@ export function CascadeToolbar({ setId }: { setId: string }) {
         <PopoverContent
           align="start"
           sideOffset={6}
-          className="w-[190px] border-[#40404A] p-1 text-chrome-fg backdrop-blur-lg"
-          style={{ background: 'rgba(38,38,44,0.88)', borderRadius: 12 }}
+          className="border-[#40404A] p-1 text-chrome-fg backdrop-blur-lg"
+          style={{ width: SELECT_WIDTH, background: 'rgba(38,38,44,0.88)', borderRadius: 12 }}
         >
           <div className="flex flex-col gap-0.5">
             {MODE_OPTIONS.map((opt) => (
@@ -64,10 +66,7 @@ export function CascadeToolbar({ setId }: { setId: string }) {
                 <button
                   type="button"
                   onClick={() => setMode(opt.value)}
-                  className={cn(
-                    'flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-left text-sm tracking-[-0.01em] transition-colors hover:bg-white/10',
-                    opt.value === mode ? 'text-white' : 'text-white/70',
-                  )}
+                  className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-left text-sm text-white tracking-[-0.01em] transition-colors hover:bg-white/10"
                 >
                   <img src={opt.icon} alt="" className="size-4 shrink-0" />
                   {t(opt.label)}

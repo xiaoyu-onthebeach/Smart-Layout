@@ -12,6 +12,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   downloading: false,
   selectedElements: [],
   autoMatchedElements: [],
+  activeGuides: [],
   activeLayoutId: null,
   selectedSceneIds: [],
   editingTextElementId: null,
@@ -22,6 +23,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   loadingPageIds: {},
   pendingCascadeSetIds: {},
   focusPageId: null,
+  revealPageId: null,
   uploadedAssetUrls: [],
   activeCanvasRootId: null,
   pickingFocusForLayoutId: null,
@@ -41,30 +43,40 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   selectElement: (ref, additive) =>
     set((state) => {
       if (!ref) return { selectedElements: [], autoMatchedElements: [], editingTextElementId: null };
+      const clicked = state.layoutsById[ref.layoutId]?.elements.find((el) => el.id === ref.elementId);
       // A locked layer can't be selected at all — from the layers panel or the canvas alike, since
       // both funnel every click through this one action.
-      if (state.layoutsById[ref.layoutId]?.elements.find((el) => el.id === ref.elementId)?.locked) return {};
+      if (clicked?.locked) return {};
+      // A grouped element always selects (or deselects) its whole group as one unit — clicking any
+      // member is equivalent to clicking every member. Purely an in-scene concept, so this doesn't
+      // combine with cross-scene match-select below (a grouped element skips match-expansion).
+      const groupRefs = clicked?.groupId
+        ? state.layoutsById[ref.layoutId]!.elements.filter((el) => el.groupId === clicked.groupId).map((el) => ({ layoutId: ref.layoutId, elementId: el.id }))
+        : [ref];
       if (!additive) {
-        // A plain click replaces the selection with just `ref` — plus, while match-select is on,
-        // whatever matches it in every other size of the group (see match-select.ts). Shift-click
-        // (the `additive` branch below) never auto-expands: it's for building one ad-hoc
-        // multi-selection, not for opting into cross-scene matching. `matches` is also tracked
-        // separately so the canvas can outline only the literal clicked element, not every
-        // auto-matched sibling (see autoMatchedElements).
-        const matches = state.matchSelectEnabled ? findMatchingRefsAcrossGroup(state, ref) : [];
-        return { selectedElements: [ref, ...matches], autoMatchedElements: matches, editingTextElementId: null };
+        // A plain click replaces the selection with just `ref` (or its whole group) — plus, while
+        // match-select is on, whatever matches it in every other size of the group (see
+        // match-select.ts). Shift-click (the `additive` branch below) never auto-expands: it's for
+        // building one ad-hoc multi-selection, not for opting into cross-scene matching. `matches`
+        // is also tracked separately so the canvas can outline only the literal clicked element,
+        // not every auto-matched sibling (see autoMatchedElements).
+        const matches = !clicked?.groupId && state.matchSelectEnabled ? findMatchingRefsAcrossGroup(state, ref) : [];
+        return { selectedElements: [...groupRefs, ...matches], autoMatchedElements: matches, editingTextElementId: null };
       }
-      const exists = state.selectedElements.some((r) => r.layoutId === ref.layoutId && r.elementId === ref.elementId);
+      const isRef = (r: { layoutId: string; elementId: string }, g: { layoutId: string; elementId: string }) => r.layoutId === g.layoutId && r.elementId === g.elementId;
+      const alreadySelected = groupRefs.every((g) => state.selectedElements.some((r) => isRef(r, g)));
       return {
-        selectedElements: exists
-          ? state.selectedElements.filter((r) => !(r.layoutId === ref.layoutId && r.elementId === ref.elementId))
-          : [...state.selectedElements, ref],
-        // A shift-clicked ref is always a literal click, never an auto-match — drop it from
-        // autoMatchedElements too (a no-op unless it happens to already be there).
-        autoMatchedElements: state.autoMatchedElements.filter((r) => !(r.layoutId === ref.layoutId && r.elementId === ref.elementId)),
+        selectedElements: alreadySelected
+          ? state.selectedElements.filter((r) => !groupRefs.some((g) => isRef(r, g)))
+          : [...state.selectedElements, ...groupRefs.filter((g) => !state.selectedElements.some((r) => isRef(r, g)))],
+        // A shift-clicked ref is always a literal click, never an auto-match — drop it (and its
+        // whole group) from autoMatchedElements too (a no-op unless it happens to already be there).
+        autoMatchedElements: state.autoMatchedElements.filter((r) => !groupRefs.some((g) => isRef(r, g))),
         editingTextElementId: null,
       };
     }),
+  setSelectedElements: (refs) => set({ selectedElements: refs, autoMatchedElements: [], editingTextElementId: null }),
+  setActiveGuides: (guides) => set({ activeGuides: guides }),
   setActiveLayout: (id) =>
     set({ activeLayoutId: id, selectedSceneIds: [], selectedElements: [], autoMatchedElements: [], editingTextElementId: null }),
   selectScene: (setId, additive) =>
@@ -102,6 +114,8 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   },
   requestFocusPage: (pageId) => set({ focusPageId: pageId }),
   clearFocusPage: () => set({ focusPageId: null }),
+  requestRevealPage: (pageId) => set({ revealPageId: pageId }),
+  clearRevealPage: () => set({ revealPageId: null }),
   setActiveCanvas: (rootId) => set({ activeCanvasRootId: rootId }),
   startPickingFocus: (layoutId) => set({ pickingFocusForLayoutId: layoutId, focusPickConfirmed: false }),
   stopPickingFocus: () => set({ pickingFocusForLayoutId: null, focusPickConfirmed: false }),

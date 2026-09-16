@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { layoutHasSiblingSizes } from '@/lib/match-select';
 import { useT } from '@/lib/i18n';
-import { exportLayout, type ExportFileType } from '@/lib/export-image';
+import { exportLayout, type ExportFileType, type ExportScale } from '@/lib/export-image';
+import { isGradient } from '@/lib/gradient';
 import { ColorPickerPopover } from './ColorPickerPopover';
 import type { Layout, LayoutElement, ShadowStyle } from '@/types';
 
@@ -18,7 +19,7 @@ export function PanelCard({ width = 279, gap = 8, children }: { width?: number; 
   return (
     <div
       data-panel-card
-      className="flex max-h-full min-h-0 flex-col items-stretch overflow-y-auto rounded-xl border border-[#26262C] py-4"
+      className="flex max-h-full min-h-0 flex-col items-stretch overflow-y-auto rounded-xl border-[0.5px] border-[#26262C] py-4"
       style={{ width, gap, background: '#19191D' }}
     >
       {children}
@@ -30,15 +31,18 @@ export function PanelHeader({ icon, title, trailing }: { icon: ReactNode; title:
   return (
     <div className="flex items-center gap-1.5 px-4 pb-1">
       {icon}
-      <span className="min-w-0 flex-1 truncate text-[11px] font-semibold tracking-[-0.01em] text-white uppercase">{title}</span>
+      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-[-0.01em] text-white">{title}</span>
       {trailing}
     </div>
   );
 }
 
-/** A header icon that already bakes in its own tile background/border/shadow (the `icons/edit_panel/*` set) — rendered slightly oversized so that built-in drop shadow isn't clipped. */
-export function PanelHeaderIcon({ src }: { src: string }) {
-  return <img src={src} alt="" className="-ml-1 size-8 shrink-0" />;
+/** A header icon that already bakes in its own tile background/border/shadow (the `icons/edit_panel/*` set) — rendered slightly oversized so that built-in drop shadow isn't clipped.
+ * `style` is an escape hatch for a specific asset whose own glyph sits off-center within its
+ * transparent canvas (the box itself is always centered against sibling content via flex
+ * `items-center`; a lopsided asset still needs its own nudge on top of that). */
+export function PanelHeaderIcon({ src, style }: { src: string; style?: CSSProperties }) {
+  return <img src={src} alt="" className="-ml-1 size-8 shrink-0" style={style} />;
 }
 
 /**
@@ -71,7 +75,7 @@ export function MatchSelectButton({ targets }: { targets: EditorTarget[] }) {
           onClick={() => (matchSelectEnabled ? disableMatchSelect() : enableMatchSelect())}
           className={cn('flex size-6 shrink-0 items-center justify-center rounded-md transition-colors', matchSelectEnabled ? 'bg-button-primary' : 'bg-[#40404A] hover:bg-white/20')}
         >
-          <img src="/icons/match_select.svg" alt="" className="size-4" />
+          <img src="/icons/apply-change.svg" alt="" className="size-5" />
         </button>
       </TooltipTrigger>
       {/* No custom background here — TooltipContent's own arrow is a separate element with a
@@ -105,7 +109,7 @@ const AXIS_LABELS: Record<string, string> = {
 function AlignIconGroup({ options }: { options: readonly { value: string; icon: string }[] }) {
   const t = useT();
   return (
-    <div className="flex flex-1 items-center gap-0.5 rounded-md bg-chrome-border-subtle p-0.5">
+    <div className="flex flex-1 items-center gap-0.5">
       {options.map((opt) => (
         <button
           key={opt.value}
@@ -419,10 +423,10 @@ export function PositionSection({
   );
 }
 
-export function PanelSection({ label, icon, children }: { label: string; icon?: ReactNode; children: ReactNode }) {
+export function PanelSection({ label, icon, children, style }: { label: string; icon?: ReactNode; children: ReactNode; style?: CSSProperties }) {
   return (
-    <div className="flex flex-col gap-2 px-4">
-      <span className="flex items-center gap-1.5 text-xs font-semibold text-white">
+    <div className="flex flex-col gap-2 px-4" style={style}>
+      <span className="flex items-center gap-1.5 text-[13px] font-semibold tracking-[-0.01em] text-white">
         {icon}
         {label}
       </span>
@@ -477,6 +481,46 @@ export function PanelDivider() {
   return <div className="h-px w-full shrink-0" style={{ background: '#40404A' }} />;
 }
 
+/** Every Fill/Border/Style/Radius/Weight control in a panel using `InlineRow` shares this width so
+ * their left edges line up — each one's natural content width differs (a color pill vs. a
+ * segmented control vs. a number field), so without a shared width only their *right* edges
+ * (pinned by the row's own `justify-between`) would ever align. */
+export const INLINE_VALUE_COL_WIDTH = 151;
+
+/** A "label left, control right, one row" field — shared by the banner panel and the per-element
+ * panels (text/shape/image) for their Fill/Border/Style/Radius/Weight rows, distinct from the
+ * other stacked `PanelSection` layout (label above, full-width content below). No horizontal
+ * padding of its own — every caller already nests this inside a `px-4` parent (`PanelSection` or
+ * an equivalent section wrapper), so adding it here too would double it. */
+export function InlineRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="shrink-0 text-[11px] text-white/65">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+/** Fill/Border's value control — swatch, hex, and opacity all inside one pill, divided by a
+ * hairline, rather than a separate swatch button beside a field (the shared `ColorRow`'s layout). */
+export function InlineColorField({ color, onChange }: { color: string; onChange: (color: string) => void }) {
+  const t = useT();
+  return (
+    <div className="flex h-9 shrink-0 items-center justify-between rounded-lg px-2" style={{ width: INLINE_VALUE_COL_WIDTH, background: '#26262C' }}>
+      <div className="flex min-w-0 items-center gap-2">
+        <ColorPickerPopover color={color} onChange={onChange}>
+          <button type="button" aria-label={t('Color')} className="size-6 shrink-0 rounded-full border border-black/20" style={{ background: color }} />
+        </ColorPickerPopover>
+        <span className="truncate text-[11px] text-white uppercase">{isGradient(color) ? t('Linear') : color}</span>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <div className="h-4 w-px shrink-0" style={{ background: '#40404A' }} />
+        <span className="text-[11px] text-white/65">100%</span>
+      </div>
+    </div>
+  );
+}
+
 export function ColorRow({ color, onChange }: { color: string; onChange: (color: string) => void }) {
   const t = useT();
   return (
@@ -485,7 +529,9 @@ export function ColorRow({ color, onChange }: { color: string; onChange: (color:
         <button type="button" aria-label={t('Color')} className="size-8 shrink-0 rounded-full border border-black/20" style={{ background: color }} />
       </ColorPickerPopover>
       <div className="flex h-8 flex-1 items-center gap-2 rounded-lg border border-chrome-border bg-chrome-border-subtle px-3 text-sm text-chrome-fg">
-        <span className="flex-1 truncate uppercase">{color}</span>
+        {/* A gradient's own CSS string is an implementation detail, not something worth spelling
+            out in full here — "Linear" names the fill kind the same way a hex value names a color. */}
+        <span className="flex-1 truncate uppercase">{isGradient(color) ? t('Linear') : color}</span>
         <span className="shrink-0 text-white/45">100%</span>
       </div>
     </div>
@@ -642,28 +688,67 @@ export const BORDER_STYLE_ICONS: Record<'none' | 'solid' | 'dashed' | 'dotted', 
   dotted: '/icons/edit_panel/border-dotted%2016.svg',
 };
 
-/** Number field + the uniform/per-corner radius toggle. Only "uniform" (the current single-value
- * radius model) actually does anything — the per-corner button is a visual placeholder for a mode
- * the layout engine doesn't support yet. */
-export function RadiusRow({ value, onCommit }: { value: number; onCommit: (value: number) => void }) {
+// Reused for every corner via CSS rotation (see the per-corner radius row below) — one asset, four orientations.
+const CORNER_ROTATIONS = [0, 90, -90, -180];
+
+/** "Radius" row shared by the banner/shape/image panels — clicking "per-corner" reveals a second
+ * row of four corner fields below it, each its own rounded box within the panel's own padding (not
+ * a joined pill, so nothing can overflow the panel edge the way an unbroken 4-way pill at this
+ * width would). Both the toggle and the four fields are decorative — no per-corner radius concept
+ * exists in the layout engine yet. */
+export function CornerRadiusRow({ value, onCommit }: { value: number; onCommit: (value: number) => void }) {
   const t = useT();
+  const [mode, setMode] = useState<'uniform' | 'corners'>('uniform');
   return (
-    <div className="flex items-center gap-2">
-      <NumberField className="w-full" value={String(value)} onCommit={(v) => onCommit(Math.max(0, Number(v) || 0))} />
-      <button
-        type="button"
-        aria-label={t('Uniform radius')}
-        className="flex h-8 w-10 shrink-0 items-center justify-center rounded-lg bg-[#26262C] text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02)]"
-      >
-        <img src="/icons/edit_panel/radius_all.svg" alt="" className="size-4" />
-      </button>
-      <button
-        type="button"
-        aria-label={t('Per-corner radius')}
-        className="flex h-8 w-10 shrink-0 items-center justify-center rounded-lg text-white/70 transition-colors hover:bg-white/10"
-      >
-        <img src="/icons/edit_panel/radius-each%20corner.svg" alt="" className="size-4" />
-      </button>
+    <div className="flex flex-col gap-2">
+      <InlineRow label={t('Radius')}>
+        <div className="flex items-center justify-between" style={{ width: INLINE_VALUE_COL_WIDTH }}>
+          <input
+            defaultValue={String(value)}
+            key={value}
+            onBlur={(e) => onCommit(Math.max(0, Number(e.target.value) || 0))}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            className="flex h-8 w-[68px] items-center justify-center rounded-md bg-[#26262C] text-center text-base font-bold text-white outline-none"
+          />
+          <div className="flex items-center gap-1 rounded-md p-0.5" style={{ background: '#26262C' }}>
+            <button
+              type="button"
+              aria-label={t('Uniform radius')}
+              onClick={() => setMode('uniform')}
+              className="flex size-7 items-center justify-center rounded-[5.6px]"
+              style={{ background: mode === 'uniform' ? '#131316' : 'transparent' }}
+            >
+              <img src="/icons/edit_panel/radius_all.svg" alt="" className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label={t('Per-corner radius')}
+              onClick={() => setMode('corners')}
+              className="flex size-7 items-center justify-center rounded-[5.6px]"
+              style={{ background: mode === 'corners' ? '#131316' : 'transparent' }}
+            >
+              <img src="/icons/radius_4.svg" alt="" className="size-3.5" />
+            </button>
+          </div>
+        </div>
+      </InlineRow>
+      {/* Right-aligned 2x2 grid (not left-aligned like every other row's control) — matches the
+          spec exactly: each pill is a fixed 97px, in two rows of two, the whole grid pinned to
+          the panel's right edge rather than starting from the shared value-column's left edge. */}
+      {mode === 'corners' && (
+        <div className="flex flex-col items-end gap-3 px-0">
+          {[CORNER_ROTATIONS.slice(0, 2), CORNER_ROTATIONS.slice(2, 4)].map((row, rowIdx) => (
+            <div key={rowIdx} className="flex items-center justify-end gap-3">
+              {row.map((deg, i) => (
+                <div key={i} className="flex h-8 w-[97px] shrink-0 items-center gap-2 rounded-md bg-[#26262C] pl-3">
+                  <img src="/icons/edit_panel/radius-each%20corner.svg" alt="" className="size-3.5 shrink-0" style={{ transform: `rotate(${deg}deg)` }} />
+                  <input defaultValue="0" className="w-0 min-w-0 flex-1 bg-transparent text-center text-base font-bold text-white outline-none" />
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -741,10 +826,12 @@ export function SegmentedControl<T extends string>({
   );
 }
 
-export function IconNumberField({ icon, value, onCommit }: { icon: string; value: string; onCommit: (value: string) => void }) {
+/** `icon` is usually an asset path, rendered as an `<img>` — but a couple of fields (e.g. rotation)
+ * have no matching 16px asset yet, so a `ReactNode` (a lucide icon) is accepted directly too. */
+export function IconNumberField({ icon, value, onCommit }: { icon: string | ReactNode; value: string; onCommit: (value: string) => void }) {
   return (
     <div className="flex items-center gap-1.5">
-      <img src={icon} alt="" className="size-4 shrink-0 opacity-70" />
+      {typeof icon === 'string' ? <img src={icon} alt="" className="size-4 shrink-0 opacity-70" /> : <span className="flex size-4 shrink-0 items-center justify-center text-white/70">{icon}</span>}
       <NumberField className="w-full" value={value} onCommit={onCommit} />
     </div>
   );
@@ -778,7 +865,11 @@ export function IconPopoverButton({ icon, active, children }: { icon: string; ac
             active && 'bg-white/10',
           )}
         >
-          <img src={icon} alt="" className="size-4" />
+          {/* This asset's own glyph only fills about half its 32x32 canvas — size-4 (16px) was
+              rendering the whole canvas at 16px, so the actual glyph came out ~8px, reading as
+              "too small". size-8 renders the canvas at its native size, so the glyph itself ends
+              up the intended ~16px instead. */}
+          <img src={icon} alt="" className="size-8" />
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" sideOffset={6} className="w-auto min-w-[140px] border-chrome-border bg-[#26262C]/95 p-1 text-chrome-fg backdrop-blur-lg">
@@ -842,18 +933,16 @@ export function SelectField({
 }
 
 const EXPORT_FILE_TYPES: ExportFileType[] = ['PNG', 'JPG'];
+const EXPORT_SCALES: ExportScale[] = [1, 2];
 
-/** The footer's own format dropdown — fixed 139px per spec, distinct from the shared `SelectField`
- * (which has a border/flex-1 that don't fit this row's fixed-width + borderless look). */
+/** The footer's own format dropdown — shares its row (and width) evenly with the scale dropdown
+ * beside it, distinct from the shared `SelectField` (which has a border that doesn't fit this
+ * row's borderless look). */
 function ExportFormatSelect({ value, onChange }: { value: ExportFileType; onChange: (value: ExportFileType) => void }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex h-8 w-[139px] shrink-0 items-center justify-between rounded-lg px-3 text-xs text-white"
-          style={{ background: '#26262C' }}
-        >
+        <button type="button" className="flex h-8 flex-1 items-center justify-between rounded-lg px-3 text-xs text-white" style={{ background: '#26262C' }}>
           <span>{value}</span>
           <ChevronDown className="size-3.5 shrink-0 text-white/45" />
         </button>
@@ -880,6 +969,38 @@ function ExportFormatSelect({ value, onChange }: { value: ExportFileType; onChan
   );
 }
 
+/** The footer's own export-resolution dropdown — 1x (native size) or 2x. */
+function ExportScaleSelect({ value, onChange }: { value: ExportScale; onChange: (value: ExportScale) => void }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className="flex h-8 flex-1 items-center justify-between rounded-lg px-3 text-xs text-white" style={{ background: '#26262C' }}>
+          <span>{value}x</span>
+          <ChevronDown className="size-3.5 shrink-0 text-white/45" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" sideOffset={6} className="w-[100px] border-chrome-border bg-[#26262C]/95 p-1 text-chrome-fg backdrop-blur-lg">
+        <div className="flex flex-col gap-0.5">
+          {EXPORT_SCALES.map((opt) => (
+            <PopoverClose asChild key={opt}>
+              <button
+                type="button"
+                onClick={() => onChange(opt)}
+                className={cn(
+                  'flex h-8 shrink-0 items-center rounded-md px-3 text-left text-xs transition-colors hover:bg-white/10',
+                  opt === value ? 'text-white' : 'text-white/70',
+                )}
+              >
+                {opt}x
+              </button>
+            </PopoverClose>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** Bottom-of-panel export action — only the scene/banner-level panels (SceneEditorPanel,
  * MultiSceneContentPanel) get this; the per-layer panels don't have anything to export on their own.
  * Renders straight to a browser download (no intermediate settings dialog) — the store's own
@@ -889,12 +1010,13 @@ export function PanelExportFooter({ layouts }: { layouts: Layout[] }) {
   const downloading = useAppStore((s) => s.downloading);
   const setDownloading = useAppStore((s) => s.setDownloading);
   const [fileType, setFileType] = useState<ExportFileType>('PNG');
+  const [scale, setScale] = useState<ExportScale>(1);
 
   async function handleExport() {
     if (downloading || layouts.length === 0) return;
     setDownloading(true);
     try {
-      for (const layout of layouts) await exportLayout(layout, fileType);
+      for (const layout of layouts) await exportLayout(layout, fileType, scale);
     } finally {
       setDownloading(false);
     }
@@ -905,13 +1027,16 @@ export function PanelExportFooter({ layouts }: { layouts: Layout[] }) {
       <PanelDivider />
       {/* +pt-2 on top of the card's own flex `gap` (8px) brings this row's clearance from the
           divider above up to 16px — matching the card's own bottom py-4 clearance below it. */}
-      <div className="flex items-center gap-4 px-4 pt-2">
-        <ExportFormatSelect value={fileType} onChange={setFileType} />
+      <div className="flex flex-col gap-4 px-4 pt-2">
+        <div className="flex items-center gap-2">
+          <ExportScaleSelect value={scale} onChange={setScale} />
+          <ExportFormatSelect value={fileType} onChange={setFileType} />
+        </div>
         <button
           type="button"
           onClick={handleExport}
           disabled={downloading}
-          className="flex h-8 flex-1 items-center justify-center gap-2 rounded-lg text-[13px] text-white transition-colors hover:brightness-110 disabled:opacity-60"
+          className="flex h-8 w-full items-center justify-center gap-2 rounded-lg text-[13px] text-white transition-colors hover:brightness-110 disabled:opacity-60"
           style={{ background: '#4570FF' }}
         >
           <img src="/icons/download%2024.svg" alt="" className="size-4" />

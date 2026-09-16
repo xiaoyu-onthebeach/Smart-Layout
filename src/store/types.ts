@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand';
 import type { BannerSet, Layout, LayoutElement, Product, ShapeKind } from '@/types';
+import type { SnapGuide } from '@/lib/snap-guides';
 
 /** Top-level app step. Overlays (size-select, add-sizes, bulk-products, export) layer on top of a step. */
 export type AppStep = 'playgrounds' | 'start' | 'editor' | 'allLayouts';
@@ -33,6 +34,9 @@ export type UiSlice = {
    * one visible outline (on whichever element the user actually clicked).
    */
   autoMatchedElements: SelectedElementRef[];
+  /** Alignment guide lines to draw right now, each tagged with which scene it belongs to — live only
+   * for the duration of an active layer drag (see useElementDrag's snapping), empty otherwise. */
+  activeGuides: (SnapGuide & { layoutId: string })[];
   activeLayoutId: string | null;
   /** Every currently-selected scene (BannerSet id) — a plain click replaces it, shift-click toggles it in/out. */
   selectedSceneIds: string[];
@@ -51,6 +55,10 @@ export type UiSlice = {
   pendingCascadeSetIds: Record<string, true>;
   /** Set to request the view-all canvas pan/zoom to frame this page; consumed and cleared by the canvas. */
   focusPageId: string | null;
+  /** Set to request the view-all canvas pan (current zoom kept as-is) to bring this page into view —
+   * unlike `focusPageId`, never changes zoom; used after duplicating a scene, where the new copy
+   * should just scroll into view rather than the whole canvas zooming out to fit everything. */
+  revealPageId: string | null;
   /** The layout (if any) currently in "draw the scene focus rectangle" mode — set by the "Pick" button in the add-sizes panel. */
   pickingFocusForLayoutId: string | null;
   /**
@@ -82,8 +90,12 @@ export type UiSlice = {
   closeBulkProducts: () => void;
   setGenerating: (value: boolean) => void;
   setDownloading: (value: boolean) => void;
-  /** Selects `ref` — replaces the selection, unless `additive` (shift-click), which toggles it in/out of the current set. Pass `null` to clear. */
+  /** Selects `ref` — replaces the selection, unless `additive` (shift-click), which toggles it in/out of the current set. Pass `null` to clear. A grouped element always selects/deselects its whole group as one unit. */
   selectElement: (ref: SelectedElementRef | null, additive?: boolean) => void;
+  /** Replaces the selection outright with exactly these refs — no group/match-select expansion, no toggling. For programmatic selection (e.g. selecting the result of a bulk duplicate). */
+  setSelectedElements: (refs: SelectedElementRef[]) => void;
+  /** Replaces the current set of on-canvas alignment guide lines — pass `[]` to clear them (drag end). */
+  setActiveGuides: (guides: (SnapGuide & { layoutId: string })[]) => void;
   setActiveLayout: (id: string | null) => void;
   /** Selects `setId` — replaces the selection, unless `additive` (shift-click), which toggles it in/out. Pass `null` to clear. */
   selectScene: (setId: string | null, additive?: boolean) => void;
@@ -100,6 +112,9 @@ export type UiSlice = {
   /** Requests that the view-all canvas pan/zoom to frame this page. */
   requestFocusPage: (pageId: string) => void;
   clearFocusPage: () => void;
+  /** Requests that the view-all canvas pan (keeping its current zoom) to bring this page into view. */
+  requestRevealPage: (pageId: string) => void;
+  clearRevealPage: () => void;
   /** Switches which top-level page/group's canvas is visible in the view-all canvas. */
   setActiveCanvas: (rootId: string | null) => void;
   /** Enters/exits "draw the scene focus rectangle" mode for a layout. */
@@ -171,10 +186,14 @@ export type LayoutsSlice = {
   updateElement: (layoutId: string, elementId: string, patch: Partial<LayoutElement>) => void;
   /** Removes a decorative (text/shape) element outright; the required image slot is cleared instead of removed. */
   removeElement: (layoutId: string, elementId: string) => void;
-  /** Inserts a copy of the element right after the original, offset slightly, and always decorative (slot: null). */
-  duplicateElement: (layoutId: string, elementId: string) => void;
+  /** Inserts a copy of the element right after the original, offset slightly, and always decorative (slot: null). Returns the new element's id. */
+  duplicateElement: (layoutId: string, elementId: string) => string;
   /** Moves the element to the start/end of the layout's elements array, changing its paint order among decorative elements. */
   reorderElement: (layoutId: string, elementId: string, direction: 'front' | 'back') => void;
+  /** Tags every one of `elementIds` (within `layoutId`) with a freshly-generated shared `groupId`, replacing whatever group (if any) they belonged to before. */
+  groupElements: (layoutId: string, elementIds: string[]) => void;
+  /** Clears `groupId` from every element in `layoutId` that currently shares it. */
+  ungroupElements: (layoutId: string, groupId: string) => void;
   /** Patches the frame's own background/border, independent of any element on it. */
   updateLayoutStyle: (
     layoutId: string,

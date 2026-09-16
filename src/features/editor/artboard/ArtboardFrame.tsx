@@ -1,4 +1,5 @@
-import { useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { Check } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -12,6 +13,46 @@ import { SelectableShapeElement } from './SelectableShapeElement';
 import { ImagePickerDialog } from './ImagePickerDialog';
 import { ImageBox } from './ImageBox';
 import { LayerContextMenu } from './LayerContextMenu';
+import { MultiLayerContextMenu } from './MultiLayerContextMenu';
+import { RESIZE_HANDLES, type ResizeHandle } from './useElementDrag';
+
+/** The focus-pick box always starts at this size (clamped to the frame itself, for a tiny scene),
+ * centered — there's no more empty "draw it yourself" state to size it from scratch. */
+const DEFAULT_FOCUS_RECT_SIZE = 300;
+const FOCUS_RECT_MIN_SIZE = 24;
+
+// Same 8-handle layout as SelectionBoundingBox, but invisible — the focus box keeps its own plain
+// solid blue border (not SelectionBoundingBox's thinner outline-only look) with drag-to-resize
+// still working underneath via these bare hit zones, cursor-only, no visible squares. Edge zones
+// span the whole side (not just a short strip at the middle) so any point along the border drags.
+const FOCUS_HANDLE_HIT = 12;
+
+function focusHandleCursor(handle: ResizeHandle): string {
+  return handle === 'nw' || handle === 'se' ? 'nwse-resize' : handle === 'ne' || handle === 'sw' ? 'nesw-resize' : handle === 'n' || handle === 's' ? 'ns-resize' : 'ew-resize';
+}
+
+function focusHandleStyle(handle: ResizeHandle): CSSProperties {
+  const isCorner = handle.length === 2;
+  const half = FOCUS_HANDLE_HIT / 2;
+  const style: CSSProperties = { position: 'absolute', cursor: focusHandleCursor(handle) };
+  if (isCorner) {
+    style.width = FOCUS_HANDLE_HIT;
+    style.height = FOCUS_HANDLE_HIT;
+  } else if (handle === 'n' || handle === 's') {
+    style.left = FOCUS_HANDLE_HIT;
+    style.right = FOCUS_HANDLE_HIT;
+    style.height = FOCUS_HANDLE_HIT;
+  } else {
+    style.top = FOCUS_HANDLE_HIT;
+    style.bottom = FOCUS_HANDLE_HIT;
+    style.width = FOCUS_HANDLE_HIT;
+  }
+  if (handle.includes('n')) style.top = -half;
+  if (handle.includes('s')) style.bottom = -half;
+  if (handle.includes('w')) style.left = -half;
+  if (handle.includes('e')) style.right = -half;
+  return style;
+}
 
 const EXPAND_DURATION_MS = 5000;
 
@@ -42,7 +83,11 @@ function shapeDragFrame(kind: ShapeKind, start: { x: number; y: number }, curren
  * The banner frame — shared by the single-page editor and the view-all canvas.
  * `active` frames are fully interactive (drag/resize image, place text/shape,
  * edit text in place); inactive frames render the exact same content but as a
- * static preview, and a click just calls `onActivate`.
+ * static preview — a plain click both activates it and arms a drag of the
+ * whole scene in the same motion (see `handleFrameMouseDown`'s `!active`
+ * branch), so a still click just activates/selects it, and a drag moves the
+ * scene rather than any layer, since layers aren't individually interactive
+ * until activation has already landed.
  */
 export function ArtboardFrame({
   layout,
@@ -89,8 +134,10 @@ export function ArtboardFrame({
   const shapeToolKind = useAppStore((s) => s.shapeToolKind);
   const selectedElements = useAppStore((s) => s.selectedElements);
   const autoMatchedElements = useAppStore((s) => s.autoMatchedElements);
+  const activeGuides = useAppStore((s) => s.activeGuides);
   const editingTextElementId = useAppStore((s) => s.editingTextElementId);
   const selectElement = useAppStore((s) => s.selectElement);
+  const setSelectedElements = useAppStore((s) => s.setSelectedElements);
   const isSelected = (elementId: string) => selectedElements.some((r) => r.layoutId === layoutId && r.elementId === elementId);
   // Cross-scene match-select adds matching layers in every sibling size to `selectedElements` (for
   // bulk-edit purposes) but only the literally-clicked BACKGROUND image should draw a visible
@@ -100,14 +147,52 @@ export function ArtboardFrame({
   // decorative non-background image) keeps its outline everywhere, since those are typically
   // edited in lockstep across sizes and benefit from seeing every affected box at once.
   const isAutoMatched = (elementId: string) => autoMatchedElements.some((r) => r.layoutId === layoutId && r.elementId === elementId);
+  // Double-clicking a grouped element "enters" its group — while entered, that one group's members
+  // show their own individual bounding boxes again (see showsBoundsBox below) instead of the single
+  // big one drawn around the whole group; selecting anything outside the group exits it again (see
+  // the onSelect wrappers below, and handleFrameMouseDown's empty-click branch).
+  const [enteredGroupId, setEnteredGroupId] = useState<string | null>(null);
   const showsBoundsBox = (elementId: string) => {
     if (!isSelected(elementId)) return false;
+    // A grouped-but-not-entered element never shows its own box — the whole group draws one
+    // shared box instead (see the group-bounds overlay near the end of this component).
+    const groupId = layout.elements.find((el) => el.id === elementId)?.groupId;
+    if (groupId && groupId !== enteredGroupId) return false;
     if (!isAutoMatched(elementId)) return true;
     return elementId !== backgroundElementId;
   };
+  // Exits "entered" mode the moment selection moves to something outside the currently-entered
+  // group — a plain click elsewhere, deselecting, or selecting a different group/element entirely.
+  function exitEnteredGroupUnless(groupId: string | undefined) {
+    if (enteredGroupId && groupId !== enteredGroupId) setEnteredGroupId(null);
+  }
+  // A plain click on any element first makes sure "entered" mode isn't left stale from a previous
+  // group before applying the click's own selection.
+  function makeOnSelect(el: LayoutElement) {
+    return (e: ReactMouseEvent) => {
+      exitEnteredGroupUnless(el.groupId);
+      selectElement({ layoutId, elementId: el.id }, e.shiftKey);
+      selectScene(layout.setId);
+    };
+  }
+  // Only handed to grouped-but-not-yet-entered elements (see the render loop) — double-clicking one
+  // enters its group and selects just that one member, in place of whatever double-click would
+  // otherwise do (text-edit, or nothing for shape/image).
+  function makeOnEnterGroup(el: LayoutElement) {
+    return () => {
+      if (!el.groupId) return;
+      setEnteredGroupId(el.groupId);
+      // Deliberately setSelectedElements, not selectElement — selectElement always expands a
+      // grouped ref to the whole group, but entering is specifically about drilling into this one
+      // member on its own.
+      setSelectedElements([{ layoutId, elementId: el.id }]);
+      selectScene(layout.setId);
+    };
+  }
   const pickingFocusForLayoutId = useAppStore((s) => s.pickingFocusForLayoutId);
   const focusPickConfirmed = useAppStore((s) => s.focusPickConfirmed);
   const confirmFocusPick = useAppStore((s) => s.confirmFocusPick);
+  const startPickingFocus = useAppStore((s) => s.startPickingFocus);
   const updateLayoutStyle = useAppStore((s) => s.updateLayoutStyle);
 
   const frameRef = useRef<HTMLDivElement>(null);
@@ -116,8 +201,42 @@ export function ArtboardFrame({
   const [drawRect, setDrawRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [expandingElementId, setExpandingElementId] = useState<string | null>(null);
   const [focusDrawRect, setFocusDrawRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // Whether the focus box has actually been moved or resized from wherever it started this
+  // session — the checkmark to confirm only shows once there's something to confirm; before that,
+  // the instructional hint sits in its place instead.
+  const [focusRectDirty, setFocusRectDirty] = useState(false);
+  // True only for the duration of an actual move/resize drag (mousedown to mouseup) — the
+  // checkmark hides while this is true so it doesn't sit in the way (or visually lag behind) the
+  // box while it's still being adjusted, then reappears the instant the mouse is released.
+  const [focusRectDragging, setFocusRectDragging] = useState(false);
   const isPickingFocus = pickingFocusForLayoutId === layoutId;
-  const [layerContextMenu, setLayerContextMenu] = useState<{ x: number; y: number; elementId: string } | null>(null);
+
+  // Entering picking mode seeds the box immediately — a fresh centered DEFAULT_FOCUS_RECT_SIZE
+  // square, or the existing focusRect if one's already set (so "Change" edits it in place instead
+  // of starting over). There's no more empty state waiting for a drag-to-draw gesture. Keyed on
+  // focusPickConfirmed too, not just isPickingFocus — "Change" on a scene that's already confirmed
+  // this same session (pickingFocusForLayoutId never left this layout) only flips
+  // focusPickConfirmed back to false, so isPickingFocus alone wouldn't change and this wouldn't
+  // otherwise re-fire.
+  useEffect(() => {
+    if (!isPickingFocus) return;
+    const existing = layout.focusRect;
+    if (existing) {
+      setFocusDrawRect(existing);
+    } else {
+      const w = Math.min(DEFAULT_FOCUS_RECT_SIZE, nativeWidth);
+      const h = Math.min(DEFAULT_FOCUS_RECT_SIZE, nativeHeight);
+      setFocusDrawRect({ x: (nativeWidth - w) / 2, y: (nativeHeight - h) / 2, w, h });
+    }
+    setFocusRectDirty(false);
+    setFocusRectDragging(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPickingFocus, focusPickConfirmed]);
+  const [layerContextMenu, setLayerContextMenu] = useState<
+    | { kind: 'single'; x: number; y: number; elementId: string }
+    | { kind: 'multi'; x: number; y: number; elementIds: string[]; groupId?: string }
+    | null
+  >(null);
   const [insertImagePickerOpen, setInsertImagePickerOpen] = useState(false);
 
   const imageElement = layout.elements.find((el) => el.kind === 'image');
@@ -132,22 +251,26 @@ export function ArtboardFrame({
   // added first — a scene built entirely from double-click-dropped samples has no filled hero
   // slot, so that first drop is standing in for the background instead.
   const backgroundElementId = hasImage ? imageElement?.id : extraElements.find((el) => el.kind === 'image' && el.imageUrl)?.id;
-  // While the user is actively dragging out the focus rect, every OTHER decorative overlay
-  // (text, shapes, extra images) hides so only the background photo shows — the exact thing the
-  // rect is being drawn against. They come back the moment the rect is confirmed.
-  const hidingLayersForFocusPick = isPickingFocus && Boolean(focusDrawRect);
 
   // Any selected image whose frame spills past the artboard's own bounds gets a dimmed preview of
   // the overflowing part — hidden again the moment it's deselected. Gated on showsBoundsBox (not
   // isSelected) so an auto-matched sibling image — selected for bulk-edit but not the literal
   // clicked element — doesn't grow this preview either.
+  // A 1px tolerance keeps a genuinely full-bleed image (frame exactly matching the artboard, or
+  // off by a sub-pixel rounding artifact from a drag) from double-counting as "overflowing" here —
+  // without it, this outline trace would render *on top of* SelectionBoundingBox's own clipped
+  // outline for any such image, showing as a doubled/thicker selection border for no real overflow.
+  const OVERFLOW_TOLERANCE = 1;
   const overflowElements = [imageElement, ...extraElements].filter(
     (el): el is LayoutElement =>
       Boolean(el) &&
       el.kind === 'image' &&
       Boolean(el.imageUrl) &&
       showsBoundsBox(el.id) &&
-      (el.frame.x < 0 || el.frame.y < 0 || el.frame.x + el.frame.w > nativeWidth || el.frame.y + el.frame.h > nativeHeight),
+      (el.frame.x < -OVERFLOW_TOLERANCE ||
+        el.frame.y < -OVERFLOW_TOLERANCE ||
+        el.frame.x + el.frame.w > nativeWidth + OVERFLOW_TOLERANCE ||
+        el.frame.y + el.frame.h > nativeHeight + OVERFLOW_TOLERANCE),
   );
 
   const applyImageToElement = useApplyImage();
@@ -199,14 +322,28 @@ export function ArtboardFrame({
     img.src = url;
   }
 
-  // Right-click on an image layer — opens LayerContextMenu at the cursor. Only active (editable)
-  // frames get one; an inactive view-all card only supports activate-on-click.
-  function handleImageContextMenu(elementId: string) {
+  // Right-click on any layer (image/text/shape alike) — opens the layer context menu at the
+  // cursor, but only once that layer is already the selected one (a prior left-click picked it out
+  // specifically). Otherwise the right-click is about the scene as a whole, not any one layer
+  // within it, so it falls through to the frame's own onContextMenu (below) for the scene-level
+  // menu instead. When more than one layer in this scene is currently selected, this opens the
+  // multi-select menu (or the group menu, if the whole selection is exactly one intact group)
+  // instead of the single-layer one.
+  function handleLayerContextMenu(elementId: string) {
     return (e: ReactMouseEvent) => {
-      if (!active) return;
+      if (!active || !isSelected(elementId)) return;
       e.preventDefault();
       e.stopPropagation();
-      setLayerContextMenu({ x: e.clientX, y: e.clientY, elementId });
+      const selectionInLayout = selectedElements.filter((r) => r.layoutId === layoutId);
+      if (selectionInLayout.length > 1) {
+        const ids = selectionInLayout.map((r) => r.elementId);
+        const selectedEls = ids.map((id) => layout.elements.find((el) => el.id === id)).filter((el): el is LayoutElement => Boolean(el));
+        const sharedGroupId = selectedEls[0]?.groupId;
+        const isIntactGroup = Boolean(sharedGroupId) && selectedEls.every((el) => el.groupId === sharedGroupId);
+        setLayerContextMenu({ kind: 'multi', x: e.clientX, y: e.clientY, elementIds: ids, groupId: isIntactGroup ? sharedGroupId : undefined });
+        return;
+      }
+      setLayerContextMenu({ kind: 'single', x: e.clientX, y: e.clientY, elementId });
     };
   }
 
@@ -323,39 +460,74 @@ export function ArtboardFrame({
     return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale };
   }
 
-  // "Scene focus point" picking: draws a rect that stays unaffected by ratio-adaptation for this
-  // scene, committed to layout.focusRect on release.
-  // Draws the candidate rect; mouseup just leaves it in place (showing "Pick this area") rather
-  // than committing immediately — the user can redraw as many times as they like before confirming.
-  function handleFocusRectMouseDown(e: ReactMouseEvent) {
+  // "Scene focus point" picking: the box seeded on entry (see the effect above) is directly
+  // draggable/resizable, committed to layout.focusRect only once the user clicks the confirm
+  // checkmark — moving/resizing it never touches the store on its own, just local state.
+  function startFocusRectMove(e: ReactMouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    const start = nativePointFromEvent(e);
-    let current = start;
-
-    // Clamped to the frame's own bounds — dragging past an edge just stops the rect at that edge
-    // instead of growing past it, so it (and the Confirm button anchored to its corner, which
-    // would otherwise render outside this overlay's own overflow-hidden box and disappear) always
-    // stays on screen.
+    if (!focusDrawRect) return;
+    // Destructured to plain numbers, not the object itself — TS can't carry a null-check's
+    // narrowing into these nested closures for an object binding, but primitives close over fine.
+    const { x: startRectX, y: startRectY, w, h } = focusDrawRect;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    setFocusRectDirty(true);
+    setFocusRectDragging(true);
     function onMove(ev: globalThis.MouseEvent) {
-      const raw = nativePointFromEvent(ev);
-      current = {
-        x: Math.max(0, Math.min(nativeWidth, raw.x)),
-        y: Math.max(0, Math.min(nativeHeight, raw.y)),
-      };
+      const dx = (ev.clientX - startX) / scale;
+      const dy = (ev.clientY - startY) / scale;
       setFocusDrawRect({
-        x: Math.min(start.x, current.x),
-        y: Math.min(start.y, current.y),
-        w: Math.abs(current.x - start.x),
-        h: Math.abs(current.y - start.y),
+        x: Math.max(0, Math.min(nativeWidth - w, startRectX + dx)),
+        y: Math.max(0, Math.min(nativeHeight - h, startRectY + dy)),
+        w,
+        h,
       });
     }
     function onUp() {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      const w = Math.abs(current.x - start.x);
-      const h = Math.abs(current.y - start.y);
-      if (w < 8 || h < 8) setFocusDrawRect(null);
+      setFocusRectDragging(false);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  // Same corner/edge handle math as useElementDrag's startResize, but clamped to the frame's own
+  // bounds (0..nativeWidth/Height) instead of growing freely, and writing to local focusDrawRect
+  // state instead of an element's frame.
+  function startFocusRectResize(handle: ResizeHandle, e: ReactMouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!focusDrawRect) return;
+    const startRect = focusDrawRect;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    setFocusRectDirty(true);
+    setFocusRectDragging(true);
+    function onMove(ev: globalThis.MouseEvent) {
+      const dx = (ev.clientX - startX) / scale;
+      const dy = (ev.clientY - startY) / scale;
+      let x = startRect.x;
+      let y = startRect.y;
+      let w = startRect.w;
+      let h = startRect.h;
+      if (handle.includes('e')) w = Math.max(FOCUS_RECT_MIN_SIZE, Math.min(nativeWidth - startRect.x, startRect.w + dx));
+      if (handle.includes('s')) h = Math.max(FOCUS_RECT_MIN_SIZE, Math.min(nativeHeight - startRect.y, startRect.h + dy));
+      if (handle.includes('w')) {
+        w = Math.max(FOCUS_RECT_MIN_SIZE, Math.min(startRect.x + startRect.w, startRect.w - dx));
+        x = startRect.x + startRect.w - w;
+      }
+      if (handle.includes('n')) {
+        h = Math.max(FOCUS_RECT_MIN_SIZE, Math.min(startRect.y + startRect.h, startRect.h - dy));
+        y = startRect.y + startRect.h - h;
+      }
+      setFocusDrawRect({ x, y, w, h });
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      setFocusRectDragging(false);
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -370,9 +542,8 @@ export function ArtboardFrame({
     // Stays in picking mode rather than exiting outright — clearing focusDrawRect (with
     // focusPickConfirmed now true) switches the overlay below into its "confirmed" display: the
     // picked rect stays outlined, with no more buttons in the way, so it reads as a settled result
-    // rather than a still-open prompt. Actually leaving picking mode only happens when the "Add
-    // more sizes" panel itself closes (see QuickSizeMenu's closePanel) or the user redraws
-    // (mousedown below starts a fresh focusDrawRect).
+    // rather than a still-open prompt. Leaving picking mode only happens when the "Add more
+    // sizes" panel itself closes (see QuickSizeMenu's closePanel) or "Change" re-enters it.
     setFocusDrawRect(null);
   }
 
@@ -392,18 +563,23 @@ export function ArtboardFrame({
         selectScene(layout.setId, true);
         return;
       }
-      // A plain click selects and immediately allows dragging the scene, rather than entering it —
-      // entering (activating) now takes a double-click, so a click never fights a drag attempt.
-      selectScene(layout.setId);
+      // A plain click both activates the scene (unlocking its own layers and tools) and arms a
+      // drag of the whole scene in the same motion — released without moving, it's just a select;
+      // dragged, it moves the scene card, never a layer, since a layer only becomes individually
+      // interactive once this activation has already landed (the `active` branch below is what
+      // renders them as live/draggable at all — see extraElements' active/!active split further down).
       selectElement(null);
-      if (onSceneMouseDown) onSceneMouseDown(e);
-      else onActivate?.();
+      setEnteredGroupId(null);
+      if (onActivate) onActivate();
+      else selectScene(layout.setId);
+      onSceneMouseDown?.(e);
       return;
     }
 
     if (activeTool === 'select') {
       selectScene(layout.setId, e.shiftKey);
       selectElement(null);
+      setEnteredGroupId(null);
       if (!e.shiftKey) onSceneMouseDown?.(e);
       return;
     }
@@ -475,6 +651,25 @@ export function ArtboardFrame({
 
   const frameCursorClass = !active ? 'cursor-pointer' : activeTool === 'text' ? 'cursor-text' : activeTool === 'shape' ? 'cursor-crosshair' : '';
 
+  // One big box per selected-and-not-entered group, spanning every one of its members — drawn in
+  // place of each member's own individual box (see showsBoundsBox). Every member of a group is
+  // always selected together (selectElement expands to the whole group), so checking any one
+  // member's selection state is enough to know the whole group is currently selected.
+  const groupBounds: { groupId: string; x: number; y: number; w: number; h: number }[] = [];
+  if (active) {
+    const seenGroupIds = new Set<string>();
+    for (const el of layout.elements) {
+      if (!el.groupId || el.groupId === enteredGroupId || seenGroupIds.has(el.groupId) || !isSelected(el.id)) continue;
+      seenGroupIds.add(el.groupId);
+      const members = layout.elements.filter((m) => m.groupId === el.groupId);
+      const minX = Math.min(...members.map((m) => m.frame.x));
+      const minY = Math.min(...members.map((m) => m.frame.y));
+      const maxX = Math.max(...members.map((m) => m.frame.x + m.frame.w));
+      const maxY = Math.max(...members.map((m) => m.frame.y + m.frame.h));
+      groupBounds.push({ groupId: el.groupId, x: minX, y: minY, w: maxX - minX, h: maxY - minY });
+    }
+  }
+
   return (
     <div className={cn('relative', className)} style={{ width, height, ...style }}>
       {/* The selected image's own outline+handles (SelectionBoundingBox, rendered inside the
@@ -504,7 +699,7 @@ export function ArtboardFrame({
         )}
         style={{
           containerType: 'inline-size',
-          backgroundColor: layout.backgroundColor ?? '#131316',
+          background: layout.backgroundColor ?? '#131316',
           borderColor: layout.borderColor ?? '#2f2f37',
           borderWidth: layout.borderWidth ?? 1,
           borderStyle: layout.borderStyle ?? 'solid',
@@ -548,16 +743,13 @@ export function ArtboardFrame({
                 scale={scale}
                 activeTool={activeTool}
                 selected={showsBoundsBox(imageElement.id)}
-                sceneSelected={isSceneSelected}
                 expanding={expandingElementId === imageElement.id}
                 onExpandClick={handleExpandClick(imageElement)}
                 onExpandToFrameClick={handleExpandToFrameClick(imageElement)}
                 isBackgroundImage={imageElement.id === backgroundElementId}
-                onSelect={(e) => {
-                  selectElement({ layoutId, elementId: imageElement.id }, e.shiftKey);
-                  selectScene(layout.setId);
-                }}
-                onContextMenu={handleImageContextMenu(imageElement.id)}
+                onSelect={makeOnSelect(imageElement)}
+                onContextMenu={handleLayerContextMenu(imageElement.id)}
+                onEnterGroup={imageElement.groupId && imageElement.groupId !== enteredGroupId ? makeOnEnterGroup(imageElement) : undefined}
               />
             ) : (
               // Mirrors DraggableImageElement's box exactly (frame-relative, not full-bleed) so the
@@ -577,32 +769,40 @@ export function ArtboardFrame({
           </div>
         )}
 
-        {!hasAnyImage && showEmptyStateHint && (
-          <div data-empty-hint className="absolute inset-0 flex flex-col items-center justify-center gap-6 px-8 text-center">
-            <img src="/icons/Layer/layout.svg" alt="" className="size-[120px]" />
-            <p className="max-w-[272px] text-xl leading-[1.4] font-medium text-chrome-fg-muted">
-              {t('Drag from the library or')}{' '}
-              {active ? (
-                <button
-                  type="button"
-                  className="text-button-primary hover:underline"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    fileInputRef.current?.click();
-                  }}
-                >
-                  {t('Upload')}
-                </button>
-              ) : (
-                <span className="text-button-primary">{t('Upload')}</span>
-              )}
-            </p>
+        {/* Hidden below 30% zoom — at that scale the content is illegible anyway, and every empty
+            scene rendering it stacks up into visual noise once a group has several sizes. */}
+        {!hasAnyImage && showEmptyStateHint && scale >= 0.4 && (
+          <div data-empty-hint className="absolute inset-0 flex flex-col items-center justify-center gap-0 px-8 text-center">
+            <img src="/icons/start_illustration.svg" alt="" className="w-[400px]" />
+            <div className="flex max-w-[300px] flex-col items-center gap-5">
+              <p className="text-[16px] leading-[1.4] font-medium text-white">
+                {t('Create a primary banner')}
+                <br />
+                {t('and adapt to different sizes.')}
+              </p>
+              <p className="text-[13px] leading-[1.4] font-normal text-chrome-fg-muted">
+                {active ? (
+                  <button
+                    type="button"
+                    className="text-button-primary hover:underline"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
+                  >
+                    {t('Upload')}
+                  </button>
+                ) : (
+                  <span className="text-button-primary">{t('Upload')}</span>
+                )}{' '}
+                {t('or drag images from your computer')}
+              </p>
+            </div>
           </div>
         )}
 
         {extraElements
-          .filter((el) => !hidingLayersForFocusPick || el.id === backgroundElementId)
           .map((el) => {
             if (!active) {
               return (
@@ -628,11 +828,10 @@ export function ArtboardFrame({
                   activeTool={activeTool}
                   selected={showsBoundsBox(el.id)}
                   isEditing={editingTextElementId === el.id}
-                  onSelect={(e) => {
-                    selectElement({ layoutId, elementId: el.id }, e.shiftKey);
-                    selectScene(layout.setId);
-                  }}
+                  onSelect={makeOnSelect(el)}
                   onStartEditing={() => setEditingTextElement(el.id)}
+                  onContextMenu={handleLayerContextMenu(el.id)}
+                  onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
                 />
               );
             }
@@ -648,10 +847,9 @@ export function ArtboardFrame({
                   scale={scale}
                   activeTool={activeTool}
                   selected={showsBoundsBox(el.id)}
-                  onSelect={(e) => {
-                    selectElement({ layoutId, elementId: el.id }, e.shiftKey);
-                    selectScene(layout.setId);
-                  }}
+                  onSelect={makeOnSelect(el)}
+                  onContextMenu={handleLayerContextMenu(el.id)}
+                  onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
                 />
               );
             }
@@ -667,16 +865,13 @@ export function ArtboardFrame({
                   scale={scale}
                   activeTool={activeTool}
                   selected={showsBoundsBox(el.id)}
-                  sceneSelected={isSceneSelected}
                   expanding={expandingElementId === el.id}
                   onExpandClick={handleExpandClick(el)}
                   onExpandToFrameClick={handleExpandToFrameClick(el)}
                   isBackgroundImage={el.id === backgroundElementId}
-                  onSelect={(e) => {
-                    selectElement({ layoutId, elementId: el.id }, e.shiftKey);
-                    selectScene(layout.setId);
-                  }}
-                  onContextMenu={handleImageContextMenu(el.id)}
+                  onSelect={makeOnSelect(el)}
+                  onContextMenu={handleLayerContextMenu(el.id)}
+                  onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
                 />
               );
             }
@@ -695,35 +890,62 @@ export function ArtboardFrame({
             }}
           />
         )}
+
+        {groupBounds.map((b) => (
+          <div
+            key={b.groupId}
+            className="pointer-events-none absolute outline outline-[1.5px] outline-button-primary"
+            style={{
+              left: `${(b.x / nativeWidth) * 100}%`,
+              top: `${(b.y / nativeHeight) * 100}%`,
+              width: `${(b.w / nativeWidth) * 100}%`,
+              height: `${(b.h / nativeHeight) * 100}%`,
+            }}
+          />
+        ))}
+
+        {active &&
+          activeGuides
+            .filter((g) => g.layoutId === layoutId)
+            .map((g, i) =>
+              g.axis === 'x' ? (
+                <div
+                  key={i}
+                  className="pointer-events-none absolute z-50"
+                  style={{
+                    left: `${(g.position / nativeWidth) * 100}%`,
+                    top: `${(g.start / nativeHeight) * 100}%`,
+                    height: `${((g.end - g.start) / nativeHeight) * 100}%`,
+                    borderLeft: `1px ${g.style} #FF3B30`,
+                  }}
+                />
+              ) : (
+                <div
+                  key={i}
+                  className="pointer-events-none absolute z-50"
+                  style={{
+                    top: `${(g.position / nativeHeight) * 100}%`,
+                    left: `${(g.start / nativeWidth) * 100}%`,
+                    width: `${((g.end - g.start) / nativeWidth) * 100}%`,
+                    borderTop: `1px ${g.style} #FF3B30`,
+                  }}
+                />
+              ),
+            )}
       </div>
 
       {isPickingFocus && (
         <>
-          <div className="absolute inset-0 z-20 overflow-hidden" onMouseDown={handleFocusRectMouseDown}>
-            {focusDrawRect ? (
-              // The huge spread shadow dims everything outside this rect — the rect itself stays
-              // un-dimmed, "cut out" of the overlay, since box-shadow never paints under its own box.
-              <div
-                className="pointer-events-none absolute border-3"
-                style={{
-                  left: `${(focusDrawRect.x / nativeWidth) * 100}%`,
-                  top: `${(focusDrawRect.y / nativeHeight) * 100}%`,
-                  width: `${(focusDrawRect.w / nativeWidth) * 100}%`,
-                  height: `${(focusDrawRect.h / nativeHeight) * 100}%`,
-                  borderColor: '#4570FF',
-                  borderRadius: 16,
-                  boxShadow: '0 0 0 9999px rgba(0,0,0,0.5)',
-                }}
-              />
-            ) : focusPickConfirmed && layout.focusRect ? (
+          <div data-focus-pick-overlay className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+            {focusPickConfirmed && layout.focusRect ? (
               // Confirmed this session — the picked rect just stays outlined on top, no dimming and
-              // no buttons in the way now that there's nothing left to decide. Redrawing (mousedown
-              // above) or closing the "Add more sizes" panel are the only ways out from here.
-              // Gated on focusPickConfirmed (reset by startPickingFocus), not just layout.focusRect
-              // existing — otherwise re-entering via "Change" on a scene with an old pick would skip
-              // straight past the instructional pop-up below.
+              // no resize/move controls in the way now that there's nothing left to decide, but
+              // it's still clickable: that re-runs startPickingFocus (resetting focusPickConfirmed,
+              // same as "Change"), which switches this back into the fully editable state below —
+              // same as re-entering via the "Change" button.
               <div
-                className="pointer-events-none absolute border-3"
+                className="pointer-events-auto absolute cursor-pointer border-3"
+                onClick={() => startPickingFocus(layoutId)}
                 style={{
                   left: `${(layout.focusRect.x / nativeWidth) * 100}%`,
                   top: `${(layout.focusRect.y / nativeHeight) * 100}%`,
@@ -735,42 +957,76 @@ export function ArtboardFrame({
                 }}
               />
             ) : (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+              focusDrawRect && (
                 <div
-                  className="flex flex-col items-center justify-center gap-[18.6px] rounded-2xl border-4"
-                  style={{ width: 289, height: 222, padding: '18.6px 12px', background: 'rgba(38,38,44,0.7)', borderColor: 'rgba(38,38,44,0.3)' }}
-                  onMouseDown={(e) => e.stopPropagation()}
+                  className="pointer-events-auto absolute cursor-move border-3"
+                  style={{
+                    left: `${(focusDrawRect.x / nativeWidth) * 100}%`,
+                    top: `${(focusDrawRect.y / nativeHeight) * 100}%`,
+                    width: `${(focusDrawRect.w / nativeWidth) * 100}%`,
+                    height: `${(focusDrawRect.h / nativeHeight) * 100}%`,
+                    borderColor: '#4570FF',
+                    background: 'rgba(69,112,255,0.1)',
+                    borderRadius: 16,
+                  }}
+                  onMouseDown={startFocusRectMove}
                 >
-                  <img src="/icons/select_area.svg" alt="" className="size-[90px] shrink-0" />
-                  <p className="text-center text-[15px] font-semibold tracking-[-0.01em] text-white">
-                    {t('Draw a rectangle around the area to keep as the focus in all sizes')}
-                  </p>
+                  {RESIZE_HANDLES.map((handle) => (
+                    <div key={handle} style={focusHandleStyle(handle)} onMouseDown={(e) => startFocusRectResize(handle, e)} />
+                  ))}
                 </div>
-              </div>
+              )
             )}
           </div>
 
           {/* Rendered *outside* the overlay's own overflow-hidden box (a sibling, not a descendant) —
-              same reasoning as the overflow-image outline above — so a rect dragged all the way to a
-              frame edge never clips the button anchored to its corner. */}
-          {focusDrawRect && (
-            <button
-              type="button"
-              onClick={confirmFocusRect}
-              className="absolute z-30 flex h-8 shrink-0 items-center justify-center rounded-full bg-button-primary px-3 text-sm text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)] transition-colors hover:brightness-110"
-              style={{
-                left: `${((focusDrawRect.x + focusDrawRect.w) / nativeWidth) * 100}%`,
-                top: `${((focusDrawRect.y + focusDrawRect.h) / nativeHeight) * 100}%`,
-                transform: 'translate(-100%, 8px)',
-              }}
-            >
-              {t('Confirm')}
-            </button>
+              so the confirm checkmark and the instructional hint never clip at a frame edge when
+              the box sits flush against one. */}
+          {focusDrawRect && !focusPickConfirmed && (
+            <>
+              {!focusRectDirty && (
+                <div
+                  className="pointer-events-none absolute z-30 flex w-max shrink-0 items-center justify-center gap-2 rounded-[12px] px-4 py-[12px] text-bg whitespace-nowrap text-white"
+                  style={{
+                    left: `${((focusDrawRect.x + focusDrawRect.w / 2) / nativeWidth) * 100}%`,
+                    top: `${((focusDrawRect.y + focusDrawRect.h) / nativeHeight) * 100}%`,
+                    transform: 'translate(-50%, 12px)',
+                    background: 'rgba(38,38,44,0.88)',
+                    boxShadow: '0px 1px 2px rgba(0,0,0,0.03), 0px 1px 6px -1px rgba(0,0,0,0.02), 0px 2px 4px rgba(0,0,0,0.02)',
+                  }}
+                >
+                  <img src="/icons/visual-pick-center.svg" alt="" className="size-6 shrink-0" />
+                  <span>{t('Move or resize to set the focus area')}</span>
+                </div>
+              )}
+
+              {/* Shows once the box has actually moved/resized from wherever it started this
+                  session, but hides again for the duration of an active drag — reappearing the
+                  instant the mouse is released — so it never lags behind or sits in the way of
+                  the box while it's still being adjusted. */}
+              {focusRectDirty && !focusRectDragging && (
+                <button
+                  type="button"
+                  aria-label={t('Confirm focus area')}
+                  onClick={confirmFocusRect}
+                  className="pointer-events-auto absolute z-30 flex size-8 shrink-0 items-center justify-center rounded-full bg-[#4570FF] text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)] transition-colors hover:bg-[#2C52DA]"
+                  style={{
+                    left: `${((focusDrawRect.x + focusDrawRect.w) / nativeWidth) * 100}%`,
+                    top: `${(focusDrawRect.y / nativeHeight) * 100}%`,
+                    // Centered on the corner, then nudged further up-right by 24px so it sits
+                    // clear of the corner instead of overlapping it.
+                    transform: 'translate(calc(-50% + 12px), calc(-50% - 12px))',
+                  }}
+                >
+                  <Check className="size-4" />
+                </button>
+              )}
+            </>
           )}
         </>
       )}
 
-      {layerContextMenu && (
+      {layerContextMenu?.kind === 'single' && (
         <LayerContextMenu
           x={layerContextMenu.x}
           y={layerContextMenu.y}
@@ -778,6 +1034,17 @@ export function ArtboardFrame({
           elementId={layerContextMenu.elementId}
           onClose={() => setLayerContextMenu(null)}
           onInsertNewImage={() => setInsertImagePickerOpen(true)}
+        />
+      )}
+
+      {layerContextMenu?.kind === 'multi' && (
+        <MultiLayerContextMenu
+          x={layerContextMenu.x}
+          y={layerContextMenu.y}
+          layoutId={layoutId}
+          elementIds={layerContextMenu.elementIds}
+          groupId={layerContextMenu.groupId}
+          onClose={() => setLayerContextMenu(null)}
         />
       )}
     </div>

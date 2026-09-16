@@ -3,7 +3,6 @@ import { ChevronDown, Plus } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { RatioIcon } from '@/components/RatioIcon';
-import { PlatformMark } from '@/features/size-select/PlatformMark';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 import { nextId, createEmptyLayout } from '@/lib/create-layout';
@@ -22,35 +21,55 @@ function BannerRow({
   width,
   height,
   name,
-  isPrimary,
   selected,
-  platformId,
+  hidden,
   onClick,
+  onToggleHidden,
 }: {
   width: number;
   height: number;
   name: string;
-  isPrimary: boolean;
   selected: boolean;
-  /** The size's own group platform, if any (set when it was added via a platform's size picker) —
-   * shown in place of the generic ratio glyph so the row reads as "which platform", not just "what shape". */
-  platformId?: string;
+  hidden: boolean;
   onClick: () => void;
+  onToggleHidden: () => void;
 }) {
   const t = useT();
+  const displayName = name || `${width}x${height}`;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn('flex h-10 w-full shrink-0 items-center gap-2 rounded-lg pl-7 pr-3 text-left transition-colors hover:bg-white/5', selected && 'bg-white/5')}
+    <div
+      className={cn(
+        'group/row flex h-10 w-full shrink-0 items-center gap-2 rounded-lg py-2 pr-3 pl-[25px] transition-colors hover:bg-[#26262C]',
+        selected && 'bg-[#26262C]',
+      )}
     >
-      {platformId ? <PlatformMark platformId={platformId} className="size-6 shrink-0" /> : <RatioIcon width={width} height={height} />}
-      <span className="shrink-0 text-sm text-chrome-fg">
-        {width}x{height}
+      <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <div className="flex shrink-0 items-center gap-1">
+          <RatioIcon width={width} height={height} />
+          {/* Fixed width, not just shrink-0 — so the name after it always starts at the same x
+              regardless of how many digits this particular size's own width x height needs. */}
+          <span className="w-[60px] shrink-0 text-sm text-chrome-fg">
+            {width}x{height}
+          </span>
+        </div>
+        <span className="min-w-0 truncate text-left text-xs text-white/45">{displayName}</span>
+      </button>
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label={hidden ? t('Show banner') : t('Hide banner')}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleHidden();
+        }}
+        className={cn(
+          'flex shrink-0 cursor-pointer items-center justify-center transition-opacity',
+          hidden ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100',
+        )}
+      >
+        <img src={hidden ? '/icons/hide.svg' : '/icons/see.svg'} alt="" className="size-3" />
       </span>
-      {isPrimary && <span className="flex h-[19px] shrink-0 items-center justify-center rounded-md bg-button-primary px-1.5 text-[10px] text-white">{t('Primary')}</span>}
-      <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{name}</span>
-    </button>
+    </div>
   );
 }
 
@@ -83,32 +102,40 @@ function CategoryRow({
   onSelectSingle: () => void;
   children: ReactNode;
 }) {
+  const t = useT();
   return (
     <div className="flex w-full shrink-0 flex-col gap-1">
       <button
         type="button"
         onClick={onSelectSingle}
-        className={cn('flex h-10 w-full shrink-0 items-center gap-2 rounded-xl px-1 text-left transition-colors hover:bg-white/5', selected && 'bg-white/5')}
+        aria-label={representativeName}
+        className={cn('flex h-10 w-full shrink-0 items-center gap-2 rounded-lg py-2 pr-3 pl-1 text-left transition-colors hover:bg-[#26262C]', selected && 'bg-[#26262C]')}
       >
-        {hasMultiple && (
-          <span
-            role="button"
-            tabIndex={0}
-            aria-label={representativeName}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggle();
-            }}
-            className="flex size-4 shrink-0 items-center justify-center"
-          >
-            <ChevronDown className={cn('size-4 text-white transition-transform', !expanded && '-rotate-90')} />
-          </span>
-        )}
-        <RatioIcon width={representativeWidth} height={representativeHeight} />
-        <span className="min-w-0 flex-1 truncate text-sm text-white">{representativeName}</span>
-        <span className="shrink-0 text-xs text-white/45">
-          {representativeWidth}x{representativeHeight}
-        </span>
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          {hasMultiple ? (
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label={representativeName}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle();
+              }}
+              className="flex size-4 shrink-0 items-center justify-center"
+            >
+              <ChevronDown className={cn('size-4 text-white transition-transform', !expanded && '-rotate-90')} />
+            </span>
+          ) : (
+            <span className="size-4 shrink-0" />
+          )}
+          <div className="flex shrink-0 items-center gap-1">
+            <RatioIcon width={representativeWidth} height={representativeHeight} />
+            <span className="shrink-0 text-sm text-white">
+              {representativeWidth}x{representativeHeight}
+            </span>
+          </div>
+        </div>
+        <img src="/icons/primary%20label.svg" alt={t('Primary')} className="h-[19px] w-auto shrink-0" />
       </button>
       {hasMultiple && expanded && <div className="flex w-full shrink-0 flex-col gap-0.5">{children}</div>}
     </div>
@@ -130,6 +157,7 @@ export function BannersTab() {
   const pageGroupIdByPage = useAppStore((s) => s.pageGroupIdByPage);
   const setActiveCanvas = useAppStore((s) => s.setActiveCanvas);
   const upsertLayout = useAppStore((s) => s.upsertLayout);
+  const updateLayoutStyle = useAppStore((s) => s.updateLayoutStyle);
   const loadSet = useAppStore((s) => s.loadSet);
   const attachStandalonePage = useAppStore((s) => s.attachStandalonePage);
 
@@ -229,18 +257,16 @@ export function BannersTab() {
     const bannerSet = setsById[setId];
     const layout = bannerSet ? layoutsById[bannerSet.sourceLayoutId] : null;
     if (!bannerSet || !layout) return null;
-    const group = pageGroups[pageGroupIdByPage[setId]];
-    const isPrimary = group?.memberIds[0] === setId;
     return (
       <BannerRow
         key={setId}
         width={layout.size.width}
         height={layout.size.height}
         name={bannerSet.name}
-        isPrimary={isPrimary}
         selected={selectedSceneIds.includes(setId)}
-        platformId={group?.platformId}
+        hidden={Boolean(layout.hidden)}
         onClick={() => handleRowClick(setId)}
+        onToggleHidden={() => updateLayoutStyle(layout.id, { hidden: !layout.hidden })}
       />
     );
   }
@@ -296,7 +322,7 @@ export function BannersTab() {
                 type="button"
                 aria-label={t('Add banner')}
                 onClick={handleAddMainSize}
-                className="flex size-6 shrink-0 items-center justify-center rounded-full bg-button-primary text-white shadow-[0px_1px_2px_rgba(0,0,0,0.03),0px_1px_6px_-1px_rgba(0,0,0,0.02),0px_2px_4px_rgba(0,0,0,0.02)] transition-opacity hover:opacity-80"
+                className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#2F2F37] text-white shadow-[0px_1px_2px_rgba(0,0,0,0.03),0px_1px_6px_-1px_rgba(0,0,0,0.02),0px_2px_4px_rgba(0,0,0,0.02)] transition-opacity hover:opacity-80"
               >
                 <Plus className="size-3.5" />
               </button>

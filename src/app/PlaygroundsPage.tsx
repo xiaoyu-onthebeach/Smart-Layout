@@ -1,12 +1,21 @@
 import { ChevronDown, CircleHelp, Search } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAppStore } from '@/store/useAppStore';
+import { createEmptyLayout, nextId } from '@/lib/create-layout';
+import { nearestPreset } from '@/lib/mock';
+import { NO_RULES_ID } from '@/lib/mock/rulesets';
+import type { BannerSet } from '@/types';
 import { useT } from '@/lib/i18n';
+
+// The default first banner — a plain square, no platform/preset attached, so there are no
+// platform-specific safe zones or rules to satisfy while getting started.
+const DEFAULT_WIDTH = 600;
+const DEFAULT_HEIGHT = 600;
 
 const CREATE_BUTTONS = [
   { label: 'Image', icon: '/icons/image.svg' },
   { label: 'Video', icon: '/icons/video.svg' },
-  { label: 'Layout', icon: '/icons/layout.svg' },
+  { label: 'Layout', icon: '/icons/Layout_24.svg' },
 ];
 
 const FILTERS = ['All types', 'All teams', 'Newest first'];
@@ -19,14 +28,43 @@ const PLACEHOLDER_CARDS = Array.from({ length: 15 }, (_, i) => i);
  * The very first screen of the prototype — a stand-in for the wider product's "Playgrounds" home,
  * of which this banner tool is just one entry point ("Layout"). Everything here is static except
  * the three create-new buttons top-right; "Layout" is the only one that goes anywhere, since it's
- * the only surface this prototype actually builds — it drops straight into the existing banner
- * tool's own start screen (CanvasStart).
+ * the only surface this prototype actually builds — it drops straight into the banner editor with
+ * one blank scene already created.
  */
 export function PlaygroundsPage() {
   const goTo = useAppStore((s) => s.goTo);
   const language = useAppStore((s) => s.language);
   const setLanguage = useAppStore((s) => s.setLanguage);
+  const upsertLayout = useAppStore((s) => s.upsertLayout);
+  const loadSet = useAppStore((s) => s.loadSet);
+  const setActiveLayout = useAppStore((s) => s.setActiveLayout);
+  const setActiveCanvas = useAppStore((s) => s.setActiveCanvas);
   const t = useT();
+
+  // "Layout" drops straight into the editor with one blank custom-size scene already in place —
+  // no separate "empty canvas" start screen in between (that screen used to live here; removed so
+  // the very first thing after clicking Layout is the real canvas, matching every visit after it).
+  function handleCreateLayout() {
+    const setId = nextId('set');
+    const productId = nextId('product');
+    const label = t('Main Square');
+    const layout = createEmptyLayout({
+      setId,
+      productId,
+      width: DEFAULT_WIDTH,
+      height: DEFAULT_HEIGHT,
+      label,
+      presetId: undefined,
+      ruleSetId: nearestPreset(DEFAULT_WIDTH, DEFAULT_HEIGHT)?.preset.ruleSetId ?? NO_RULES_ID,
+      language,
+    });
+    const bannerSet: BannerSet = { id: setId, name: label, sourceLayoutId: layout.id, layoutIds: [layout.id], productIds: [] };
+    upsertLayout(layout);
+    loadSet(bannerSet);
+    setActiveCanvas(setId);
+    setActiveLayout(layout.id);
+    goTo('editor');
+  }
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden" style={{ background: '#040406' }}>
@@ -73,7 +111,7 @@ export function PlaygroundsPage() {
               <button
                 key={btn.label}
                 type="button"
-                onClick={btn.label === 'Layout' ? () => goTo('editor') : undefined}
+                onClick={btn.label === 'Layout' ? handleCreateLayout : undefined}
                 className="flex h-10 shrink-0 items-center gap-2 rounded-xl border px-3 text-base font-semibold text-white transition-colors hover:bg-white/5"
                 style={{ background: '#26262C', borderColor: '#40404A', letterSpacing: '-0.01em' }}
               >

@@ -60,6 +60,7 @@ export function ImageBox({
   suppressFrameGapAffordance,
   onMouseDown,
   onContextMenu,
+  onDoubleClick,
   children,
 }: {
   element: LayoutElement;
@@ -83,6 +84,7 @@ export function ImageBox({
   suppressFrameGapAffordance?: boolean;
   onMouseDown?: (e: ReactMouseEvent) => void;
   onContextMenu?: (e: ReactMouseEvent) => void;
+  onDoubleClick?: (e: ReactMouseEvent) => void;
   children?: ReactNode;
 }) {
   const t = useT();
@@ -207,16 +209,19 @@ export function ImageBox({
       )}
       <div
         ref={boxRef}
+        data-resize-box
         className={cn('absolute', outlined && 'outline outline-2 -outline-offset-2 outline-button-primary')}
         style={{
           left: `${(box.x / layoutWidth) * 100}%`,
           top: `${(box.y / layoutHeight) * 100}%`,
           width: `${(box.w / layoutWidth) * 100}%`,
           height: `${(box.h / layoutHeight) * 100}%`,
+          transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
           cursor,
         }}
         onMouseDown={onMouseDown}
         onContextMenu={onContextMenu}
+        onDoubleClick={onDoubleClick}
       >
         {hasGap && <GridLines />}
         <div
@@ -328,7 +333,11 @@ export function ImageBox({
           something IS selected, a click on the rest of this area still falls through to the image
           underneath — e.g. to drag it by its body, not just resize it via a handle. */}
       {boxOverflowsFrame && boxRect && children && (
-        <div className="pointer-events-none fixed z-40" style={{ left: boxRect.left, top: boxRect.top, width: boxRect.width, height: boxRect.height }}>
+        <div
+          data-resize-box
+          className="pointer-events-none fixed z-40"
+          style={{ left: boxRect.left, top: boxRect.top, width: boxRect.width, height: boxRect.height, transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined }}
+        >
           {children}
         </div>
       )}

@@ -96,7 +96,14 @@ export type LayoutElement = {
   /** Image only: mirrors the image horizontally/vertically in place (frame is unaffected). */
   flipX?: boolean;
   flipY?: boolean;
+  /** Degrees, clockwise, pivoting around the frame's own center. Set by dragging just outside a
+   * selected element's corner handle (see SelectionBoundingBox's rotate zone). */
+  rotation?: number;
   overridden?: Partial<Record<'frame' | 'style' | 'visible' | 'focalPoint', true>>;
+  /** Elements sharing this id (within the same layout) act as one unit — selecting/moving/locking/
+   * flipping/reordering/deleting any one of them does the same to every other member. Set by the
+   * "Group layers" layer-context-menu action, cleared by "Ungroup". */
+  groupId?: string;
 };
 
 export type Layout = {

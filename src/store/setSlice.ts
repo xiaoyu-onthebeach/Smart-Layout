@@ -168,6 +168,7 @@ export const createSetSlice: Slice<SetSlice> = (set, get) => ({
         activeLayoutId: state.activeLayoutId === bannerSet.sourceLayoutId ? null : state.activeLayoutId,
         viewAllActivePageId: state.viewAllActivePageId === setId ? null : state.viewAllActivePageId,
         focusPageId: state.focusPageId === setId ? null : state.focusPageId,
+        revealPageId: state.revealPageId === setId ? null : state.revealPageId,
       };
     }),
   attachStandalonePage: (pageId, rootId) =>

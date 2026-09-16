@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 
 import { useAppStore } from '@/store/useAppStore';
 import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
-import { useElementDrag, MIN_SIZE, type ResizeHandle } from './useElementDrag';
+import { useElementDrag, applyElementSnap, MIN_SIZE, ELEMENT_PAN_THRESHOLD, type ResizeHandle } from './useElementDrag';
 import { SelectionBoundingBox } from './SelectionBoundingBox';
 import { ImageBox } from './ImageBox';
 
@@ -20,13 +20,13 @@ export function DraggableImageElement({
   scale,
   activeTool,
   selected,
-  sceneSelected,
   expanding,
   onExpandClick,
   onExpandToFrameClick,
   isBackgroundImage,
   onSelect,
   onContextMenu,
+  onEnterGroup,
 }: {
   element: LayoutElement;
   layoutId: string;
@@ -35,17 +35,17 @@ export function DraggableImageElement({
   scale: number;
   activeTool: Tool;
   selected: boolean;
-  /** Whether the enclosing scene is already selected — gates the first-click-selects-scene behavior below. */
-  sceneSelected?: boolean;
   expanding?: boolean;
   onExpandClick?: (e: ReactMouseEvent) => void;
   onExpandToFrameClick?: (e: ReactMouseEvent) => void;
   isBackgroundImage?: boolean;
   onSelect: (e: ReactMouseEvent) => void;
   onContextMenu?: (e: ReactMouseEvent) => void;
+  /** Set only when this element belongs to a group that isn't currently "entered" — double-click enters it. */
+  onEnterGroup?: (e: ReactMouseEvent) => void;
 }) {
   const updateElement = useAppStore((s) => s.updateElement);
-  const { startResize } = useElementDrag(layoutId, element.id, scale);
+  const { startResize, startRotate } = useElementDrag(layoutId, element.id, scale);
   const { frame, pendingExpand } = element;
   // The "finish the drag first" affordances (expand button + prompt entry) only make sense once
   // the box has actually settled — showing them mid-drag is just noise following the cursor.
@@ -79,7 +79,9 @@ export function DraggableImageElement({
   }
 
   // A plain move shifts the pending-expand box along with the image, so the gap doesn't get left
-  // behind at its old spot.
+  // behind at its old spot. Every OTHER currently-selected element in this layout rides along at
+  // the same delta too, so a multi-selection moves as one unit (pendingExpand only ever follows
+  // the literally-dragged image, not other selected group members).
   function startMove(e: ReactMouseEvent) {
     e.stopPropagation();
     e.preventDefault();
@@ -87,19 +89,91 @@ export function DraggableImageElement({
     const startY = e.clientY;
     const startFrame = frame;
     const startPending = pendingExpand;
+    const state = useAppStore.getState();
+    const groupFrames = state.selectedElements
+      .filter((r) => r.layoutId === layoutId && r.elementId !== element.id)
+      .map((r) => {
+        const el = state.layoutsById[layoutId]?.elements.find((e2) => e2.id === r.elementId);
+        return el ? { elementId: r.elementId, frame: el.frame } : null;
+      })
+      .filter((v): v is { elementId: string; frame: LayoutElement['frame'] } => v !== null);
+    const movingIds = [element.id, ...groupFrames.map((g) => g.elementId)];
     beginPositioning();
     function onMove(ev: globalThis.MouseEvent) {
-      const dx = (ev.clientX - startX) / scale;
-      const dy = (ev.clientY - startY) / scale;
+      let dx = (ev.clientX - startX) / scale;
+      let dy = (ev.clientY - startY) / scale;
+      const candidateFrame = { ...startFrame, x: startFrame.x + dx, y: startFrame.y + dy };
+      ({ dx, dy } = applyElementSnap(layoutId, movingIds, candidateFrame, dx, dy));
       updateElement(layoutId, element.id, {
         frame: { ...startFrame, x: startFrame.x + dx, y: startFrame.y + dy },
         ...(startPending ? { pendingExpand: { ...startPending, x: startPending.x + dx, y: startPending.y + dy } } : {}),
       });
+      for (const g of groupFrames) {
+        updateElement(layoutId, g.elementId, { frame: { ...g.frame, x: g.frame.x + dx, y: g.frame.y + dy } });
+      }
     }
     function onUp() {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      useAppStore.getState().setActiveGuides([]);
       endPositioning();
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  // Mirrors useElementDrag's startDragOrDeferredSelect for the hand-rolled image move above — a
+  // plain click on one of several already-selected images defers collapsing the selection until
+  // it's clear whether this turns into an actual drag (of the whole group) or stays just a click.
+  function startMoveOrDeferredSelect(e: ReactMouseEvent) {
+    const state = useAppStore.getState();
+    const selectionInLayout = state.selectedElements.filter((r) => r.layoutId === layoutId);
+    const isMultiSelected = selectionInLayout.length > 1 && selectionInLayout.some((r) => r.elementId === element.id);
+
+    if (e.shiftKey || !isMultiSelected) {
+      onSelect(e);
+      startMove(e);
+      return;
+    }
+
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startFrame = frame;
+    let dragging = false;
+    const groupFrames = state.selectedElements
+      .filter((r) => r.layoutId === layoutId && r.elementId !== element.id)
+      .map((r) => {
+        const el = state.layoutsById[layoutId]?.elements.find((e2) => e2.id === r.elementId);
+        return el ? { elementId: r.elementId, frame: el.frame } : null;
+      })
+      .filter((v): v is { elementId: string; frame: LayoutElement['frame'] } => v !== null);
+    const movingIds = [element.id, ...groupFrames.map((g) => g.elementId)];
+
+    function onMove(ev: globalThis.MouseEvent) {
+      const dxScreen = ev.clientX - startX;
+      const dyScreen = ev.clientY - startY;
+      if (!dragging) {
+        if (Math.hypot(dxScreen, dyScreen) < ELEMENT_PAN_THRESHOLD) return;
+        dragging = true;
+        beginPositioning();
+      }
+      let dx = dxScreen / scale;
+      let dy = dyScreen / scale;
+      const candidateFrame = { ...startFrame, x: startFrame.x + dx, y: startFrame.y + dy };
+      ({ dx, dy } = applyElementSnap(layoutId, movingIds, candidateFrame, dx, dy));
+      updateElement(layoutId, element.id, { frame: { ...startFrame, x: startFrame.x + dx, y: startFrame.y + dy } });
+      for (const g of groupFrames) {
+        updateElement(layoutId, g.elementId, { frame: { ...g.frame, x: g.frame.x + dx, y: g.frame.y + dy } });
+      }
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      useAppStore.getState().setActiveGuides([]);
+      if (dragging) endPositioning();
+      else onSelect(e);
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -160,19 +234,25 @@ export function DraggableImageElement({
       isBackgroundImage={isBackgroundImage}
       suppressFrameGapAffordance={isPositioning}
       onContextMenu={onContextMenu}
+      onDoubleClick={
+        onEnterGroup &&
+        ((e) => {
+          if (activeTool !== 'select') return;
+          e.stopPropagation();
+          onEnterGroup(e);
+        })
+      }
       onMouseDown={(e) => {
         // Let a placement tool (text/shape) click straight through to the frame beneath.
         if (activeTool !== 'select') return;
-        // A full-bleed image is visually indistinguishable from "the scene" — its first click
-        // (scene not selected yet) just selects the scene, same as clicking empty frame space
-        // would, by letting the mousedown bubble up to the frame's own handler. A second click
-        // (scene already selected, image still isn't) drills into the image layer itself.
-        const fillsFrame = frame.x <= 0 && frame.y <= 0 && frame.x + frame.w >= layoutWidth && frame.y + frame.h >= layoutHeight;
-        if (fillsFrame && !selected && !sceneSelected && !e.shiftKey) return;
-        onSelect(e);
-        // Right-click still selects the layer (so the context menu that follows acts on it) but
-        // shouldn't start a drag — there's no real pointer movement to track for a context-menu click.
-        if (e.button === 0) startMove(e);
+        // This element only renders (as this interactive component, rather than the inert
+        // ElementRenderer) once the scene is already active — so this mousedown is always the
+        // "scene already selected, now drill into this specific layer" click; a first click on a
+        // not-yet-active scene never reaches here at all, it's caught by the frame's own handler.
+        // Only a left-click selects the layer (and starts a move drag) — a right-click leaves
+        // selection alone, so its own context menu only opens the layer menu when this layer was
+        // already selected beforehand; otherwise the right-click falls through to the scene menu.
+        if (e.button === 0) startMoveOrDeferredSelect(e);
       }}
     >
       {selected && (
@@ -190,6 +270,10 @@ export function DraggableImageElement({
               endPositioning();
             }
             window.addEventListener('mouseup', onUp);
+          }}
+          onRotateStart={(_handle, e) => {
+            const boxEl = (e.target as HTMLElement).closest('[data-resize-box]') as HTMLElement | null;
+            if (boxEl) startRotate(e, boxEl, element.rotation ?? 0);
           }}
         />
       )}

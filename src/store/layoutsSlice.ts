@@ -24,11 +24,21 @@ function frameFillsSize(frame: LayoutElement['frame'], size: { width: number; he
   return frame.x <= 0 && frame.y <= 0 && frame.x + frame.w >= size.width && frame.y + frame.h >= size.height;
 }
 
+/** 'styleOnly' cascade's own definition of "style": color, opacity, border, and shadow — never
+ * font/layout properties (size, weight, spacing, alignment, ...), which stay whatever each
+ * sibling's own layer already had. */
+const STYLE_ONLY_KEYS = ['color', 'fill', 'opacity', 'strokeColor', 'strokeWidth', 'strokeStyle', 'dropShadow', 'innerShadow'] as const satisfies readonly (keyof LayoutElement['style'])[];
+
 /** Leaves the sibling's own layers/content/positions alone; only re-styles elements that also exist on the primary (matched by id). */
 function restyleMatching(primaryElements: LayoutElement[], memberElements: LayoutElement[]): LayoutElement[] {
   return memberElements.map((el) => {
     const primaryEl = primaryElements.find((p) => p.id === el.id);
-    return primaryEl ? { ...el, style: { ...el.style, ...primaryEl.style } } : el;
+    if (!primaryEl) return el;
+    const patch: LayoutElement['style'] = {};
+    for (const key of STYLE_ONLY_KEYS) {
+      if (primaryEl.style[key] !== undefined) (patch as Record<string, unknown>)[key] = primaryEl.style[key];
+    }
+    return { ...el, style: { ...el.style, ...patch } };
   });
 }
 
@@ -102,7 +112,10 @@ export const createLayoutsSlice: Slice<LayoutsSlice> = (set, get) => ({
         pendingCascadeSetIds: pendingSetId ? { ...state.pendingCascadeSetIds, [pendingSetId]: true } : state.pendingCascadeSetIds,
       };
     }),
-  duplicateElement: (layoutId, elementId) =>
+  duplicateElement: (layoutId, elementId) => {
+    // Generated up front (not inside `set`) so the new id can be returned to the caller — bulk
+    // operations (multi-select/group duplicate) need it to know what to select/regroup afterward.
+    const newId = nextId('el');
     set((state) => {
       const layout = state.layoutsById[layoutId];
       if (!layout) return state;
@@ -113,7 +126,7 @@ export const createLayoutsSlice: Slice<LayoutsSlice> = (set, get) => ({
       // decorative element, even when duplicating the required image slot.
       const copy: LayoutElement = {
         ...original,
-        id: nextId('el'),
+        id: newId,
         slot: null,
         frame: { ...original.frame, x: original.frame.x + 16, y: original.frame.y + 16 },
       };
@@ -124,7 +137,9 @@ export const createLayoutsSlice: Slice<LayoutsSlice> = (set, get) => ({
         layoutsById: { ...state.layoutsById, [layoutId]: { ...layout, elements } },
         pendingCascadeSetIds: pendingSetId ? { ...state.pendingCascadeSetIds, [pendingSetId]: true } : state.pendingCascadeSetIds,
       };
-    }),
+    });
+    return newId;
+  },
   reorderElement: (layoutId, elementId, direction) =>
     set((state) => {
       const layout = state.layoutsById[layoutId];
@@ -140,6 +155,22 @@ export const createLayoutsSlice: Slice<LayoutsSlice> = (set, get) => ({
         layoutsById: { ...state.layoutsById, [layoutId]: { ...layout, elements } },
         pendingCascadeSetIds: pendingSetId ? { ...state.pendingCascadeSetIds, [pendingSetId]: true } : state.pendingCascadeSetIds,
       };
+    }),
+  groupElements: (layoutId, elementIds) =>
+    set((state) => {
+      const layout = state.layoutsById[layoutId];
+      if (!layout) return state;
+      const groupId = nextId('group');
+      const idSet = new Set(elementIds);
+      const elements = layout.elements.map((el) => (idSet.has(el.id) ? { ...el, groupId } : el));
+      return { layoutsById: { ...state.layoutsById, [layoutId]: { ...layout, elements } } };
+    }),
+  ungroupElements: (layoutId, groupId) =>
+    set((state) => {
+      const layout = state.layoutsById[layoutId];
+      if (!layout) return state;
+      const elements = layout.elements.map((el) => (el.groupId === groupId ? { ...el, groupId: undefined } : el));
+      return { layoutsById: { ...state.layoutsById, [layoutId]: { ...layout, elements } } };
     }),
   updateLayoutStyle: (layoutId, patch) =>
     set((state) => {

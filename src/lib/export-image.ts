@@ -1,6 +1,8 @@
 import type { Layout, LayoutElement } from '@/types';
+import { isGradient, parseGradient } from '@/lib/gradient';
 
 export type ExportFileType = 'PNG' | 'JPG';
+export type ExportScale = 1 | 2;
 
 // The exact strings `create-layout.ts` seeds an empty slot with — an export should only ever
 // include real content, never the editor's own "still needs filling in" hints.
@@ -33,11 +35,40 @@ function alignBucket(focal: number, min: string, mid: string, max: string): stri
 }
 
 let clipIdCounter = 0;
+let gradientIdCounter = 0;
+
+/** SVG has no `linear-gradient(...)` fill syntax (unlike CSS) — a fill/color that's actually a
+ * gradient needs its own `<linearGradient>` def (pushed onto `defs`, rendered once up front) and a
+ * `url(#id)` reference in its place. A plain color passes through untouched. CSS angles are 0deg =
+ * "to top", 90deg = "to right"; SVG's own default gradient axis (x1 0,y1 0 to x2 1,y2 0) already
+ * matches CSS's 90deg, so rotating it by `angle - 90` around its own center reproduces any angle. */
+function fillRef(value: string | undefined, fallback: string, defs: string[]): string {
+  const resolved = value ?? fallback;
+  if (!isGradient(resolved)) return resolved;
+  const parsed = parseGradient(resolved);
+  if (!parsed) return fallback;
+  const id = `export-gradient-${gradientIdCounter++}`;
+  const stops = [...parsed.stops]
+    .sort((a, b) => a.position - b.position)
+    .map((s) => `<stop offset="${s.position}%" stop-color="${s.color}" />`)
+    .join('');
+  defs.push(`<linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0" gradientTransform="rotate(${parsed.angle - 90} 0.5 0.5)">${stops}</linearGradient>`);
+  return `url(#${id})`;
+}
 
 /** Mirrors ElementRenderer's visuals (see ElementRenderer.tsx) using plain SVG primitives, in real
  * px rather than the live artboard's percentage/cqw units — an export is always rendered at its
  * own final size, so there's no responsive container to scale against. */
-function elementSvg(element: LayoutElement): string {
+function elementSvg(element: LayoutElement, defs: string[]): string {
+  const body = elementBodySvg(element, defs);
+  if (!element.rotation) return body;
+  const { frame } = element;
+  const cx = frame.x + frame.w / 2;
+  const cy = frame.y + frame.h / 2;
+  return `<g transform="rotate(${element.rotation} ${cx} ${cy})">${body}</g>`;
+}
+
+function elementBodySvg(element: LayoutElement, defs: string[]): string {
   const { frame, style } = element;
   const opacity = style.opacity !== undefined ? style.opacity / 100 : undefined;
   const opacityAttr = opacity !== undefined ? ` opacity="${opacity}"` : '';
@@ -51,12 +82,17 @@ function elementSvg(element: LayoutElement): string {
       .filter(Boolean)
       .join(' ');
     const clipId = `export-clip-${clipIdCounter++}`;
+    // Shows through wherever the image itself doesn't cover — same as the editor's own preview.
+    const fillRect = style.fill
+      ? `<rect x="${frame.x}" y="${frame.y}" width="${frame.w}" height="${frame.h}" fill="${fillRef(style.fill, '#d4d4d8', defs)}" />`
+      : '';
     const border = style.strokeWidth
       ? `<rect x="${frame.x}" y="${frame.y}" width="${frame.w}" height="${frame.h}" rx="${style.radius ?? 0}" fill="none" stroke="${style.strokeColor ?? '#000000'}" stroke-width="${style.strokeWidth}" />`
       : '';
     return `<g${opacityAttr}${flip ? ` transform="${flip}"` : ''}>
       <clipPath id="${clipId}"><rect x="${frame.x}" y="${frame.y}" width="${frame.w}" height="${frame.h}" rx="${style.radius ?? 0}" /></clipPath>
       <g clip-path="url(#${clipId})">
+        ${fillRect}
         <image href="${escapeXml(element.imageUrl ?? '')}" x="${frame.x}" y="${frame.y}" width="${frame.w}" height="${frame.h}" preserveAspectRatio="${align}" />
       </g>
       ${border}
@@ -64,7 +100,7 @@ function elementSvg(element: LayoutElement): string {
   }
 
   if (element.kind === 'shape') {
-    const fill = style.fill ?? '#d4d4d8';
+    const fill = fillRef(style.fill, '#d4d4d8', defs);
     const stroke = style.strokeWidth ? ` stroke="${style.strokeColor ?? '#000000'}" stroke-width="${style.strokeWidth}"` : '';
     if (element.shape === 'ellipse') {
       return `<ellipse cx="${frame.x + frame.w / 2}" cy="${frame.y + frame.h / 2}" rx="${frame.w / 2}" ry="${frame.h / 2}" fill="${fill}"${stroke}${opacityAttr} />`;
@@ -81,8 +117,9 @@ function elementSvg(element: LayoutElement): string {
   const letterSpacing = style.letterSpacing ? ` letter-spacing="${style.letterSpacing}px"` : '';
   const writingMode = style.writingMode ? ` writing-mode="${style.writingMode}"` : '';
   const stretchTransform = style.stretch ? ` transform="translate(${x} ${y}) scale(${1 + style.stretch / 100} 1) translate(${-x} ${-y})"` : '';
-  const pillFill = style.fill ? `<rect x="${frame.x}" y="${frame.y}" width="${frame.w}" height="${frame.h}" rx="${style.radius ?? 0}" fill="${style.fill}" />` : '';
-  return `${pillFill}<text x="${x}" y="${y}" text-anchor="${textAnchor}" dominant-baseline="central" fill="${style.color ?? '#18181b'}" font-weight="${style.fontWeight ?? 400}"${
+  const pillFill = style.fill ? `<rect x="${frame.x}" y="${frame.y}" width="${frame.w}" height="${frame.h}" rx="${style.radius ?? 0}" fill="${fillRef(style.fill, '#d4d4d8', defs)}" />` : '';
+  const textFill = fillRef(style.color, '#18181b', defs);
+  return `${pillFill}<text x="${x}" y="${y}" text-anchor="${textAnchor}" dominant-baseline="central" fill="${textFill}" font-weight="${style.fontWeight ?? 400}"${
     style.fontFamily ? ` font-family="${escapeXml(style.fontFamily)}"` : ''
   } font-size="${style.fontSize ?? 16}"${letterSpacing}${decoration}${writingMode}${stretchTransform}>${escapeXml(element.content ?? '')}</text>`;
 }
@@ -92,25 +129,33 @@ function elementSvg(element: LayoutElement): string {
  * doubles as both the ".svg" export and the source image for the ".png" rasterization path. */
 function buildSvgMarkup(layout: Layout): string {
   const { width, height } = layout.size;
-  const background = layout.backgroundColor ?? '#131316';
+  const defs: string[] = [];
+  const background = fillRef(layout.backgroundColor, '#131316', defs);
   const border = layout.borderWidth ? ` stroke="${layout.borderColor ?? '#2f2f37'}" stroke-width="${layout.borderWidth}"` : '';
-  const elementsSvg = layout.elements.filter((el) => !isPlaceholderElement(el)).map(elementSvg).join('');
+  const elementsSvg = layout.elements
+    .filter((el) => !isPlaceholderElement(el))
+    .map((el) => elementSvg(el, defs))
+    .join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <defs>${defs.join('')}</defs>
     <rect width="${width}" height="${height}" fill="${background}"${border} />
     ${elementsSvg}
   </svg>`;
 }
 
 /** JPG has no transparency, so it needs its own opaque background painted before the layout draws
- * on top — canvas defaults to transparent black otherwise, which would show through as black. */
-function rasterizeToRaster(layout: Layout, mime: 'image/png' | 'image/jpeg'): Promise<Blob> {
+ * on top — canvas defaults to transparent black otherwise, which would show through as black.
+ * `scale` renders at that multiple of the layout's own native size — since the source is an SVG
+ * (vector), asking `drawImage` for a larger target rasterizes it fresh at that size rather than
+ * stretching a fixed-resolution bitmap, so a 2x export stays crisp instead of just upscaled. */
+function rasterizeToRaster(layout: Layout, mime: 'image/png' | 'image/jpeg', scale: ExportScale): Promise<Blob> {
   const svgUrl = URL.createObjectURL(new Blob([buildSvgMarkup(layout)], { type: 'image/svg+xml' }));
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = layout.size.width;
-      canvas.height = layout.size.height;
+      canvas.width = layout.size.width * scale;
+      canvas.height = layout.size.height * scale;
       const ctx = canvas.getContext('2d');
       if (!ctx) {
         reject(new Error('Canvas 2D context unavailable'));
@@ -120,7 +165,7 @@ function rasterizeToRaster(layout: Layout, mime: 'image/png' | 'image/jpeg'): Pr
         ctx.fillStyle = layout.backgroundColor ?? '#131316';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       canvas.toBlob(
         (blob) => {
           URL.revokeObjectURL(svgUrl);
@@ -150,9 +195,11 @@ function triggerBlobDownload(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** Renders `layout` to `fileType` and hands the result straight to the browser's own download flow. */
-export async function exportLayout(layout: Layout, fileType: ExportFileType): Promise<void> {
-  const filename = `${layout.size.label || 'banner'}.${fileType.toLowerCase()}`;
-  const blob = await rasterizeToRaster(layout, fileType === 'JPG' ? 'image/jpeg' : 'image/png');
+/** Renders `layout` to `fileType` (at `scale`x its native size) and hands the result straight to
+ * the browser's own download flow. */
+export async function exportLayout(layout: Layout, fileType: ExportFileType, scale: ExportScale = 1): Promise<void> {
+  const suffix = scale === 2 ? '@2x' : '';
+  const filename = `${layout.size.label || 'banner'}${suffix}.${fileType.toLowerCase()}`;
+  const blob = await rasterizeToRaster(layout, fileType === 'JPG' ? 'image/jpeg' : 'image/png', scale);
   triggerBlobDownload(blob, filename);
 }

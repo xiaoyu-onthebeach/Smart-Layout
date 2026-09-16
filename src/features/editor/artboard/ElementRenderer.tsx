@@ -2,6 +2,7 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
 import { ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { boxShadowCss, textShadowCss } from '@/lib/shadow';
+import { isGradient } from '@/lib/gradient';
 import type { LayoutElement } from '@/types';
 
 /**
@@ -36,13 +37,16 @@ export function ElementRenderer({
     top: `${(frame.y / layoutHeight) * 100}%`,
     width: `${(frame.w / layoutWidth) * 100}%`,
     height: `${(frame.h / layoutHeight) * 100}%`,
+    transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
   };
 
   if (element.kind === 'image') {
     return (
       <div
         onMouseDown={onMouseDown}
-        style={{ ...pos, boxShadow: boxShadowCss(style.dropShadow, style.innerShadow) }}
+        // `fill` shows through wherever the image itself doesn't cover — a transparent PNG's cutouts,
+        // or the frame's own edges once a border radius clips the (always cover-sized) image beneath it.
+        style={{ ...pos, background: style.fill, boxShadow: boxShadowCss(style.dropShadow, style.innerShadow) }}
         className={cn('group/img overflow-hidden', interactive && 'ring-0', selected && 'outline outline-[1.5px] outline-button-primary')}
       >
         {element.imageUrl ? (
@@ -88,7 +92,7 @@ export function ElementRenderer({
         className={cn(selected && 'outline outline-[1.5px] outline-button-primary')}
         style={{
           ...pos,
-          backgroundColor: isLine ? undefined : (style.fill ?? '#d4d4d8'),
+          background: isLine ? undefined : (style.fill ?? '#d4d4d8'),
           borderRadius: element.shape === 'ellipse' ? '9999px' : style.radius ? `${style.radius}px` : undefined,
           border: style.strokeWidth ? `${style.strokeWidth}px ${style.strokeStyle ?? 'solid'} ${style.strokeColor ?? '#000000'}` : undefined,
           opacity: style.opacity !== undefined ? style.opacity / 100 : undefined,
@@ -96,13 +100,19 @@ export function ElementRenderer({
           boxSizing: 'border-box',
         }}
       >
-        {isLine && <div className="h-full w-full" style={{ backgroundColor: style.fill ?? '#d4d4d8' }} />}
+        {isLine && <div className="h-full w-full" style={{ background: style.fill ?? '#d4d4d8' }} />}
       </div>
     );
   }
 
   // text
   const isPill = Boolean(style.fill);
+  // Gradient text is a CSS `background-clip: text` trick — it needs the gradient painted as this
+  // box's own background-image, clipped to the glyphs, with the text's actual `color` made
+  // transparent so the clipped gradient shows through instead. That background-image slot is the
+  // same one the "pill" background (`style.fill`) would otherwise use, so the two can't combine —
+  // an acceptable trade-off since a gradient-filled pill behind gradient text isn't a real use case.
+  const gradientText = isGradient(style.color);
   return (
     <div
       onMouseDown={onMouseDown}
@@ -116,9 +126,12 @@ export function ElementRenderer({
         // it both ways rather than trying to remap style.align onto the rotated axis.
         justifyContent: style.writingMode === 'vertical-rl' ? 'center' : style.align === 'center' ? 'center' : style.align === 'right' ? 'flex-end' : 'flex-start',
         writingMode: style.writingMode,
-        backgroundColor: style.fill,
+        backgroundColor: gradientText ? undefined : style.fill,
+        backgroundImage: gradientText ? style.color : undefined,
+        backgroundClip: gradientText ? 'text' : undefined,
+        WebkitBackgroundClip: gradientText ? 'text' : undefined,
         borderRadius: style.radius ? `${style.radius}px` : undefined,
-        color: style.color ?? '#18181b',
+        color: gradientText ? 'transparent' : (style.color ?? '#18181b'),
         fontWeight: style.fontWeight ?? 400,
         fontFamily: style.fontFamily,
         fontSize: `${((style.fontSize ?? 16) / layoutWidth) * 100}cqw`,

@@ -28,6 +28,11 @@ export type GroupLayout = {
   dividerWidth: number;
   contentWidth: number;
   contentHeight: number;
+  /** The packed siblings' own width (their widest single item, since they stack in one column) —
+   * narrower than `contentWidth` whenever the primary is the wider of the two. The caller uses this
+   * (alongside `contentWidth` and the primary's own width) to center the primary card and the
+   * sibling pack against each other, rather than both merely left-aligning to the group's origin. */
+  siblingsWidth: number;
   siblings: PositionedBox[];
 };
 
@@ -47,6 +52,7 @@ export function computeGroupLayout(primary: { width: number; height: number }, s
     headerY,
     dividerWidth: contentWidth,
     contentWidth,
+    siblingsWidth: packed.width,
     contentHeight: siblings.length > 0 ? siblingsY + packed.height : primary.height,
     siblings: packed.items.map((item) => ({ ...item, y: item.y + siblingsY })),
   };

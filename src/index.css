@@ -104,6 +104,13 @@
 }
 
 @theme inline {
+  /* "Saans" (Displaay Type Foundry) is what every Figma spec pasted into this project names, but
+     it's a commercial font with no free CDN/webfont source — no license or font files are bundled
+     here, so this only actually renders as Saans on a machine that already has it installed
+     as a system font (e.g. a designer's own). Everywhere else it falls through to the same system
+     sans-serif stack Tailwind ships by default. */
+  --font-sans: 'Saans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
