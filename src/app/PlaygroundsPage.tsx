@@ -45,13 +45,31 @@ function LayoutCreateButton({ onSelectTeam }: { onSelectTeam: () => void }) {
           type="button"
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
-          className="flex h-10 w-[129px] shrink-0 items-center justify-center gap-2 rounded-xl border text-base font-semibold text-white transition-colors"
+          className="relative flex h-10 w-[129px] shrink-0 items-center justify-center gap-2 rounded-xl border text-base font-semibold text-white transition-colors"
           style={{
             background: hovered ? '#131316' : '#26262C',
             borderColor: hovered ? 'transparent' : '#40404A',
             letterSpacing: '-0.01em',
           }}
         >
+          {/* Hover-only border: a plain gray ring with a soft amber glow bleeding in from the
+              icon/chevron corner — matches layout-button-hover.svg's own two-layer stroke (a flat
+              #40404A ring plus a radial gradient one laid on top). Built as a separate ring
+              (mask-composite "punches out" the fill, leaving only a 1px band) rather than a real
+              `border`, since a plain border can't take a gradient without this same trick anyway. */}
+          {hovered && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 rounded-xl"
+              style={{
+                padding: 1,
+                background: 'radial-gradient(60px 60px at 88% 0%, #EAB22E 0%, #40404A 75%)',
+                WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                WebkitMaskComposite: 'xor',
+                maskComposite: 'exclude',
+              }}
+            />
+          )}
           <img src={hovered ? '/icons/layout-hover.svg' : '/icons/Layout_24.svg'} alt="" className="size-6" />
           {t('Layout')}
           <ChevronDown className="size-4 text-white/45" />
