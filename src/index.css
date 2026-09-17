@@ -111,6 +111,14 @@
      sans-serif stack Tailwind ships by default. */
   --font-sans: 'Saans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
 
+  /* One-size-down pass across the whole prototype: Tailwind's default `text-sm`/`text-xs` (14px/
+     12px) read slightly large next to this app's own density, so every `text-sm`/`text-xs` usage
+     — the vast majority of the UI's body/label text — now renders at 13px/11px instead. Their own
+     `--text-*--line-height` tokens are untouched: both are unitless ratios (not tied to the literal
+     old px value), so leading stays proportional to the new smaller size automatically. */
+  --text-sm: 0.8125rem;
+  --text-xs: 0.6875rem;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

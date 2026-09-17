@@ -74,6 +74,14 @@ export function createEmptyLayout(opts: {
   };
 }
 
+/** Whether a layout has any real content yet — the hero image slot filled, a decorative image
+ * layer, or an explicit background color fill — as opposed to a freshly created layout with none
+ * of those. Gates both the canvas's empty-state hint and the "Add more sizes" hover affordance,
+ * neither of which makes sense before there's something to adapt into other sizes. */
+export function layoutHasContent(layout: Layout): boolean {
+  return layout.elements.some((el) => el.kind === 'image' && Boolean(el.imageUrl)) || Boolean(layout.backgroundColor);
+}
+
 /** Copies a source layout's elements into a fresh layout at a new size, scaled to fit. */
 export function createAdaptedLayout(
   source: Layout,

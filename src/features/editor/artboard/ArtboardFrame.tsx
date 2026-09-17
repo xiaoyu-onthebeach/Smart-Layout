@@ -3,7 +3,7 @@ import { Check } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { nextId } from '@/lib/create-layout';
+import { nextId, layoutHasContent } from '@/lib/create-layout';
 import { useApplyImage } from '@/hooks/useApplyImage';
 import type { Layout, LayoutElement, ShapeKind } from '@/types';
 import { ElementRenderer } from './ElementRenderer';
@@ -235,9 +235,6 @@ export function ArtboardFrame({
   const imageElement = layout.elements.find((el) => el.kind === 'image');
   const hasImage = Boolean(imageElement?.imageUrl);
   const extraElements = layout.elements.filter((el) => el.slot === null && el.visible);
-  // The empty-state hint should disappear once *any* image is showing — the primary slot, or a
-  // decorative layer dropped in from the Assets panel — not just when the primary slot is filled.
-  const hasAnyImage = hasImage || extraElements.some((el) => el.kind === 'image' && el.imageUrl);
 
   // The "background image" to keep visible while every other layer hides during a focus-rect
   // drag: the real hero slot if it's filled, otherwise whichever image-kind decorative layer was
@@ -721,7 +718,7 @@ export function ArtboardFrame({
 
         {/* Hidden below 30% zoom — at that scale the content is illegible anyway, and every empty
             scene rendering it stacks up into visual noise once a group has several sizes. */}
-        {!hasAnyImage && showEmptyStateHint && scale >= 0.4 && (
+        {!layoutHasContent(layout) && showEmptyStateHint && scale >= 0.4 && (
           <div data-empty-hint className="absolute inset-0 flex flex-col items-center justify-center gap-0 px-8 text-center">
             <img src="/icons/start_illustration.svg" alt="" className="w-[400px]" />
             <div className="flex max-w-[300px] flex-col items-center gap-5">

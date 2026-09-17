@@ -84,7 +84,7 @@ function DraggableThumbRow({ url, label }: { url: string; label: string }) {
       }}
       className="flex h-12 w-full shrink-0 cursor-grab items-center gap-2 rounded-lg py-1 pr-1 pl-2 transition-colors hover:bg-[#26262C] active:cursor-grabbing"
     >
-      <span className="min-w-0 flex-1 truncate text-[12px] leading-4 font-normal tracking-[-0.01em] text-white">{label}</span>
+      <span className="min-w-0 flex-1 truncate text-[11px] leading-4 font-normal tracking-[-0.01em] text-white">{label}</span>
       <img src={url} alt="" draggable={false} className="size-10 shrink-0 rounded-md object-cover" />
     </div>
   );
@@ -197,7 +197,7 @@ function UploadsEmptyState() {
       <img src="/samples/upload-illustration.png" alt="" className="w-40 max-w-full" draggable={false} />
       <div className="flex flex-col gap-2">
         <span className="text-sm font-semibold tracking-[-0.01em] text-white">{t('No uploads yet')}</span>
-        <span className="mx-auto max-w-[244px] text-[12px] leading-4 tracking-[-0.01em] text-white/45">
+        <span className="mx-auto max-w-[244px] text-[11px] leading-4 tracking-[-0.01em] text-white/45">
           {t('You can upload or drop any image you might need to use in this playground.')}
         </span>
       </div>

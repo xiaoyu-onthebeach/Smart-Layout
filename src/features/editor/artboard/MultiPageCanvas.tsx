@@ -3,7 +3,7 @@ import { Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 import { useAppStore } from '@/store/useAppStore';
-import { nextId, createAdaptedLayout } from '@/lib/create-layout';
+import { nextId, createAdaptedLayout, layoutHasContent } from '@/lib/create-layout';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import type { BannerSet, Layout } from '@/types';
 import type { PagePosition } from '@/store/types';
@@ -445,7 +445,11 @@ function PageCard({
       )}
 
       {!isLoading && showRightAdd && <AddPageHotspot edge="right" sourceLayoutId={layout.id} onConfirm={(r) => onAddAdjacent('right', r)} />}
-      {!isLoading && showBottomAdd && scale >= 0.4 && <AddPageHotspot edge="bottom" sourceLayoutId={layout.id} onConfirm={(r) => onAddAdjacent('bottom', r)} />}
+      {/* Below the card only ever offers to adapt a scene that actually has something to adapt —
+          a still-empty primary shows no affordance at all here, not even on hover. */}
+      {!isLoading && showBottomAdd && scale >= 0.4 && layoutHasContent(layout) && (
+        <AddPageHotspot edge="bottom" sourceLayoutId={layout.id} onConfirm={(r) => onAddAdjacent('bottom', r)} />
+      )}
     </div>
   );
 }
