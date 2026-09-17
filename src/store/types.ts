@@ -79,6 +79,9 @@ export type UiSlice = {
   uploadedAssetUrls: string[];
   /** When true (the default), a plain click selecting a layer also selects its matching layer in every other size in the group — see src/lib/match-select.ts. */
   matchSelectEnabled: boolean;
+  /** Whether the decorative top/left canvas rulers are shown — toggled by the ruler icon in
+   * `CanvasZoomBar`; purely visual (tick marks/labels only, no real measuring or snapping). */
+  showRulers: boolean;
   /** Current UI display language — defaults to English. */
   language: Language;
   goTo: (step: AppStep) => void;
@@ -127,6 +130,7 @@ export type UiSlice = {
   enableMatchSelect: () => void;
   /** Turns match-select off and drops every cross-scene match from the current selection, keeping only whatever's selected in the current scene. */
   disableMatchSelect: () => void;
+  toggleRulers: () => void;
   setLanguage: (language: Language) => void;
 };
 

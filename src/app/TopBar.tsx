@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
+import { RULER_SIZE } from '@/features/editor/artboard/RulerOverlay';
 
 // Document-level title — not tied to any single page, so it's a fixed label for now.
 const DOCUMENT_TITLE = 'Winter EC Campaign 2027';
@@ -15,10 +16,18 @@ export function TopBar() {
   const language = useAppStore((s) => s.language);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const downloading = useAppStore((s) => s.downloading);
+  const showRulers = useAppStore((s) => s.showRulers);
+  const step = useAppStore((s) => s.step);
   const t = useT();
+  // Rulers are only ever toggled on while editing (see CanvasZoomBar) — this guard just keeps a
+  // stale `showRulers` from a previous editor session pushing the header around on another step.
+  const rulersActive = showRulers && step === 'editor';
 
   return (
-    <header className="absolute inset-x-0 top-0 z-10 flex h-14 shrink-0 items-center justify-between px-3 text-chrome-fg">
+    <header
+      className="absolute right-0 z-10 flex h-14 shrink-0 items-center justify-between px-3 text-chrome-fg transition-[top,left] duration-150"
+      style={{ top: rulersActive ? RULER_SIZE : 0, left: rulersActive ? RULER_SIZE : 0 }}
+    >
       <div className="flex items-center gap-4 py-3 pr-6 pl-3">
         <img src="/icons/logo.svg" alt="Beachside" className="size-8" />
         <span className="text-sm font-medium text-chrome-fg">{DOCUMENT_TITLE}</span>

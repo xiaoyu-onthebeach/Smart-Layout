@@ -29,6 +29,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   pickingFocusForLayoutId: null,
   focusPickConfirmed: false,
   matchSelectEnabled: true,
+  showRulers: false,
   language: 'en',
 
   goTo: (step) => set({ step }),
@@ -148,5 +149,6 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
         autoMatchedElements: [],
       };
     }),
+  toggleRulers: () => set((state) => ({ showRulers: !state.showRulers })),
   setLanguage: (language) => set({ language }),
 });

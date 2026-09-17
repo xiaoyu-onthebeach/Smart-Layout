@@ -10,7 +10,7 @@ import { useT } from '@/lib/i18n';
 // The default first banner — a plain square, no platform/preset attached, so there are no
 // platform-specific safe zones or rules to satisfy while getting started.
 const DEFAULT_WIDTH = 600;
-const DEFAULT_HEIGHT = 600;
+const DEFAULT_HEIGHT = 500;
 
 const CREATE_BUTTONS = [
   { label: 'Image', icon: '/icons/image.svg' },

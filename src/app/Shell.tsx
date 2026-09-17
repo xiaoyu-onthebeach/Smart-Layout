@@ -5,6 +5,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { initUndoHistory, undo } from '@/store/undoHistory';
 import { AddBannersPanel } from '@/features/size-select/AddBannersPanel';
 import { MultiPageCanvas } from '@/features/editor/artboard/MultiPageCanvas';
+import { RULER_SIZE } from '@/features/editor/artboard/RulerOverlay';
 import { TopBar } from './TopBar';
 import { LeftPanel } from './LeftPanel';
 import { PlaygroundsPage } from './PlaygroundsPage';
@@ -22,6 +23,10 @@ export function Shell() {
   const selectElement = useAppStore((s) => s.selectElement);
   const setSelectedElements = useAppStore((s) => s.setSelectedElements);
   const groupElements = useAppStore((s) => s.groupElements);
+  const showRulers = useAppStore((s) => s.showRulers);
+  // The ruler toggle only ever lives inside the editor's own canvas toolbar — this guard just
+  // keeps a stale flag from a previous editor session from shifting the sidebar on another step.
+  const rulersActive = showRulers && step === 'editor';
   // The toolbar is a permanent fixture of the playground, not something that waits for a
   // selection — with nothing selected it still mounts, just narrowed to Select/Move only (see
   // DefaultModeToolbar's own `hasSceneSelected` check, which adds Text/Shape once a scene is).
@@ -120,7 +125,13 @@ export function Shell() {
         <main className="absolute inset-0 flex">
           {(step === 'start' || step === 'editor') && (
             <>
-              <div className="pt-14">
+              {/* paddingTop mirrors the header's own push-down (see TopBar) so the gap between
+                  the header's bottom edge and the panel's own top edge never changes — the two
+                  move down together, not independently. */}
+              <div
+                className="transition-[padding-top,margin-left] duration-150"
+                style={{ paddingTop: 56 + (rulersActive ? RULER_SIZE : 0), marginLeft: rulersActive ? RULER_SIZE : 0 }}
+              >
                 <LeftPanel />
               </div>
               <div className="relative flex-1 overflow-hidden">

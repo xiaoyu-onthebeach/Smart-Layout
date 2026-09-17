@@ -10,6 +10,7 @@ import type { PagePosition } from '@/store/types';
 import { ArtboardFrame } from './ArtboardFrame';
 import { CascadeToolbar } from './CascadeToolbar';
 import { CanvasZoomBar } from './CanvasZoomBar';
+import { RulerOverlay } from './RulerOverlay';
 import { PageTitleBar } from './PageTitleBar';
 import { QuickSizeMenu, type QuickSizeResult } from './QuickSizeMenu';
 import { SceneContextMenu } from './SceneContextMenu';
@@ -476,6 +477,8 @@ export function MultiPageCanvas() {
   const activeCanvasRootId = useAppStore((s) => s.activeCanvasRootId);
   const setActiveCanvas = useAppStore((s) => s.setActiveCanvas);
   const activeTool = useAppStore((s) => s.activeTool);
+  const showRulers = useAppStore((s) => s.showRulers);
+  const toggleRulers = useAppStore((s) => s.toggleRulers);
   const pendingCascadeSetIds = useAppStore((s) => s.pendingCascadeSetIds);
   const selectedSceneIds = useAppStore((s) => s.selectedSceneIds);
   const selectScene = useAppStore((s) => s.selectScene);
@@ -501,7 +504,6 @@ export function MultiPageCanvas() {
     x: number | null;
     y: number | null;
   }>({ x: null, y: null });
-  const [snapEnabled, setSnapEnabled] = useState(true);
   const [marqueeRect, setMarqueeRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   // While a sibling is being dragged to reorder within its group's "All sizes" pack, it follows
   // the cursor freely (this) instead of snapping to whatever slot computeGroupLayout currently
@@ -781,8 +783,14 @@ export function MultiPageCanvas() {
     const availW = Math.max(viewport.width - PADDING * 2, 1);
     const availH = Math.max(viewport.height - PADDING * 2, 1);
     const zoom = Math.min(availW / contentW, availH / contentH, MAX_FIT_ZOOM);
-    const x = (viewport.width - contentW * zoom) / 2 - bounds.minX * zoom;
-    const y = (viewport.height - contentH * zoom) / 2 - bounds.minY * zoom;
+    const rawX = (viewport.width - contentW * zoom) / 2 - bounds.minX * zoom;
+    const rawY = (viewport.height - contentH * zoom) / 2 - bounds.minY * zoom;
+    // Snapped to the dot grid's own tile size so a dot always lands right at the viewport's edge
+    // on load/fit — otherwise whatever fractional phase the centering math happens to produce can
+    // leave an arbitrarily wide dot-free gap along that edge.
+    const tile = DOT_SPACING * zoom;
+    const x = Math.round(rawX / tile) * tile;
+    const y = Math.round(rawY / tile) * tile;
     return { x, y, zoom };
   }
 
@@ -917,12 +925,6 @@ export function MultiPageCanvas() {
     function onMove(ev: globalThis.MouseEvent) {
       const rawX = startPos.x + (ev.clientX - startX) / zoom;
       const rawY = startPos.y + (ev.clientY - startY) / zoom;
-      if (!snapEnabled) {
-        movePagesBy([entry.id], rawX - appliedX, rawY - appliedY);
-        appliedX = rawX;
-        appliedY = rawY;
-        return;
-      }
       const snapped = computeSnap(rawX, rawY, w, h, others, SNAP_THRESHOLD / zoom);
       movePagesBy([entry.id], snapped.x - appliedX, snapped.y - appliedY);
       appliedX = snapped.x;
@@ -1354,7 +1356,9 @@ export function MultiPageCanvas() {
         ref={outerRef}
         className="absolute inset-0 overflow-hidden"
         style={{
-          backgroundImage: 'radial-gradient(rgba(255,255,255,0.2) 1px, transparent 1px)',
+          // Below 30% zoom the dots are so densely packed they just read as a grey haze — hiding
+          // them entirely there looks cleaner than a pattern that no longer reads as a grid.
+          backgroundImage: camera.zoom >= 0.3 ? 'radial-gradient(rgba(255,255,255,0.2) 1px, transparent 1px)' : 'none',
           backgroundSize: `${DOT_SPACING * camera.zoom}px ${DOT_SPACING * camera.zoom}px`,
           backgroundPosition: `${camera.x}px ${camera.y}px`,
           cursor: activeTool === 'move' ? 'grab' : 'default',
@@ -1504,8 +1508,16 @@ export function MultiPageCanvas() {
           />
         )}
       </div>
+      {showRulers && <RulerOverlay camera={camera} viewport={viewport} />}
+
       <div className="pointer-events-none absolute right-6 bottom-6 z-10">
-        <CanvasZoomBar zoomPct={camera.zoom * 100} onSetZoom={setZoomPct} onFitToScreen={handleFitToScreen} snapEnabled={snapEnabled} onToggleSnap={() => setSnapEnabled((v) => !v)} />
+        <CanvasZoomBar
+          zoomPct={camera.zoom * 100}
+          onSetZoom={setZoomPct}
+          onFitToScreen={handleFitToScreen}
+          showRulers={showRulers}
+          onToggleRulers={toggleRulers}
+        />
       </div>
 
       {sceneContextMenu &&

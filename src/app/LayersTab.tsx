@@ -150,9 +150,16 @@ function SceneLayerRows({
   return (
     <>
       <BackgroundRow color={layout.backgroundColor || '#FFFFFF'} />
-      {layout.elements.filter(isRealLayer).map((el) => (
-        <LayerRow key={el.id} element={el} layoutId={layout.id} selected={isSelected(el.id)} onClick={(e) => onSelectElement(el.id, e)} />
-      ))}
+      {/* Newest-added element first — `elements` itself stays oldest-to-newest (that order is
+          also z-stacking order, back-to-front, for ElementRenderer), so only the list's own
+          display order is reversed here, not the underlying data. */}
+      {layout.elements
+        .filter(isRealLayer)
+        .slice()
+        .reverse()
+        .map((el) => (
+          <LayerRow key={el.id} element={el} layoutId={layout.id} selected={isSelected(el.id)} onClick={(e) => onSelectElement(el.id, e)} />
+        ))}
     </>
   );
 }

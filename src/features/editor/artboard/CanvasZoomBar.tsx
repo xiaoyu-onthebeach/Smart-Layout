@@ -1,4 +1,4 @@
-import { ChevronDown, Expand, Ruler } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { PopoverMenuItem } from './PanelKit';
@@ -6,19 +6,19 @@ import { useT } from '@/lib/i18n';
 
 const ZOOM_PRESETS = [25, 50, 75, 100, 150, 200];
 
-/** Bottom-right, sits just left of the view-all/editing switcher: zoom level, fit-to-screen, snap toggle. */
+/** Bottom-right, sits just left of the view-all/editing switcher: zoom level, fit-to-screen, ruler toggle. */
 export function CanvasZoomBar({
   zoomPct,
   onSetZoom,
   onFitToScreen,
-  snapEnabled,
-  onToggleSnap,
+  showRulers,
+  onToggleRulers,
 }: {
   zoomPct: number;
   onSetZoom: (pct: number) => void;
   onFitToScreen: () => void;
-  snapEnabled: boolean;
-  onToggleSnap: () => void;
+  showRulers: boolean;
+  onToggleRulers: () => void;
 }) {
   const t = useT();
   return (
@@ -49,20 +49,20 @@ export function CanvasZoomBar({
         onClick={onFitToScreen}
         className="flex size-8 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-white/5"
       >
-        <Expand className="size-4 text-white/85" />
+        <img src="/icons/Expand.svg" alt="" className="size-4" />
       </button>
       <div className="h-8 w-px shrink-0" style={{ background: '#2F2F37' }} />
       <button
         type="button"
-        aria-label={snapEnabled ? t('Disable snapping') : t('Enable snapping')}
-        aria-pressed={!snapEnabled}
-        onClick={onToggleSnap}
+        aria-label={showRulers ? t('Hide rulers') : t('Show rulers')}
+        aria-pressed={showRulers}
+        onClick={onToggleRulers}
         className={cn(
           'flex size-8 shrink-0 items-center justify-center rounded-full transition-colors',
-          !snapEnabled ? 'bg-white/10' : 'hover:bg-white/5',
+          showRulers ? 'bg-white/10' : 'hover:bg-white/5',
         )}
       >
-        <Ruler className={cn('size-4', snapEnabled ? 'text-white/85' : 'text-white/45')} />
+        <img src={showRulers ? '/icons/ruler-on.svg' : '/icons/ruler-off.svg'} alt="" className="size-4" />
       </button>
     </div>
   );
