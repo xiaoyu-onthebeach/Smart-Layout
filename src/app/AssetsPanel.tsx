@@ -299,7 +299,7 @@ export function AssetsPanel() {
 
       {tab === 'uploads' ? (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             {uploadedAssetUrls.length === 0 ? (
               <UploadsEmptyState />
             ) : (
