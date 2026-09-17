@@ -242,7 +242,7 @@ export function QuickSizeMenu({
                 <span className="text-[13px] text-white/45">{t('Image expands around your selected area.')}</span>
               </div>
               {focusRect ? (
-                <div className="flex items-center gap-2 rounded-lg p-2">
+                <div className="flex items-center gap-2 rounded-lg py-2">
                   <div
                     className="size-10 shrink-0 rounded-lg border bg-cover"
                     style={{ borderColor: '#40404A', backgroundImage: sourceImageUrl ? `url(${sourceImageUrl})` : undefined, backgroundPosition: focusThumbPosition }}
@@ -259,7 +259,7 @@ export function QuickSizeMenu({
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 rounded-lg p-2">
+                <div className="flex items-center gap-2 rounded-lg py-2">
                   <img src="/icons/select_area.svg" alt="" className="size-10 shrink-0" />
                   <span className="min-w-0 flex-1 truncate text-sm text-white">{t('Pick the scene focus')}</span>
                   <button

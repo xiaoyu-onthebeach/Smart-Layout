@@ -3,13 +3,23 @@ import { NO_RULES_ID } from './rulesets';
 
 export const sizePresets: SizePreset[] = [
   // Amazon
-  { id: 'amazon-brand-hero', platformId: 'amazon', label: 'Brand store hero', width: 1500, height: 300, required: true, ruleSetId: 'rs-amazon-brand-hero' },
-  { id: 'amazon-search-banner', platformId: 'amazon', label: 'Search top banner', width: 728, height: 90, required: true, ruleSetId: 'rs-amazon-search-banner' },
-  { id: 'amazon-sponsored-brand', platformId: 'amazon', label: 'Sponsored brands', width: 1200, height: 628, required: false, ruleSetId: 'rs-amazon-sponsored-brand' },
-  { id: 'amazon-aplus-module', platformId: 'amazon', label: 'A+ content module', width: 970, height: 600, required: false, ruleSetId: 'rs-amazon-aplus-module' },
-  { id: 'amazon-mobile-leaderboard', platformId: 'amazon', label: 'Mobile leaderboard', width: 320, height: 50, required: false, ruleSetId: 'rs-amazon-mobile-leaderboard' },
-  { id: 'amazon-store-spotlight', platformId: 'amazon', label: 'Store spotlight', width: 1280, height: 720, required: false, ruleSetId: 'rs-amazon-store-spotlight' },
-  { id: 'amazon-half-page', platformId: 'amazon', label: 'Half page unit', width: 300, height: 600, required: false, ruleSetId: 'rs-amazon-half-page' },
+  { id: 'amazon-medium-rectangle', platformId: 'amazon', label: 'Medium Rectangle', width: 300, height: 250, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-large-rectangle', platformId: 'amazon', label: 'Large Rectangle', width: 336, height: 280, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-leaderboard', platformId: 'amazon', label: 'Leaderboard', width: 728, height: 90, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-half-page', platformId: 'amazon', label: 'Half Page', width: 300, height: 600, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-wide-skyscraper', platformId: 'amazon', label: 'Wide Skyscraper', width: 160, height: 600, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-billboard', platformId: 'amazon', label: 'Billboard', width: 970, height: 250, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-mobile-leaderboard', platformId: 'amazon', label: 'Mobile Leaderboard', width: 320, height: 50, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-300x50', platformId: 'amazon', label: '300x50', width: 300, height: 50, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-414x125', platformId: 'amazon', label: '414x125', width: 414, height: 125, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-980x55', platformId: 'amazon', label: '980x55', width: 980, height: 55, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-homepage-banner-stripe', platformId: 'amazon', label: 'Homepage Banner (Stripe)', width: 640, height: 100, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-home-page-banner-large', platformId: 'amazon', label: 'Home Page Banner (Large)', width: 600, height: 500, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-deals-page-banner', platformId: 'amazon', label: 'Deals Page Banner', width: 640, height: 100, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-detail-page-banner', platformId: 'amazon', label: 'Detail Page Banner', width: 828, height: 250, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-thank-you-page-banner', platformId: 'amazon', label: 'Thank You Page Banner', width: 640, height: 100, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-detail-page-banner-tablet', platformId: 'amazon', label: 'Detail Page Banner (Tablet)', width: 1940, height: 500, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'amazon-encore-banner', platformId: 'amazon', label: 'Encore Banner', width: 2560, height: 2560, required: false, ruleSetId: NO_RULES_ID },
 
   // Rakuten
   { id: 'rakuten-billboard-banner', platformId: 'rakuten', label: 'Billboard banner', width: 1280, height: 200, required: false, ruleSetId: NO_RULES_ID },
@@ -17,32 +27,13 @@ export const sizePresets: SizePreset[] = [
   { id: 'rakuten-wide-banner', platformId: 'rakuten', label: 'Wide banner', width: 880, height: 320, required: false, ruleSetId: NO_RULES_ID },
   { id: 'rakuten-promo-banner', platformId: 'rakuten', label: 'Promo banner', width: 480, height: 360, required: false, ruleSetId: NO_RULES_ID },
 
-  // Yahoo
-  { id: 'yahoo-shopping-top', platformId: 'yahoo', label: 'Shopping top banner', width: 1000, height: 500, required: true, ruleSetId: 'rs-yahoo-shopping-top' },
-  { id: 'yahoo-display-mrec', platformId: 'yahoo', label: 'Display MREC', width: 300, height: 250, required: false, ruleSetId: 'rs-yahoo-display-mrec' },
-  { id: 'yahoo-skyscraper', platformId: 'yahoo', label: 'Skyscraper', width: 160, height: 600, required: false, ruleSetId: 'rs-yahoo-skyscraper' },
-  { id: 'yahoo-square-tile', platformId: 'yahoo', label: 'Square tile', width: 300, height: 300, required: false, ruleSetId: 'rs-yahoo-square-tile' },
-  { id: 'yahoo-native-ad', platformId: 'yahoo', label: 'Native ad unit', width: 300, height: 100, required: false, ruleSetId: 'rs-yahoo-native-ad' },
-  { id: 'yahoo-billboard', platformId: 'yahoo', label: 'Billboard', width: 960, height: 540, required: false, ruleSetId: 'rs-yahoo-billboard' },
-  { id: 'yahoo-half-page', platformId: 'yahoo', label: 'Half page unit', width: 320, height: 600, required: false, ruleSetId: 'rs-yahoo-half-page' },
-
   // Qoo10
-  { id: 'qoo10-mega-banner', platformId: 'qoo10', label: 'Mega banner', width: 940, height: 220, required: true, ruleSetId: 'rs-qoo10-mega-banner' },
-  { id: 'qoo10-shop-banner', platformId: 'qoo10', label: 'Shop banner', width: 750, height: 100, required: true, ruleSetId: 'rs-qoo10-shop-banner' },
-  { id: 'qoo10-promo-tile', platformId: 'qoo10', label: 'Promo tile', width: 300, height: 300, required: false, ruleSetId: 'rs-qoo10-promo-tile' },
-  { id: 'qoo10-category-banner', platformId: 'qoo10', label: 'Category banner', width: 480, height: 270, required: false, ruleSetId: 'rs-qoo10-category-banner' },
-  { id: 'qoo10-mobile-banner', platformId: 'qoo10', label: 'Mobile banner', width: 320, height: 60, required: false, ruleSetId: 'rs-qoo10-mobile-banner' },
-  { id: 'qoo10-hero-banner', platformId: 'qoo10', label: 'Hero banner', width: 1000, height: 560, required: false, ruleSetId: 'rs-qoo10-hero-banner' },
-  { id: 'qoo10-half-page', platformId: 'qoo10', label: 'Half page unit', width: 300, height: 620, required: false, ruleSetId: 'rs-qoo10-half-page' },
-
-  // TikTok Shop
-  { id: 'tiktok-product-card', platformId: 'tiktok', label: 'Product card', width: 800, height: 800, required: true, ruleSetId: 'rs-tiktok-product-card' },
-  { id: 'tiktok-story-banner', platformId: 'tiktok', label: 'Story banner', width: 1080, height: 1920, required: true, ruleSetId: 'rs-tiktok-story-banner' },
-  { id: 'tiktok-feed-banner', platformId: 'tiktok', label: 'Feed banner', width: 1200, height: 628, required: false, ruleSetId: 'rs-tiktok-feed-banner' },
-  { id: 'tiktok-live-cover', platformId: 'tiktok', label: 'Live cover', width: 720, height: 1280, required: false, ruleSetId: 'rs-tiktok-live-cover' },
-  { id: 'tiktok-mini-banner', platformId: 'tiktok', label: 'In-feed mini banner', width: 300, height: 50, required: false, ruleSetId: 'rs-tiktok-mini-banner' },
-  { id: 'tiktok-collection-ad', platformId: 'tiktok', label: 'Collection ad', width: 1200, height: 675, required: false, ruleSetId: 'rs-tiktok-collection-ad' },
-  { id: 'tiktok-spark-cover', platformId: 'tiktok', label: 'Spark ad cover', width: 320, height: 640, required: false, ruleSetId: 'rs-tiktok-spark-cover' },
+  { id: 'qoo10-shop-logo', platformId: 'qoo10', label: 'Shop Logo', width: 220, height: 220, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'qoo10-shop-cover-mobile', platformId: 'qoo10', label: 'Shop Cover Image (Mobile)', width: 750, height: 150, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'qoo10-shop-cover-pc', platformId: 'qoo10', label: 'Shop Cover Image (PC)', width: 980, height: 150, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'qoo10-featured-products-banner-mobile', platformId: 'qoo10', label: 'Featured Products Banner (Mobile)', width: 686, height: 300, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'qoo10-menu-bar-image-pc', platformId: 'qoo10', label: 'Menu Bar Image (PC only)', width: 240, height: 100, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'qoo10-qspecial-main-banner', platformId: 'qoo10', label: 'Qspecial Main Banner', width: 1440, height: 676, required: false, ruleSetId: NO_RULES_ID },
 ];
 
 export function getPreset(id: string): SizePreset | undefined {

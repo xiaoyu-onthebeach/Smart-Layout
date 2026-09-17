@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react';
-import { Check } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -968,28 +967,6 @@ export function ArtboardFrame({
                   <img src="/icons/visual-pick-center.svg" alt="" className="size-6 shrink-0" />
                   <span>{t('Move or resize to set the focus area')}</span>
                 </div>
-              )}
-
-              {/* Shows once the box has actually moved/resized from wherever it started this
-                  session, but hides again for the duration of an active drag — reappearing the
-                  instant the mouse is released — so it never lags behind or sits in the way of
-                  the box while it's still being adjusted. */}
-              {focusRectDirty && !focusRectDragging && (
-                <button
-                  type="button"
-                  aria-label={t('Confirm focus area')}
-                  onClick={confirmFocusRect}
-                  className="pointer-events-auto absolute z-30 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/80 text-[#26262C] shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)] transition-colors hover:bg-white"
-                  style={{
-                    left: `${((focusDrawRect.x + focusDrawRect.w) / nativeWidth) * 100}%`,
-                    top: `${(focusDrawRect.y / nativeHeight) * 100}%`,
-                    // Centered on the corner, then nudged further up-right by 24px so it sits
-                    // clear of the corner instead of overlapping it.
-                    transform: 'translate(calc(-50% + 12px), calc(-50% - 12px))',
-                  }}
-                >
-                  <Check className="size-4" />
-                </button>
               )}
             </>
           )}
