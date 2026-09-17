@@ -45,8 +45,12 @@ function LayoutCreateButton({ onSelectTeam }: { onSelectTeam: () => void }) {
           type="button"
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
-          className="flex h-10 w-[129px] shrink-0 items-center justify-center gap-2 rounded-xl text-base font-semibold text-white"
-          style={{ background: '#131316', letterSpacing: '-0.01em' }}
+          className="flex h-10 w-[129px] shrink-0 items-center justify-center gap-2 rounded-xl border text-base font-semibold text-white transition-colors"
+          style={{
+            background: hovered ? '#131316' : '#26262C',
+            borderColor: hovered ? 'transparent' : '#40404A',
+            letterSpacing: '-0.01em',
+          }}
         >
           <img src={hovered ? '/icons/layout-hover.svg' : '/icons/Layout_24.svg'} alt="" className="size-6" />
           {t('Layout')}
@@ -176,6 +180,7 @@ export function PlaygroundsPage() {
               >
                 <img src={btn.icon} alt="" className="size-6" />
                 {t(btn.label)}
+                <ChevronDown className="size-4 text-white/45" />
               </button>
             ))}
             <LayoutCreateButton onSelectTeam={handleCreateLayout} />
