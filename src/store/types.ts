@@ -82,6 +82,15 @@ export type UiSlice = {
   /** Whether the decorative top/left canvas rulers are shown — toggled by the ruler icon in
    * `CanvasZoomBar`; purely visual (tick marks/labels only, no real measuring or snapping). */
   showRulers: boolean;
+  /**
+   * Ready-to-use CSS values for the full-screen dot backdrop, recomputed by `MultiPageCanvas`
+   * whenever its camera/viewport changes and rendered by `Shell` — Shell needs to paint this
+   * *behind* the sidebar (which sits outside the canvas's own container), so the values live here
+   * rather than inside a `position: fixed` element nested in the canvas itself (a fixed descendant
+   * with a negative z-index still loses to the app shell's own opaque background — no stacking
+   * context above it to escape into). `null` while no canvas is mounted (e.g. the Playgrounds step).
+   */
+  canvasDotBackground: { position: string; size: string; visible: boolean } | null;
   /** Current UI display language — defaults to English. */
   language: Language;
   goTo: (step: AppStep) => void;
@@ -131,6 +140,7 @@ export type UiSlice = {
   /** Turns match-select off and drops every cross-scene match from the current selection, keeping only whatever's selected in the current scene. */
   disableMatchSelect: () => void;
   toggleRulers: () => void;
+  setCanvasDotBackground: (bg: { position: string; size: string; visible: boolean } | null) => void;
   setLanguage: (language: Language) => void;
 };
 

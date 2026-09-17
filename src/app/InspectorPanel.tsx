@@ -7,6 +7,7 @@ import { SceneEditorPanel } from '@/features/editor/artboard/SceneEditorPanel';
 import { CombinedEditorPanel } from '@/features/editor/artboard/CombinedEditorPanel';
 import { MultiSceneContentPanel } from './MultiSceneContentPanel';
 import type { EditorTarget } from '@/features/editor/artboard/PanelKit';
+import { RULER_SIZE } from '@/features/editor/artboard/RulerOverlay';
 
 /** Right-corner panel: swaps between text/shape/image/scene/combined editors for whatever is currently selected. */
 export function InspectorPanel() {
@@ -18,6 +19,12 @@ export function InspectorPanel() {
   // it's open (non-null for its whole lifetime, cleared the instant it closes) this panel steps
   // aside entirely instead of rendering underneath/behind it.
   const pickingFocusForLayoutId = useAppStore((s) => s.pickingFocusForLayoutId);
+  // Mirrors the header's own ruler-driven push-down (see TopBar/Shell) so the gap between the
+  // header's bottom edge and this panel's own top edge never changes — a plain `top` offset here
+  // (not a transform) is fine, unlike the sidebar: this panel is `absolute` within the canvas's
+  // own flex-1 container, so its own position never feeds back into that container's measured
+  // size the way the sidebar's box once did.
+  const showRulers = useAppStore((s) => s.showRulers);
 
   const targets: EditorTarget[] = selectedElements
     .map((ref) => {
@@ -52,7 +59,10 @@ export function InspectorPanel() {
   if (!content || pickingFocusForLayoutId) return null;
 
   return (
-    <div className="pointer-events-none absolute top-16 right-6 flex max-h-[calc(100vh-160px)]">
+    <div
+      className="pointer-events-none absolute right-6 flex max-h-[calc(100vh-160px)] transition-[top] duration-150"
+      style={{ top: 64 + (showRulers ? RULER_SIZE : 0) }}
+    >
       <div className="pointer-events-auto flex max-h-full">{content}</div>
     </div>
   );

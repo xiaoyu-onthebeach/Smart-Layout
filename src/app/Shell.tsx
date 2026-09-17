@@ -12,6 +12,30 @@ import { PlaygroundsPage } from './PlaygroundsPage';
 import { DefaultModeToolbar } from './DefaultModeToolbar';
 import { InspectorPanel } from './InspectorPanel';
 
+/**
+ * The canvas's dot-grid background, painted at the very top of the app (before the sidebar/canvas
+ * in DOM order) so it sits behind them purely through normal paint order — no `position: fixed` +
+ * negative z-index needed, which turned out to still lose to the app shell's own opaque background
+ * (a fixed descendant escapes to the document's own root stacking context, where the shell's plain
+ * `bg-background` fill, positioned but with no z-index of its own, still out-ranks it).
+ * A separate leaf component so its frequent updates (every pan/zoom tick) don't re-render the rest
+ * of Shell.
+ */
+function CanvasDotBackdrop() {
+  const dot = useAppStore((s) => s.canvasDotBackground);
+  if (!dot) return null;
+  return (
+    <div
+      className="pointer-events-none absolute inset-0"
+      style={{
+        backgroundImage: dot.visible ? 'radial-gradient(rgba(255,255,255,0.08) 2px, transparent 2px)' : 'none',
+        backgroundSize: dot.size,
+        backgroundPosition: dot.position,
+      }}
+    />
+  );
+}
+
 export function Shell() {
   const step = useAppStore((s) => s.step);
   const viewAllActivePageId = useAppStore((s) => s.viewAllActivePageId);
@@ -119,19 +143,23 @@ export function Shell() {
   return (
     <TooltipProvider delayDuration={200}>
       <div className="relative h-screen w-screen overflow-hidden bg-background">
+        <CanvasDotBackdrop />
         {/* The canvas fills the full viewport, including behind the header, so the infinite
             canvas's dotted background reaches the top of the screen. The header floats on top
             of it (rendered after, transparent) rather than reserving its own row. */}
         <main className="absolute inset-0 flex">
           {(step === 'start' || step === 'editor') && (
             <>
-              {/* paddingTop mirrors the header's own push-down (see TopBar) so the gap between
-                  the header's bottom edge and the panel's own top edge never changes — the two
-                  move down together, not independently. */}
-              <div
-                className="transition-[padding-top,margin-left] duration-150"
-                style={{ paddingTop: 56 + (rulersActive ? RULER_SIZE : 0), marginLeft: rulersActive ? RULER_SIZE : 0 }}
-              >
+              {/* The ruler-driven extra push is a `transform`, not `margin`/padding — a margin
+                  here would grow this flex item's own footprint, shrinking the canvas sibling's
+                  measured width right along with it, which was re-triggering the canvas's
+                  auto-fit-on-resize effect (silently resetting the user's own zoom/pan) every
+                  time the ruler toggled. `transform` moves the panel without touching layout at
+                  all, so the canvas's own size never changes and never re-fits because of it —
+                  the panel just visually slides over a bit more of it, which is fine since the
+                  panel's own background is already opaque. The constant `paddingTop: 56` (header
+                  height, unrelated to rulers) still clears the floating header underneath. */}
+              <div className="transition-transform duration-150" style={{ paddingTop: 56, transform: rulersActive ? `translate(${RULER_SIZE}px, ${RULER_SIZE}px)` : undefined }}>
                 <LeftPanel />
               </div>
               <div className="relative flex-1 overflow-hidden">

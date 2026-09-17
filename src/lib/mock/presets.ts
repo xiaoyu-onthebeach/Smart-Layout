@@ -1,4 +1,5 @@
 import type { SizePreset } from '@/types';
+import { NO_RULES_ID } from './rulesets';
 
 export const sizePresets: SizePreset[] = [
   // Amazon
@@ -11,13 +12,10 @@ export const sizePresets: SizePreset[] = [
   { id: 'amazon-half-page', platformId: 'amazon', label: 'Half page unit', width: 300, height: 600, required: false, ruleSetId: 'rs-amazon-half-page' },
 
   // Rakuten
-  { id: 'rakuten-ichiba-top', platformId: 'rakuten', label: 'Ichiba top banner', width: 1200, height: 800, required: true, ruleSetId: 'rs-rakuten-ichiba-top' },
-  { id: 'rakuten-shop-top', platformId: 'rakuten', label: 'Shop top banner', width: 180, height: 180, required: true, ruleSetId: 'rs-rakuten-shop-top' },
-  { id: 'rakuten-super-sale', platformId: 'rakuten', label: 'Super Sale banner', width: 600, height: 500, required: false, ruleSetId: 'rs-rakuten-super-sale' },
-  { id: 'rakuten-mobile-banner', platformId: 'rakuten', label: 'Mobile app banner', width: 640, height: 960, required: false, ruleSetId: 'rs-rakuten-mobile-banner' },
-  { id: 'rakuten-app-banner', platformId: 'rakuten', label: 'App download banner', width: 336, height: 56, required: false, ruleSetId: 'rs-rakuten-app-banner' },
-  { id: 'rakuten-event-banner', platformId: 'rakuten', label: 'Event feed banner', width: 1024, height: 600, required: false, ruleSetId: 'rs-rakuten-event-banner' },
-  { id: 'rakuten-category-tile', platformId: 'rakuten', label: 'Category tile', width: 320, height: 640, required: false, ruleSetId: 'rs-rakuten-category-tile' },
+  { id: 'rakuten-billboard-banner', platformId: 'rakuten', label: 'Billboard banner', width: 1280, height: 200, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'rakuten-tall-banner', platformId: 'rakuten', label: 'Tall banner', width: 400, height: 800, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'rakuten-wide-banner', platformId: 'rakuten', label: 'Wide banner', width: 880, height: 320, required: false, ruleSetId: NO_RULES_ID },
+  { id: 'rakuten-promo-banner', platformId: 'rakuten', label: 'Promo banner', width: 480, height: 360, required: false, ruleSetId: NO_RULES_ID },
 
   // Yahoo
   { id: 'yahoo-shopping-top', platformId: 'yahoo', label: 'Shopping top banner', width: 1000, height: 500, required: true, ruleSetId: 'rs-yahoo-shopping-top' },

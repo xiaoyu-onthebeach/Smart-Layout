@@ -53,8 +53,12 @@ function buildTicks(offset: number, zoom: number, trackLength: number): Tick[] {
 function TopRuler({ offset, zoom, trackWidth }: { offset: number; zoom: number; trackWidth: number }) {
   const ticks = buildTicks(offset, zoom, trackWidth);
   return (
+    // `fixed`, not `absolute` — same reasoning as LeftRuler below: scoping this to the canvas
+    // container (which starts to the right of the sidebar) left a gap with no ruler bar at all
+    // above the sidebar itself, just the dot-grid showing through. `fixed` hugs the true browser
+    // edge instead, so the bar reads as one continuous strip across the whole top of the app.
     <div
-      className="pointer-events-none absolute top-0 z-20 overflow-hidden"
+      className="pointer-events-none fixed top-0 z-20 overflow-hidden"
       style={{ left: RULER_SIZE, right: 0, height: RULER_SIZE, background: RULER_BG, boxShadow: RULER_SHADOW, backdropFilter: 'blur(16px)' }}
     >
       {ticks.map((tick, i) => (
@@ -108,11 +112,24 @@ function LeftRuler({ offset, zoom, trackHeight }: { offset: number; zoom: number
   );
 }
 
-export function RulerOverlay({ camera, viewport }: { camera: { x: number; y: number; zoom: number }; viewport: { width: number; height: number } }) {
+export function RulerOverlay({
+  camera,
+  viewport,
+  canvasOffsetX,
+}: {
+  camera: { x: number; y: number; zoom: number };
+  viewport: { width: number; height: number };
+  /** The canvas container's own left edge, in true (full-window) screen px — however wide the
+   * sidebar currently is. `LeftRuler` doesn't need this (it's pinned to the true left edge
+   * regardless), but `TopRuler` does: it's also now `fixed` to the true viewport, so its own tick
+   * math needs to travel from "camera-relative, inside the canvas container" out to "true
+   * viewport" coordinates the same way the dot-grid backdrop's own phase-matching already does. */
+  canvasOffsetX: number;
+}) {
   if (viewport.width <= 0 || viewport.height <= 0) return null;
   return (
     <>
-      <TopRuler offset={camera.x - RULER_SIZE} zoom={camera.zoom} trackWidth={viewport.width - RULER_SIZE} />
+      <TopRuler offset={camera.x + canvasOffsetX - RULER_SIZE} zoom={camera.zoom} trackWidth={canvasOffsetX + viewport.width - RULER_SIZE} />
       <LeftRuler offset={camera.y - RULER_SIZE} zoom={camera.zoom} trackHeight={viewport.height - RULER_SIZE} />
       {/* Corner square at the true top-left of the app, where the (fixed) left ruler starts —
           matches the header's own push-down-and-right so nothing overlaps it. */}

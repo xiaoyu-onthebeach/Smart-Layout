@@ -30,6 +30,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   focusPickConfirmed: false,
   matchSelectEnabled: true,
   showRulers: false,
+  canvasDotBackground: null,
   language: 'en',
 
   goTo: (step) => set({ step }),
@@ -150,5 +151,6 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
       };
     }),
   toggleRulers: () => set((state) => ({ showRulers: !state.showRulers })),
+  setCanvasDotBackground: (bg) => set({ canvasDotBackground: bg }),
   setLanguage: (language) => set({ language }),
 });

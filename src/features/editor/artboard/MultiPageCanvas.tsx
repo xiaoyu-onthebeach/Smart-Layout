@@ -34,7 +34,7 @@ const MAX_FIT_ZOOM = 1;
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 3;
 const FOCUS_FILL_RATIO = 0.6;
-const DOT_SPACING = 100;
+const DOT_SPACING = 50;
 const PAN_THRESHOLD = 4;
 // Screen px within which a dragged scene's edge/center snaps to align with another scene's.
 const SNAP_THRESHOLD = 8;
@@ -231,6 +231,7 @@ function UnifiedAllSizesHeader({
   top,
   totalWidth,
   icons,
+  zoom,
 }: {
   left: number;
   top: number;
@@ -238,6 +239,9 @@ function UnifiedAllSizesHeader({
   totalWidth: number;
   /** Each column's icon center x — screen-px, relative to `left`, already zoom-scaled by the caller — plus its own confirm/focus handlers. */
   icons: Array<{ x: number; entry: PageEntry; onConfirm: (results: QuickSizeResult[]) => void; onFocusPrimary: () => void }>;
+  /** Below 40% the circle itself is hidden (same threshold `ArtboardFrame` already uses to hide its
+   * own bottom "Add more sizes" hotspot) — the divider line stays, just without the button on it. */
+  zoom: number;
 }) {
   const t = useT();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -262,9 +266,11 @@ function UnifiedAllSizesHeader({
               />
             )}
             <div className="pointer-events-auto absolute" style={{ left: icon.x - ADD_ICON_SIZE / 2, top: -ADD_ICON_SIZE / 2 }}>
-              <QuickSizeMenu onConfirm={icon.onConfirm} sourceLayoutId={icon.entry.layout.id}>
-                <AddSizeIconButton onHoverChange={(v) => setHoveredIndex(v ? i : null)} onClick={icon.onFocusPrimary} />
-              </QuickSizeMenu>
+              {zoom >= 0.4 && (
+                <QuickSizeMenu onConfirm={icon.onConfirm} sourceLayoutId={icon.entry.layout.id}>
+                  <AddSizeIconButton onHoverChange={(v) => setHoveredIndex(v ? i : null)} onClick={icon.onFocusPrimary} />
+                </QuickSizeMenu>
+              )}
             </div>
           </div>
         );
@@ -479,6 +485,7 @@ export function MultiPageCanvas() {
   const activeTool = useAppStore((s) => s.activeTool);
   const showRulers = useAppStore((s) => s.showRulers);
   const toggleRulers = useAppStore((s) => s.toggleRulers);
+  const setCanvasDotBackground = useAppStore((s) => s.setCanvasDotBackground);
   const pendingCascadeSetIds = useAppStore((s) => s.pendingCascadeSetIds);
   const selectedSceneIds = useAppStore((s) => s.selectedSceneIds);
   const selectScene = useAppStore((s) => s.selectScene);
@@ -499,6 +506,7 @@ export function MultiPageCanvas() {
 
   const outerRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  const [canvasOffsetX, setCanvasOffsetX] = useState(0);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
   const [snapGuides, setSnapGuides] = useState<{
     x: number | null;
@@ -564,12 +572,38 @@ export function MultiPageCanvas() {
   useEffect(() => {
     const el = outerRef.current;
     if (!el) return;
-    const compute = () => setViewport({ width: el.clientWidth, height: el.clientHeight });
+    // `offsetX` is this container's own left edge in real screen pixels (i.e. however wide the
+    // sidebar currently is) — the full-screen dot backdrop below needs it to keep the same dot
+    // phase the canvas's own camera math already uses, instead of visibly "jumping" where the
+    // two meet.
+    const compute = () => {
+      setViewport({ width: el.clientWidth, height: el.clientHeight });
+      setCanvasOffsetX(el.getBoundingClientRect().left);
+    };
     compute();
     const ro = new ResizeObserver(compute);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Pushes the dot backdrop's CSS values to the store for `Shell` to render — `Shell` paints it
+  // behind the sidebar, which lives outside this component's own subtree, so the values have to
+  // travel through shared state rather than a prop. Split into two effects rather than one with a
+  // cleanup: a cleanup tied to `camera` would also fire (clearing to `null` for a frame) on every
+  // single pan/zoom tick, not just on unmount.
+  useEffect(() => {
+    setCanvasDotBackground({
+      visible: camera.zoom >= 0.3,
+      size: `${DOT_SPACING * camera.zoom}px ${DOT_SPACING * camera.zoom}px`,
+      position: `${camera.x + canvasOffsetX}px ${camera.y}px`,
+    });
+  }, [camera, canvasOffsetX, setCanvasDotBackground]);
+
+  // Clears it only on unmount, so a stale value from a previous canvas mount never shows on a
+  // screen that has none (e.g. Playgrounds).
+  useEffect(() => {
+    return () => setCanvasDotBackground(null);
+  }, [setCanvasDotBackground]);
 
   // The view-all canvas shows exactly one "canvas" at a time — a standalone page's own id, a
   // group's id, or a bundle's shared root (see canvasRootOf) — never several side by side, so
@@ -876,7 +910,9 @@ export function MultiPageCanvas() {
       // deliberately — either way, that's "zoom". Everything else (a plain two-finger scroll) pans
       // the camera instead, matching how every other design tool treats the two gestures.
       if (e.ctrlKey || e.metaKey) {
-        const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+        // 20% slower/smoother than the original 8%-per-tick step (1.08) — each wheel/pinch tick
+        // now changes zoom by 6.4% instead, so the same gesture covers less ground per event.
+        const factor = e.deltaY < 0 ? 1.064 : 1 / 1.064;
         const rect = el!.getBoundingClientRect();
         const cursorX = e.clientX - rect.left;
         const cursorY = e.clientY - rect.top;
@@ -1356,11 +1392,6 @@ export function MultiPageCanvas() {
         ref={outerRef}
         className="absolute inset-0 overflow-hidden"
         style={{
-          // Below 30% zoom the dots are so densely packed they just read as a grey haze — hiding
-          // them entirely there looks cleaner than a pattern that no longer reads as a grid.
-          backgroundImage: camera.zoom >= 0.3 ? 'radial-gradient(rgba(255,255,255,0.2) 1px, transparent 1px)' : 'none',
-          backgroundSize: `${DOT_SPACING * camera.zoom}px ${DOT_SPACING * camera.zoom}px`,
-          backgroundPosition: `${camera.x}px ${camera.y}px`,
           cursor: activeTool === 'move' ? 'grab' : 'default',
         }}
         onMouseDown={handleCanvasMouseDown}
@@ -1388,11 +1419,15 @@ export function MultiPageCanvas() {
                       left={left}
                       top={headerTop}
                       totalWidth={dividerWidth}
+                      zoom={camera.zoom}
                       icons={[
                         {
-                          // Centered on the group's own contentWidth — exactly where Pass 4 above
-                          // also centers the primary card itself, so the icon and the primary line up.
-                          x: dividerWidth / 2,
+                          // Centered on the *primary's own* width, not `dividerWidth` (the wider of
+                          // the primary/packed-siblings pair) — Pass 4 left-aligns the primary and
+                          // the sibling pack to the same origin rather than centering either one
+                          // against the other, so the primary's own rendered span is [0, its own
+                          // width], and that's what this icon needs to center on to land above it.
+                          x: (primaryEntry.layout.size.width * camera.zoom) / 2,
                           entry: primaryEntry,
                           onConfirm: (results) => handleAddAdjacent(primaryEntry, 'right', results),
                           onFocusPrimary: () => requestFocusPage(primaryEntry.id),
@@ -1418,6 +1453,7 @@ export function MultiPageCanvas() {
                   left={left}
                   top={headerTop}
                   totalWidth={header.totalWidth * camera.zoom}
+                  zoom={camera.zoom}
                   icons={header.icons.map(({ x, entry }) => ({
                     x: x * camera.zoom,
                     entry,
@@ -1508,7 +1544,7 @@ export function MultiPageCanvas() {
           />
         )}
       </div>
-      {showRulers && <RulerOverlay camera={camera} viewport={viewport} />}
+      {showRulers && <RulerOverlay camera={camera} viewport={viewport} canvasOffsetX={canvasOffsetX} />}
 
       <div className="pointer-events-none absolute right-6 bottom-6 z-10">
         <CanvasZoomBar
