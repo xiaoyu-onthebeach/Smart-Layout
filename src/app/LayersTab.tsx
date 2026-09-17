@@ -1,8 +1,9 @@
-import type { MouseEvent as ReactMouseEvent } from 'react';
-import { ChevronLeft, EyeOff, Image as ImageIcon, Lock } from 'lucide-react';
+import { useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { ChevronDown, ChevronLeft, EyeOff, Image as ImageIcon, Lock } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { layerName } from '@/lib/layer-name';
+import { LANCOME_BACKGROUND_URL, LANCOME_BUTTON_URL, LANCOME_DESCRIPTION_URL, LANCOME_PRODUCT_NAME_URL } from '@/lib/lancome-demo';
 import { useT } from '@/lib/i18n';
 import type { Layout, LayoutElement } from '@/types';
 
@@ -51,11 +52,15 @@ function LayerRow({
   layoutId,
   selected,
   onClick,
+  label,
 }: {
   element: LayoutElement;
   layoutId: string;
   selected: boolean;
   onClick: (e: ReactMouseEvent) => void;
+  /** Overrides the name synthesized from the element's own slot/kind — used by the Lancome demo's
+   * hand-authored layer list, where "Background Image" reads better than the generic "Image". */
+  label?: string;
 }) {
   const t = useT();
   const updateElement = useAppStore((s) => s.updateElement);
@@ -81,7 +86,7 @@ function LayerRow({
     >
       <div className={cn('flex min-w-0 flex-1 items-center gap-2', !visible && 'opacity-45')}>
         <LayerThumb element={element} />
-        <span className="min-w-0 flex-1 truncate text-[13px] tracking-[-0.01em] text-white">{t(layerName(element))}</span>
+        <span className="min-w-0 flex-1 truncate text-[13px] tracking-[-0.01em] text-white">{label ?? t(layerName(element))}</span>
       </div>
 
       <div
@@ -138,6 +143,136 @@ function BackgroundRow({ color }: { color: string }) {
   );
 }
 
+/** Icon tile for the Lancome demo's own text-like rows (Description/Product name/Button text) —
+ * same 32px `#26262C` tile as a real text element's own `LayerThumb`, just reusable without one. */
+function TextGlyphThumb() {
+  return (
+    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ background: '#26262C' }}>
+      <img src="/icons/layer list/text.svg" alt="" className="size-4" />
+    </div>
+  );
+}
+
+/** "Button border"'s own icon — a rounded-rect outline at Button.svg's own 125:28 aspect ratio
+ * (same "fit inside the 32px tile, keep the real shape's proportions" treatment as a real shape
+ * element's own `ShapeThumb`, just for a shape that isn't backed by a real element here). */
+function BorderGlyphThumb() {
+  const w = 20;
+  const h = (w * 28) / 125;
+  return (
+    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ background: '#26262C' }}>
+      <div className="shrink-0 rounded-[2px] border-[1.5px] border-white/45" style={{ width: w, height: h }} />
+    </div>
+  );
+}
+
+/** A row shape matching `LayerRow`'s own box/hover/selected treatment, for a row with no backing
+ * `LayoutElement` of its own (the Lancome demo's decorative "Button text"/"Button border" split). */
+function LancomeSimpleRow({ icon, label, selected, onClick, indent }: { icon: ReactNode; label: string; selected: boolean; onClick: (e: ReactMouseEvent) => void; indent?: boolean }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick(e as unknown as ReactMouseEvent)}
+      className={cn(
+        'flex h-10 w-full shrink-0 cursor-pointer items-center gap-2 rounded-lg py-1 pr-4 text-left transition-colors',
+        indent ? 'pl-[29px]' : 'pl-1',
+        selected ? 'bg-button-primary' : 'hover:bg-[#26262C]',
+      )}
+    >
+      {icon}
+      <span className="min-w-0 flex-1 truncate text-[13px] tracking-[-0.01em] text-white">{label}</span>
+    </div>
+  );
+}
+
+/**
+ * The Lancome demo primary's own hand-authored layer list — every row still maps to one of the 4
+ * real elements `lancome-demo.ts` builds (matched here by `imageUrl`), just reordered, relabeled,
+ * and with "Button" split into a decorative "text/border" sub-group for a richer demo look —
+ * clicking either sub-row selects the one real Button element, since there's no separate data
+ * behind them (see `LancomeSimpleRow`'s callers below).
+ */
+function LancomeLayerRows({
+  layout,
+  isSelected,
+  onSelectElement,
+}: {
+  layout: Layout;
+  isSelected: (elementId: string) => boolean;
+  onSelectElement: (elementId: string, e: ReactMouseEvent) => void;
+}) {
+  const t = useT();
+  const [buttonExpanded, setButtonExpanded] = useState(true);
+  const byUrl = (url: string) => layout.elements.find((el) => el.imageUrl === url);
+  const background = byUrl(LANCOME_BACKGROUND_URL);
+  const productName = byUrl(LANCOME_PRODUCT_NAME_URL);
+  const description = byUrl(LANCOME_DESCRIPTION_URL);
+  const button = byUrl(LANCOME_BUTTON_URL);
+  // Selecting the one real Button element highlights the group's own header row, not either of
+  // its two decorative sub-rows (see LancomeSimpleRow's callers below, which always pass `false`).
+  const buttonSelected = button ? isSelected(button.id) : false;
+
+  return (
+    <>
+      {description && (
+        <LancomeSimpleRow
+          icon={<TextGlyphThumb />}
+          label={t('Description')}
+          selected={isSelected(description.id)}
+          onClick={(e) => onSelectElement(description.id, e)}
+        />
+      )}
+
+      {productName && (
+        <LancomeSimpleRow
+          icon={<TextGlyphThumb />}
+          label={t('Product name')}
+          selected={isSelected(productName.id)}
+          onClick={(e) => onSelectElement(productName.id, e)}
+        />
+      )}
+
+      {button && (
+        <>
+          <button
+            type="button"
+            onClick={() => setButtonExpanded((v) => !v)}
+            className={cn(
+              'flex h-6 w-full shrink-0 items-center gap-2 rounded-lg px-1 text-left transition-colors',
+              buttonSelected ? 'bg-button-primary' : 'hover:text-white',
+            )}
+          >
+            <ChevronDown
+              className={cn('size-3 shrink-0 transition-transform', buttonSelected ? 'text-white' : 'text-white/45', !buttonExpanded && '-rotate-90')}
+            />
+            <span className={cn('text-[11px] font-medium tracking-[-0.01em] uppercase', buttonSelected ? 'text-white' : 'text-white/45')}>{t('Button')}</span>
+          </button>
+          {buttonExpanded && (
+            <>
+              {/* `selected` always false here — the group header above is what shows the
+                  highlighted state (see `buttonSelected`), not these two sub-rows. */}
+              <LancomeSimpleRow icon={<TextGlyphThumb />} label={t('Button text')} selected={false} onClick={(e) => onSelectElement(button.id, e)} indent />
+              <LancomeSimpleRow icon={<BorderGlyphThumb />} label={t('Button border')} selected={false} onClick={(e) => onSelectElement(button.id, e)} indent />
+            </>
+          )}
+        </>
+      )}
+
+      {background && (
+        <LayerRow
+          element={background}
+          layoutId={layout.id}
+          selected={isSelected(background.id)}
+          onClick={(e) => onSelectElement(background.id, e)}
+          label={t('Background Image')}
+        />
+      )}
+    </>
+  );
+}
+
 function SceneLayerRows({
   layout,
   isSelected,
@@ -147,6 +282,10 @@ function SceneLayerRows({
   isSelected: (elementId: string) => boolean;
   onSelectElement: (elementId: string, e: ReactMouseEvent) => void;
 }) {
+  if (layout.isLancomeDemoPrimary) {
+    return <LancomeLayerRows layout={layout} isSelected={isSelected} onSelectElement={onSelectElement} />;
+  }
+
   return (
     <>
       <BackgroundRow color={layout.backgroundColor || '#FFFFFF'} />

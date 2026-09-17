@@ -63,9 +63,7 @@ export function TopBar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" className="flex items-center gap-1 rounded-lg p-1 transition-colors hover:bg-white/5">
-              <span className="flex size-8 items-center justify-center rounded-full bg-white/25 text-xs font-medium text-chrome-fg">
-                B
-              </span>
+              <img src="/samples/Baptiste.jpg" alt="" className="size-8 shrink-0 rounded-full object-cover" />
               <ChevronDown className="size-4 opacity-70" />
             </button>
           </DropdownMenuTrigger>

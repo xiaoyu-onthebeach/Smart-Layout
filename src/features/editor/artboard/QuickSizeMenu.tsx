@@ -252,7 +252,7 @@ export function QuickSizeMenu({
                     type="button"
                     disabled={isPicking}
                     onClick={() => startPickingFocus(sourceLayoutId)}
-                    className="flex h-8 shrink-0 items-center justify-center rounded-lg px-3 text-sm text-button-primary transition-colors hover:bg-white/5 disabled:pointer-events-none disabled:opacity-40"
+                    className="flex h-8 shrink-0 items-center justify-center rounded-lg px-3 text-sm text-white transition-colors hover:bg-white/5 disabled:pointer-events-none disabled:opacity-40"
                     style={{ background: '#26262C', border: '1px solid #40404A' }}
                   >
                     {t('Change')}

@@ -1,6 +1,14 @@
 import type { Platform } from '@/types';
 
 export const platforms: Platform[] = [
+  // Rakuten leads the list (and is auto-expanded — see QuickSizeMenu, which pre-expands
+  // GROUPS[0]) for the Lancome demo, whose sizes are all Rakuten presets.
+  {
+    id: 'rakuten',
+    name: 'Rakuten',
+    maxFileSizeMb: 5,
+    presetIds: ['rakuten-billboard-banner', 'rakuten-wide-banner', 'rakuten-tall-banner', 'rakuten-promo-banner'],
+  },
   {
     id: 'amazon',
     name: 'Amazon',
@@ -13,20 +21,6 @@ export const platforms: Platform[] = [
       'amazon-mobile-leaderboard',
       'amazon-store-spotlight',
       'amazon-half-page',
-    ],
-  },
-  {
-    id: 'rakuten',
-    name: 'Rakuten',
-    maxFileSizeMb: 5,
-    presetIds: [
-      'rakuten-ichiba-top',
-      'rakuten-shop-top',
-      'rakuten-super-sale',
-      'rakuten-mobile-banner',
-      'rakuten-app-banner',
-      'rakuten-event-banner',
-      'rakuten-category-tile',
     ],
   },
   {

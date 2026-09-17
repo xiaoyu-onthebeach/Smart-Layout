@@ -2,6 +2,7 @@ import { ChevronDown, CircleHelp, Search } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAppStore } from '@/store/useAppStore';
 import { createEmptyLayout, nextId } from '@/lib/create-layout';
+import { buildLancomePrimaryElements } from '@/lib/lancome-demo';
 import { nearestPreset } from '@/lib/mock';
 import { NO_RULES_ID } from '@/lib/mock/rulesets';
 import type { BannerSet } from '@/types';
@@ -58,6 +59,12 @@ export function PlaygroundsPage() {
       ruleSetId: nearestPreset(DEFAULT_WIDTH, DEFAULT_HEIGHT)?.preset.ruleSetId ?? NO_RULES_ID,
       language,
     });
+    // This "Layout" button only ever runs once per session (its only entry point), so it's always
+    // the session's first primary — the one-off Lancome demo fill (see lancome-demo.ts) always
+    // applies here; any later primary added via the banners panel's own "+" keeps createEmptyLayout's
+    // plain placeholder content instead.
+    layout.elements = buildLancomePrimaryElements(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+    layout.isLancomeDemoPrimary = true;
     const bannerSet: BannerSet = { id: setId, name: label, sourceLayoutId: layout.id, layoutIds: [layout.id], productIds: [] };
     upsertLayout(layout);
     loadSet(bannerSet);

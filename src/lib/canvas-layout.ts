@@ -35,7 +35,7 @@ export const SECTION_GAP_BOTTOM = 64;
 export const TITLE_CLEARANCE_BUFFER = 16;
 // Gap between packed sibling boxes — smaller than PAGE_GAP since these read as one related set,
 // not independent top-level pages.
-export const PACK_GAP = 160;
+export const PACK_GAP = 90;
 // Siblings wrap onto a new shelf past this width; floored at the primary's own width so a single
 // oversized sibling never has to squeeze narrower than the primary itself. 3450 native px reads as
 // 3450 screen px at 100% zoom — wide enough that the sizes named in position-overlay-spec.md all

@@ -56,13 +56,6 @@ function focusHandleStyle(handle: ResizeHandle): CSSProperties {
 
 const EXPAND_DURATION_MS = 5000;
 
-// Quick way to demo text/shape-style layers without hand-building one: double-clicking empty
-// canvas drops in the next sample from this list, cycling back around once it runs out. A plain
-// module-level counter (not store/component state) is enough — it's a prototyping shortcut, not
-// something that needs to persist or react to anything.
-const SAMPLE_COMPONENT_URLS = ['/samples/bottom_banner.svg', '/samples/button.svg', '/samples/coupon.svg', '/samples/headline.svg', '/samples/logo.svg'];
-let nextSampleComponentIndex = 0;
-
 /** The frame a shape-tool drag should produce — plain bounding box for rect/ellipse, but a 1px-
  * thick bar along whichever axis the drag moved further on for 'line' (this data model has no
  * rotation, so an arbitrary-angle line isn't representable; snapping to the drag's dominant axis
@@ -251,6 +244,8 @@ export function ArtboardFrame({
   // added first — a scene built entirely from double-click-dropped samples has no filled hero
   // slot, so that first drop is standing in for the background instead.
   const backgroundElementId = hasImage ? imageElement?.id : extraElements.find((el) => el.kind === 'image' && el.imageUrl)?.id;
+  // See `backgroundElementId`'s own comment — this is the actual hide, applied per-element below.
+  const isHiddenDuringFocusDrag = (elementId: string) => focusRectDragging && elementId !== backgroundElementId;
 
   // Any selected image whose frame spills past the artboard's own bounds gets a dimmed preview of
   // the overflowing part — hidden again the moment it's deselected. Gated on showsBoundsBox (not
@@ -368,47 +363,6 @@ export function ArtboardFrame({
         imageUrl: url,
         focalPoint: { x: 0.5, y: 0.5 },
         frame: { x: (nativeWidth - w) / 2, y: (nativeHeight - h) / 2, w, h },
-        style: {},
-        visible: true,
-      };
-      addElement(layoutId, element);
-      selectScene(layout.setId);
-      selectElement({ layoutId, elementId: element.id });
-    };
-    img.src = url;
-  }
-
-  // Double-clicking anywhere in the active frame — empty canvas, the "Choose a visual" hint, the
-  // hero image, or right on top of an already-placed decorative layer — drops in the next sample
-  // component (image kind, so it's immediately draggable/resizable like any other layer) centered
-  // on the click point. Text elements opt out via their own onDoubleClick (which stops
-  // propagation to edit in place instead), so this only ever fires for a click that isn't already
-  // spoken for.
-  function handleFrameDoubleClick(e: ReactMouseEvent<HTMLDivElement>) {
-    if (!active || activeTool !== 'select') return;
-
-    const point = nativePointFromEvent(e);
-    const url = SAMPLE_COMPONENT_URLS[nextSampleComponentIndex % SAMPLE_COMPONENT_URLS.length];
-    nextSampleComponentIndex += 1;
-
-    const img = new Image();
-    img.onload = () => {
-      const ratio = img.naturalWidth / img.naturalHeight;
-      const maxW = nativeWidth * 0.4;
-      const maxH = nativeHeight * 0.4;
-      let w = maxW;
-      let h = w / ratio;
-      if (h > maxH) {
-        h = maxH;
-        w = h * ratio;
-      }
-      const element: LayoutElement = {
-        id: nextId('el'),
-        kind: 'image',
-        slot: null,
-        imageUrl: url,
-        focalPoint: { x: 0.5, y: 0.5 },
-        frame: { x: point.x - w / 2, y: point.y - h / 2, w, h },
         style: {},
         visible: true,
       };
@@ -706,7 +660,6 @@ export function ArtboardFrame({
           borderRadius: layout.radius ? `${layout.radius}px` : undefined,
         }}
         onMouseDown={handleFrameMouseDown}
-        onDoubleClick={handleFrameDoubleClick}
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleAssetDrop}
         onContextMenu={(e) => {
@@ -730,10 +683,7 @@ export function ArtboardFrame({
         />
 
         {imageElement && hasImage && (
-          // The marker (not a real layout element) lets handleFrameDoubleClick treat a double-click
-          // anywhere on the hero image the same as empty canvas — `display: contents` keeps it out
-          // of the box model entirely, so it can't affect DraggableImageElement's own positioning.
-          <div data-hero-image style={{ display: 'contents' }}>
+          <div data-hero-image style={{ display: isHiddenDuringFocusDrag(imageElement.id) ? 'none' : 'contents' }}>
             {active ? (
               <DraggableImageElement
                 element={imageElement}
@@ -803,6 +753,7 @@ export function ArtboardFrame({
         )}
 
         {extraElements
+          .filter((el) => !isHiddenDuringFocusDrag(el.id))
           .map((el) => {
             if (!active) {
               return (
@@ -944,37 +895,59 @@ export function ArtboardFrame({
               // same as "Change"), which switches this back into the fully editable state below —
               // same as re-entering via the "Change" button.
               <div
-                className="pointer-events-auto absolute cursor-pointer border-3"
+                className="group/focus-rect-confirmed pointer-events-auto absolute cursor-pointer border-3"
                 onClick={() => startPickingFocus(layoutId)}
                 style={{
                   left: `${(layout.focusRect.x / nativeWidth) * 100}%`,
                   top: `${(layout.focusRect.y / nativeHeight) * 100}%`,
                   width: `${(layout.focusRect.w / nativeWidth) * 100}%`,
                   height: `${(layout.focusRect.h / nativeHeight) * 100}%`,
-                  borderColor: 'rgba(69,112,255,0.3)',
-                  background: 'rgba(69,112,255,0.1)',
+                  borderColor: 'rgba(255,255,255,0.8)',
+                  background: 'rgba(255,255,255,0.1)',
                   borderRadius: 16,
                 }}
-              />
+              >
+                {/* Hover affordance so the box still reads as clickable (re-opens editing) even
+                    once it's already settled, not just while it's mid-edit. */}
+                <div className="absolute inset-0 rounded-[inherit] bg-white/0 transition-colors group-hover/focus-rect-confirmed:bg-white/10" />
+              </div>
             ) : (
               focusDrawRect && (
-                <div
-                  className="pointer-events-auto absolute cursor-move border-3"
-                  style={{
-                    left: `${(focusDrawRect.x / nativeWidth) * 100}%`,
-                    top: `${(focusDrawRect.y / nativeHeight) * 100}%`,
-                    width: `${(focusDrawRect.w / nativeWidth) * 100}%`,
-                    height: `${(focusDrawRect.h / nativeHeight) * 100}%`,
-                    borderColor: '#4570FF',
-                    background: 'rgba(69,112,255,0.1)',
-                    borderRadius: 16,
-                  }}
-                  onMouseDown={startFocusRectMove}
-                >
-                  {RESIZE_HANDLES.map((handle) => (
-                    <div key={handle} style={focusHandleStyle(handle)} onMouseDown={(e) => startFocusRectResize(handle, e)} />
-                  ))}
-                </div>
+                <>
+                  {/* A full-size, invisible click-catcher *behind* the box (rendered first, so the
+                      box itself — rendered after, on top — still gets first pick of any click that
+                      lands on it) — clicking anywhere else in the frame while editing commits the
+                      box in place, same as the checkmark, rather than leaving it open indefinitely
+                      with no way to dismiss it except that one small button. */}
+                  <div className="pointer-events-auto absolute inset-0" onClick={confirmFocusRect} />
+                  <div
+                    className="group/focus-rect pointer-events-auto absolute cursor-move border-3 transition-colors"
+                    style={{
+                      left: `${(focusDrawRect.x / nativeWidth) * 100}%`,
+                      top: `${(focusDrawRect.y / nativeHeight) * 100}%`,
+                      width: `${(focusDrawRect.w / nativeWidth) * 100}%`,
+                      height: `${(focusDrawRect.h / nativeHeight) * 100}%`,
+                      borderColor: 'rgba(255,255,255,0.8)',
+                      // A "spotlight": an enormous, non-blurred shadow spread fills the entire
+                      // rest of the (clipped, `overflow-hidden`) overlay with the dim color, while
+                      // the box's own background stays fully transparent — so only the area inside
+                      // reads at full clarity, everything outside it dims, without a second overlay
+                      // element (and its own separate cutout) to keep in sync with the box.
+                      boxShadow: '0 0 0 9999px rgba(38,38,44,0.5)',
+                      borderRadius: 16,
+                    }}
+                    onMouseDown={startFocusRectMove}
+                  >
+                    {/* Hover affordance while the box is just sitting there waiting to be adjusted —
+                        a subtle white wash, gone again the instant an actual drag starts (`active`
+                        already covers mid-drag via the box's own :active state, but this stays
+                        visible on hover alone too, before any mousedown). */}
+                    <div className="absolute inset-0 rounded-[inherit] bg-white/0 transition-colors group-hover/focus-rect:bg-white/10" />
+                    {RESIZE_HANDLES.map((handle) => (
+                      <div key={handle} style={focusHandleStyle(handle)} onMouseDown={(e) => startFocusRectResize(handle, e)} />
+                    ))}
+                  </div>
+                </>
               )
             )}
           </div>
@@ -1009,7 +982,7 @@ export function ArtboardFrame({
                   type="button"
                   aria-label={t('Confirm focus area')}
                   onClick={confirmFocusRect}
-                  className="pointer-events-auto absolute z-30 flex size-8 shrink-0 items-center justify-center rounded-full bg-[#4570FF] text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)] transition-colors hover:bg-[#2C52DA]"
+                  className="pointer-events-auto absolute z-30 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/80 text-[#26262C] shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)] transition-colors hover:bg-white"
                   style={{
                     left: `${((focusDrawRect.x + focusDrawRect.w) / nativeWidth) * 100}%`,
                     top: `${(focusDrawRect.y / nativeHeight) * 100}%`,

@@ -127,6 +127,13 @@ export type Layout = {
   hidden?: boolean;
   /** User-drawn "scene focus" — absolute px in layout space, kept unaffected by ratio-adaptation. */
   focusRect?: { x: number; y: number; w: number; h: number };
+  /**
+   * True only for the very first primary size a session creates (see PlaygroundsPage) — gates the
+   * one-off Lancome demo auto-fill (see `src/lib/lancome-demo.ts`) so any later primary a user adds
+   * via the "+" in the banners panel starts genuinely empty, and sibling sizes generated from one of
+   * those later primaries still go through the normal adapt/overlay fill pipeline.
+   */
+  isLancomeDemoPrimary?: boolean;
 };
 
 // A saved template is a Layout with placeholder content and no set
