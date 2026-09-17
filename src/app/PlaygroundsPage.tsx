@@ -1,5 +1,12 @@
+import { useState } from 'react';
 import { ChevronDown, CircleHelp, Search } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useAppStore } from '@/store/useAppStore';
 import { createEmptyLayout, nextId } from '@/lib/create-layout';
 import { nearestPreset } from '@/lib/mock';
@@ -15,10 +22,63 @@ const DEFAULT_HEIGHT = 500;
 const CREATE_BUTTONS = [
   { label: 'Image', icon: '/icons/image.svg' },
   { label: 'Video', icon: '/icons/video.svg' },
-  { label: 'Layout', icon: '/icons/Layout_24.svg' },
 ];
 
+// No real team backend behind this — every team drops into the exact same new layout, same as
+// "Layout" itself used to before it grew this menu; the choice is here purely for the prototype's
+// own sake, not because it changes what gets created.
+const TEAMS = ['Demo team', 'Dev team', 'Team 3'];
+
 const FILTERS = ['All types', 'All teams', 'Newest first'];
+
+/** The "Layout" create-button — the only one of the three that actually goes anywhere. Hovering
+ * swaps its icon from the plain "T" mark to the "+" version (`layout-hover.svg`); clicking opens a
+ * "choose a team" menu instead of creating immediately, since picking a team is where the real
+ * product would branch. Every team leads to the same place here (see `TEAMS`'s own comment). */
+function LayoutCreateButton({ onSelectTeam }: { onSelectTeam: () => void }) {
+  const t = useT();
+  const [hovered, setHovered] = useState(false);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          className="flex h-10 w-[129px] shrink-0 items-center justify-center gap-2 rounded-xl text-base font-semibold text-white"
+          style={{ background: '#131316', letterSpacing: '-0.01em' }}
+        >
+          <img src={hovered ? '/icons/layout-hover.svg' : '/icons/Layout_24.svg'} alt="" className="size-6" />
+          {t('Layout')}
+          <ChevronDown className="size-4 text-white/45" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="w-[166px] gap-0 rounded-lg border p-1"
+        style={{
+          background: 'rgba(38,38,44,0.88)',
+          borderColor: '#40404A',
+          boxShadow: '0px 4px 32px 4px rgba(0,0,0,0.24)',
+          backdropFilter: 'blur(16px)',
+        }}
+      >
+        <DropdownMenuLabel className="flex h-6 items-center px-3 py-0 text-[11px] font-normal tracking-[-0.01em] text-white/45">
+          {t('CHOOSE A TEAM')}
+        </DropdownMenuLabel>
+        {TEAMS.map((team) => (
+          <DropdownMenuItem
+            key={team}
+            onClick={onSelectTeam}
+            className="h-8 rounded-lg px-3 py-0 text-[13px] leading-[140%] tracking-[-0.01em] text-white focus:bg-white/10"
+          >
+            {t(team)}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 // A static grid of empty cards — just filling the page the way a populated "Your playgrounds"
 // list would, since this prototype has no real playground data behind it.
@@ -111,7 +171,6 @@ export function PlaygroundsPage() {
               <button
                 key={btn.label}
                 type="button"
-                onClick={btn.label === 'Layout' ? handleCreateLayout : undefined}
                 className="flex h-10 shrink-0 items-center gap-2 rounded-xl border px-3 text-base font-semibold text-white transition-colors hover:bg-white/5"
                 style={{ background: '#26262C', borderColor: '#40404A', letterSpacing: '-0.01em' }}
               >
@@ -119,6 +178,7 @@ export function PlaygroundsPage() {
                 {t(btn.label)}
               </button>
             ))}
+            <LayoutCreateButton onSelectTeam={handleCreateLayout} />
           </div>
         </div>
 
