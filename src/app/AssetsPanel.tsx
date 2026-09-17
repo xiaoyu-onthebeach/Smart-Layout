@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { ChevronDown, Search } from 'lucide-react';
+import { useRef, useState, type ReactNode } from 'react';
+import { ChevronDown, Search, Upload } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -71,8 +71,9 @@ function DraggableThumb({ url, label }: { url: string; label?: string }) {
   );
 }
 
-/** The list-view row for one image — a small square thumb + its own filename, in place of the
- * grid view's full-width masonry tile. */
+/** The list-view row for one image — its own filename + a small square thumb, in place of the
+ * grid view's full-width masonry tile. Name comes first (and grows to fill the row) with the
+ * thumbnail fixed at the far right, matching the Figma "Asset line" spec. */
 function DraggableThumbRow({ url, label }: { url: string; label: string }) {
   return (
     <div
@@ -81,10 +82,10 @@ function DraggableThumbRow({ url, label }: { url: string; label: string }) {
         e.dataTransfer.setData('text/plain', url);
         e.dataTransfer.effectAllowed = 'copy';
       }}
-      className="flex h-10 w-full shrink-0 cursor-grab items-center gap-2 rounded-lg px-1 transition-colors hover:bg-[#26262C] active:cursor-grabbing"
+      className="flex h-12 w-full shrink-0 cursor-grab items-center gap-2 rounded-lg py-1 pr-1 pl-2 transition-colors hover:bg-[#26262C] active:cursor-grabbing"
     >
-      <img src={url} alt="" draggable={false} className="size-8 shrink-0 rounded-md object-cover" />
-      <span className="min-w-0 flex-1 truncate text-[13px] text-white">{label}</span>
+      <span className="min-w-0 flex-1 truncate text-[12px] leading-4 font-normal tracking-[-0.01em] text-white">{label}</span>
+      <img src={url} alt="" draggable={false} className="size-10 shrink-0 rounded-md object-cover" />
     </div>
   );
 }
@@ -187,6 +188,23 @@ function CollectionSection({ collection, view }: { collection: LibraryCollection
   );
 }
 
+/** Empty state for the Uploads tab — a static illustration (no live drag/drop animation, just the
+ * flattened Figma artwork) plus the usual title/caption pair. */
+function UploadsEmptyState() {
+  const t = useT();
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-4 text-center">
+      <img src="/samples/upload-illustration.png" alt="" className="w-40 max-w-full" draggable={false} />
+      <div className="flex flex-col gap-2">
+        <span className="text-sm font-semibold tracking-[-0.01em] text-white">{t('No uploads yet')}</span>
+        <span className="mx-auto max-w-[244px] text-[12px] leading-4 tracking-[-0.01em] text-white/45">
+          {t('You can upload or drop any image you might need to use in this playground.')}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /** Left panel's Assets card: a Library/Your visuals/Uploads switcher, a search box, and a
  * scrollable image grid below — drag any image onto a banner frame on the canvas to add it as a
  * new image layer there. Library's own content is organized into a brand collection of named
@@ -194,9 +212,15 @@ function CollectionSection({ collection, view }: { collection: LibraryCollection
 export function AssetsPanel() {
   const t = useT();
   const uploadedAssetUrls = useAppStore((s) => s.uploadedAssetUrls);
+  const addUploadedAsset = useAppStore((s) => s.addUploadedAsset);
   const [tab, setTab] = useState<AssetsTab>('library');
   const [query, setQuery] = useState('');
   const [libraryView, setLibraryView] = useState<'grid' | 'list'>('grid');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function handleUpload(file: File) {
+    addUploadedAsset(URL.createObjectURL(file));
+  }
 
   const q = query.trim().toLowerCase();
   const filteredCollections = !q
@@ -273,28 +297,57 @@ export function AssetsPanel() {
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === 'library' &&
-          (filteredCollections.length === 0 ? (
-            <div className="px-1 py-6 text-center text-sm text-white/45">{t('No images to show.')}</div>
-          ) : (
-            <div className="flex flex-col gap-1">
-              {filteredCollections.map((collection) => (
-                <CollectionSection key={collection.id} collection={collection} view={libraryView} />
-              ))}
-            </div>
-          ))}
-
-        {tab === 'yourVisuals' && <AssetGrid empty>{null}</AssetGrid>}
-
-        {tab === 'uploads' && (
-          <AssetGrid empty={uploadedAssetUrls.length === 0}>
-            {uploadedAssetUrls.map((url) => (
-              <DraggableThumb key={url} url={url} />
+      {tab === 'uploads' ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {uploadedAssetUrls.length === 0 ? (
+              <UploadsEmptyState />
+            ) : (
+              <AssetGrid empty={false}>
+                {uploadedAssetUrls.map((url) => (
+                  <DraggableThumb key={url} url={url} />
+                ))}
+              </AssetGrid>
+            )}
+          </div>
+          <div className="flex shrink-0 flex-col gap-1 border-t pt-3" style={{ borderColor: '#40404A' }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) handleUpload(file);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex h-8 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-[#4570FF] text-sm text-white shadow-[0px_1px_2px_rgba(0,0,0,0.03),0px_1px_6px_-1px_rgba(0,0,0,0.02),0px_2px_4px_rgba(0,0,0,0.02)] transition-colors hover:bg-[#2C52DA]"
+            >
+              <Upload className="size-4" />
+              {t('Upload')}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {tab === 'library' &&
+            (filteredCollections.length === 0 ? (
+              <div className="px-1 py-6 text-center text-sm text-white/45">{t('No images to show.')}</div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {filteredCollections.map((collection) => (
+                  <CollectionSection key={collection.id} collection={collection} view={libraryView} />
+                ))}
+              </div>
             ))}
-          </AssetGrid>
-        )}
-      </div>
+
+          {tab === 'yourVisuals' && <AssetGrid empty>{null}</AssetGrid>}
+        </div>
+      )}
     </div>
   );
 }
