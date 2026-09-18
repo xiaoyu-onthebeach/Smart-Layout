@@ -208,24 +208,36 @@ let stopIdCounter = 0;
  * treatment (`Color for gradient.svg`, composited with this stop's own color inside the pin's
  * white window, since the asset itself is a fixed blue+white bitmap-ish shape); every other stop
  * stays a plain flat square so only one pointer ever reads as "the one you're editing". */
+/** The gradient stop marker's own pin shape (rounded square + pointer tail) — inlined as SVG rather
+ * than `<img src="/icons/Color for gradient.svg">` so its accent color can swap between the
+ * selected (blue) and idle (gray) states without needing a second asset file; geometry copied
+ * directly from that same asset so both states render at the exact same size/shape and only the
+ * tint (and the color swatch inside) actually changes between them. */
+function GradientStopPinShape({ tint }: { tint: string }) {
+  return (
+    <svg
+      viewBox="0 0 33 40"
+      fill="none"
+      className="absolute inset-0 size-full"
+      style={{ filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.03)) drop-shadow(0 1px 3px rgba(0,0,0,0.02)) drop-shadow(0 2px 2px rgba(0,0,0,0.02))' }}
+    >
+      <path d="M4 10C4 6.68629 6.68629 4 10 4H22C25.3137 4 28 6.68629 28 10V22C28 25.3137 25.3137 28 22 28H10C6.68629 28 4 25.3137 4 22V10Z" fill={tint} />
+      <path d="M8 12C8 9.79086 9.79086 8 12 8H20C22.2091 8 24 9.79086 24 12V20C24 22.2091 22.2091 24 20 24H12C9.79086 24 8 22.2091 8 20V12Z" fill="white" />
+      <path d="M16.0001 33.3137L21.657 27.6569H10.3433L16.0001 33.3137Z" fill={tint} />
+    </svg>
+  );
+}
+
 function StopMarker({ stop, selected, onMouseDown }: { stop: GradientStop; selected: boolean; onMouseDown: (e: ReactMouseEvent) => void }) {
-  if (!selected) {
-    return (
-      <div onMouseDown={onMouseDown} className="absolute top-0 size-6 -translate-x-1/2 cursor-grab rounded-md active:cursor-grabbing" style={{ left: `${stop.position}%`, background: '#131316' }}>
-        <div className="absolute inset-1 rounded-sm" style={{ background: stop.color }} />
-      </div>
-    );
-  }
-  // Native asset is a 33x40 pin (rounded square + pointer tail) with a 16x16 white window sitting
-  // at (8,8) inside it — the percentages below place this stop's own color inside that window,
-  // whatever size the icon itself is actually rendered at.
+  // The percentages below place this stop's own color inside the pin shape's 16x16 white window,
+  // whatever size the shape is actually rendered at (its native geometry is 33x40).
   return (
     <div
       onMouseDown={onMouseDown}
       className="absolute top-0 -translate-x-1/2 cursor-grab active:cursor-grabbing"
       style={{ left: `${stop.position}%`, width: 24, height: (24 * 40) / 33 }}
     >
-      <img src="/icons/Color for gradient.svg" alt="" className="absolute inset-0 size-full" draggable={false} />
+      <GradientStopPinShape tint={selected ? '#2D88FF' : '#50505D'} />
       <div className="absolute rounded-[2px]" style={{ left: '24.24%', top: '20%', width: '48.48%', height: '40%', background: stop.color }} />
     </div>
   );
@@ -459,7 +471,10 @@ export function ColorPickerPopover({
             ))}
           </div>
         </div>
-        <div className="max-h-[320px] overflow-y-auto px-4 pb-4">
+        {/* Tall enough that neither tab's own content (335px for Gradient, the taller of the two)
+            ever needs to scroll — a shorter cap was clipping Gradient's own bottom padding out of
+            view below the fold, reading as "missing" next to Color's identical `pb-4`. */}
+        <div className="max-h-[360px] overflow-y-auto px-4 pb-4">
           {tab === 'color' ? (
             <ColorTab hex={isGradient(color) ? (parseGradient(color)?.stops[0]?.color ?? '#FFFFFF') : color} onChange={onChange} />
           ) : (

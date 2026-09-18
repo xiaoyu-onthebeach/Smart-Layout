@@ -286,6 +286,7 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
             <InlineRow label={t('Weight')}>
               <div className="flex" style={{ width: INLINE_VALUE_COL_WIDTH }}>
                 <NumberField
+                  scrubbable
                   className="w-[72px]"
                   value={String(primary.style.strokeWidth ?? 1)}
                   onCommit={(v) => patchStyle({ strokeWidth: Math.max(0, Number(v) || 0) })}

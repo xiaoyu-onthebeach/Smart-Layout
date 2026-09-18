@@ -642,12 +642,23 @@ function ShadowSwitch({ checked, onChange, label }: { checked: boolean; onChange
 }
 
 /** A 51px number field with a small caption ("x"/"y") to its left, bottom-aligned — the shadow
- * panel's own "Number input - Advanced" shape, distinct from the plain centered `NumberField`. */
+ * panel's own "Number input - Advanced" shape, distinct from the plain centered `NumberField`. Both
+ * of its callers (shadow X and Y) want drag-to-scrub, so unlike `NumberField` it's always on here. */
 function LabeledNumberInput({ label, value, onCommit }: { label: string; value: string; onCommit: (value: string) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const scrub = useScrubDrag(Number(value) || 0, onCommit);
+  const highlighted = scrub.hovered || scrub.dragging;
   return (
-    <div className="flex h-8 w-[51px] shrink-0 items-end gap-2 rounded-md border px-2 pb-1" style={{ background: '#26262C', borderColor: '#40404A' }}>
+    <div
+      className="flex h-8 w-[51px] shrink-0 items-end gap-2 rounded-md border px-2 pb-1 transition-colors"
+      onMouseDown={(e) => scrub.handleMouseDown(e, inputRef.current)}
+      onMouseEnter={() => scrub.setHovered(true)}
+      onMouseLeave={() => scrub.setHovered(false)}
+      style={{ background: highlighted ? '#2F2F37' : '#26262C', borderColor: '#40404A', cursor: highlighted ? SCRUB_CURSOR : undefined }}
+    >
       <span className="text-xs text-white/45">{label}</span>
       <input
+        ref={inputRef}
         defaultValue={value}
         key={value}
         onBlur={(e) => onCommit(e.target.value)}
@@ -658,8 +669,36 @@ function LabeledNumberInput({ label, value, onCommit }: { label: string; value: 
   );
 }
 
+/** The shadow row's own opacity field — styled like the plain-text opacity shown next to a color
+ * fill elsewhere (`InlineColorField`/`ColorRow`) rather than `NumberField`'s own bordered box, per
+ * that shared look; still scrubbable like every other number field in this section. */
+function ShadowOpacityField({ value, onCommit }: { value: number; onCommit: (value: string) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const scrub = useScrubDrag(value, onCommit);
+  const highlighted = scrub.hovered || scrub.dragging;
+  return (
+    <div
+      className="flex h-8 shrink-0 items-center rounded-md px-1 transition-colors"
+      onMouseDown={(e) => scrub.handleMouseDown(e, inputRef.current)}
+      onMouseEnter={() => scrub.setHovered(true)}
+      onMouseLeave={() => scrub.setHovered(false)}
+      style={{ background: highlighted ? '#2F2F37' : undefined, cursor: highlighted ? SCRUB_CURSOR : undefined }}
+    >
+      <input
+        ref={inputRef}
+        defaultValue={String(value)}
+        key={value}
+        onBlur={(e) => onCommit(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        className="w-6 bg-transparent text-right text-[11px] text-white/65 outline-none"
+      />
+      <span className="text-[11px] text-white/65">%</span>
+    </div>
+  );
+}
+
 /** The shadow row's own "Color" field — a 24px swatch + chevron (opens the shared color picker)
- * beside an opacity number field, distinct from `ColorRow`'s wider pill layout elsewhere. */
+ * beside an opacity field, distinct from `ColorRow`'s wider pill layout elsewhere. */
 function ShadowColorField({
   color,
   opacity,
@@ -679,7 +718,7 @@ function ShadowColorField({
           <ChevronDown className="size-3.5 shrink-0 text-white" />
         </button>
       </ColorPickerPopover>
-      <NumberField className="w-[51px] shrink-0" value={String(opacity)} onCommit={onOpacityCommit} />
+      <ShadowOpacityField value={opacity} onCommit={onOpacityCommit} />
     </div>
   );
 }
@@ -719,7 +758,12 @@ function ShadowRow({
           </div>
           <div className="flex h-10 shrink-0 items-center gap-1">
             <span className="flex-1 text-[13px] text-white/65">{t('Blur')}</span>
-            <NumberField className="w-[51px] shrink-0" value={String(current.blur)} onCommit={(v) => patch({ blur: Math.max(0, Math.round(Number(v) || 0)) })} />
+            <NumberField
+              scrubbable
+              className="w-[51px] shrink-0"
+              value={String(current.blur)}
+              onCommit={(v) => patch({ blur: Math.max(0, Math.round(Number(v) || 0)) })}
+            />
           </div>
           <div className="flex h-10 shrink-0 items-center gap-1">
             <span className="flex-1 text-[13px] text-white/65">{t('Color')}</span>
@@ -770,9 +814,59 @@ export const BORDER_STYLE_ICONS: Record<'none' | 'solid' | 'dashed' | 'dotted', 
 // Reused for every corner via CSS rotation (see the per-corner radius row below) — one asset, four orientations.
 const CORNER_ROTATIONS = [0, 90, -90, -180];
 
-/** The custom left/right drag glyph shown while hovering or actively scrubbing a radius field —
+/** The custom left/right drag glyph shown while hovering or actively scrubbing a number field —
  * `ew-resize` is the fallback for any browser that can't load the custom cursor image. */
 const SCRUB_CURSOR = "url('/icons/drag-cursor.svg') 16 16, ew-resize";
+
+/**
+ * Shared drag-to-scrub mechanics for a plain number input (border weight, shadow position/blur/
+ * opacity, ...) — mousedown-and-drag left/right adjusts `currentValue` 1:1 with however many px the
+ * cursor has moved, tracked at the window level so the drag keeps working once the cursor leaves the
+ * field. Hands the raw next value to `onCommit` as a string — the same shape a plain typed edit
+ * already produces — so whatever clamping that field's own commit handler does for a typed value
+ * (0+ for a weight, 0-100 for an opacity, unclamped for a signed shadow offset, ...) applies here
+ * too, without this hook needing to know that range itself. A press that never moves past a few px
+ * still resolves as a normal click, so the field stays directly typable. Doesn't touch hover/cursor
+ * styling itself — callers read back `hovered`/`dragging` to render that however fits their own
+ * layout (a bare input vs. one with a leading label inside the same box).
+ */
+function useScrubDrag(currentValue: number, onCommit: (value: string) => void) {
+  const [hovered, setHovered] = useState(false);
+  const [dragging, setDragging] = useState(false);
+
+  function handleMouseDown(e: ReactMouseEvent, blurTarget: HTMLElement | null) {
+    if (e.button !== 0) return;
+    const startX = e.clientX;
+    const startValue = currentValue;
+    let moved = false;
+
+    function onMove(ev: MouseEvent) {
+      const dx = ev.clientX - startX;
+      if (!moved && Math.abs(dx) > 3) {
+        moved = true;
+        setDragging(true);
+        // Drops the caret/selection before the drag takes over, same reasoning as the radius
+        // field's own scrub — a drag across the page shouldn't also drag out a text selection.
+        blurTarget?.blur();
+        document.body.style.cursor = SCRUB_CURSOR;
+      }
+      if (moved) {
+        ev.preventDefault();
+        onCommit(String(Math.round(startValue + dx)));
+      }
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      setDragging(false);
+      document.body.style.cursor = '';
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  return { hovered, setHovered, dragging, handleMouseDown };
+}
 
 /**
  * A number field that doubles as a drag-to-scrub control — mousedown-and-drag left/right adjusts
@@ -967,19 +1061,31 @@ export function NumberField({
   value,
   onCommit,
   className,
+  scrubbable = false,
 }: {
   value: string;
   onCommit: (value: string) => void;
   className?: string;
+  /** Opts into the same drag-to-scrub behavior as the radius/shadow fields — off by default since
+   * plenty of this component's callers (font size, letter spacing, ...) weren't asked to scrub. */
+  scrubbable?: boolean;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const scrub = useScrubDrag(Number(value) || 0, onCommit);
+  const highlighted = scrubbable && (scrub.hovered || scrub.dragging);
   return (
     <input
+      ref={inputRef}
       defaultValue={value}
       key={value}
+      onMouseDown={scrubbable ? (e) => scrub.handleMouseDown(e, inputRef.current) : undefined}
+      onMouseEnter={scrubbable ? () => scrub.setHovered(true) : undefined}
+      onMouseLeave={scrubbable ? () => scrub.setHovered(false) : undefined}
       onBlur={(e) => onCommit(e.target.value)}
       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+      style={scrubbable ? { background: highlighted ? '#2F2F37' : undefined, cursor: highlighted ? SCRUB_CURSOR : undefined } : undefined}
       className={cn(
-        'flex h-8 items-center rounded-md border border-chrome-border bg-chrome-border-subtle px-2 text-center text-base font-bold text-chrome-fg outline-none',
+        'flex h-8 items-center rounded-md border border-chrome-border bg-chrome-border-subtle px-2 text-center text-base font-bold text-chrome-fg outline-none transition-colors',
         className,
       )}
     />

@@ -21,6 +21,7 @@ import {
   PanelSection,
   MatchSelectButton,
   PositionSection,
+  SectionIconBadge,
   SegmentedControl,
   ShadowSection,
   type EditorTarget,
@@ -95,9 +96,15 @@ function ImageFillField({
           side="left"
           align="start"
           sideOffset={8}
-          className="border-[#2F2F37] p-4 text-chrome-fg"
+          className="flex flex-col gap-2 border-[#2F2F37] p-4 text-chrome-fg"
           style={{ width: 279, background: '#19191D', borderRadius: 16, boxShadow: '0px 4px 32px 4px rgba(0,0,0,0.24)' }}
         >
+          <div className="flex h-6 items-center gap-1">
+            <SectionIconBadge>
+              <img src="/icons/edit_panel/image%20header.svg" alt="" className="size-3.5" />
+            </SectionIconBadge>
+            <span className="text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Image')}</span>
+          </div>
           <ImageHoverReplace onReplace={onReplace}>
             <div
               className="h-[238px] w-[247px] rounded-2xl border bg-cover bg-center"
@@ -288,6 +295,7 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
             <InlineRow label={t('Weight')}>
               <div className="flex" style={{ width: INLINE_VALUE_COL_WIDTH }}>
                 <NumberField
+                  scrubbable
                   className="w-[72px]"
                   value={String(primary.style.strokeWidth ?? 1)}
                   onCommit={(v) => patchStyle({ strokeWidth: Math.max(0, Number(v) || 0) })}

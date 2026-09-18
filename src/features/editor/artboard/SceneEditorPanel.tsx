@@ -175,6 +175,7 @@ export function SceneEditorPanel({ layout, setId }: { layout: Layout; setId: str
                   control starts from. */}
               <div className="flex" style={{ width: VALUE_COL_WIDTH }}>
                 <NumberField
+                  scrubbable
                   className="w-[72px]"
                   value={String(layout.borderWidth ?? 1)}
                   onCommit={(v) => updateLayoutStyle(layout.id, { borderWidth: Math.max(0, Number(v) || 0) })}
