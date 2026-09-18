@@ -1123,13 +1123,14 @@ export function ArtboardFrame({
                     onMouseLeave={() => setFocusRectHovered(false)}
                   >
                     {/* Hover affordance while the box is just sitting there waiting to be adjusted —
-                        a subtle white wash. Driven by the same JS hover-minus-suppression state as
-                        the corner brackets (not raw CSS :hover) so it collapses right on release even
-                        if the cursor never actually left the box — otherwise the box's own interior
-                        would keep reading as tinted instead of plainly transparent, just because the
-                        mouse happened to still be sitting on it. */}
+                        a subtle white wash. Tracks plain `focusRectHovered`, NOT gated by
+                        `suppressFocusHover` the way the corner brackets are — that gate exists so the
+                        brackets fall back to their short idle shape right on release even with the
+                        cursor still on the box, but this wash should do the opposite: come back
+                        immediately on release (still hovering, no extra click needed) rather than
+                        wait for the next real mouse-leave-then-re-enter. */}
                     <div
-                      className={cn('absolute inset-0 rounded-[inherit] transition-colors', focusRectHovered && !suppressFocusHover ? 'bg-white/10' : 'bg-white/0')}
+                      className={cn('absolute inset-0 rounded-[inherit] transition-colors', focusRectHovered ? 'bg-white/10' : 'bg-white/0')}
                     />
                     <FocusRectCorners expanded={focusRectExpanded} />
                     {RESIZE_HANDLES.map((handle) => (
