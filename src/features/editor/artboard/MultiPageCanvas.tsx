@@ -758,7 +758,11 @@ export function MultiPageCanvas() {
     const headerY = maxPrimaryHeight + SECTION_GAP_TOP;
     const sharedSiblingsY = headerY + SECTION_HEADER_HEIGHT + SECTION_GAP_BOTTOM;
 
-    const icons = sorted.map((root) => ({ x: root.pos.x - originX + footprintWidthOf(root) / 2, entry: root }));
+    // Centered on each root's own primary width, not its footprint (which is `contentWidth` once
+    // it's grown a sibling pack wider than the primary itself, see footprintWidthOf) — otherwise
+    // the "+" circle drifts toward the wider pack's own center instead of sitting above the
+    // primary card it actually belongs to. Matches the single-header call site's own `x` above.
+    const icons = sorted.map((root) => ({ x: root.pos.x - originX + root.layout.size.width / 2, entry: root }));
     const last = sorted[sorted.length - 1];
     const totalWidth = last.pos.x - originX + footprintWidthOf(last);
 
