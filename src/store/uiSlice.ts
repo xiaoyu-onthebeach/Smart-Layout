@@ -90,7 +90,15 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
     }),
   selectScenes: (setIds) => set({ selectedSceneIds: setIds }),
   setEditingTextElement: (id) => set({ editingTextElementId: id }),
-  setActiveTool: (tool) => set({ activeTool: tool }),
+  // Arming a placement tool (text/shape) starts a fresh element, not an edit of whatever was
+  // already selected — clear that selection right on the toolbar click, rather than leaving the
+  // old layer's selection box showing on canvas until the new element gets placed and takes over.
+  setActiveTool: (tool) =>
+    set(
+      tool === 'text' || tool === 'shape'
+        ? { activeTool: tool, selectedElements: [], autoMatchedElements: [], editingTextElementId: null }
+        : { activeTool: tool },
+    ),
   setShapeToolKind: (kind) => set({ shapeToolKind: kind }),
   // Entering edit mode on a view-all page card should immediately show it as selected (the white
   // outline) — otherwise it silently takes a second click before any selection feedback appears.
