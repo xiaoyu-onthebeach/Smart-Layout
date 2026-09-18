@@ -1123,14 +1123,13 @@ export function ArtboardFrame({
                     onMouseLeave={() => setFocusRectHovered(false)}
                   >
                     {/* Hover affordance while the box is just sitting there waiting to be adjusted —
-                        a subtle white wash. Tracks plain `focusRectHovered`, NOT gated by
-                        `suppressFocusHover` the way the corner brackets are — that gate exists so the
-                        brackets fall back to their short idle shape right on release even with the
-                        cursor still on the box, but this wash should do the opposite: come back
-                        immediately on release (still hovering, no extra click needed) rather than
-                        wait for the next real mouse-leave-then-re-enter. */}
+                        a subtle white wash. Plain `focusRectHovered` before the box has ever been
+                        dragged (so it comes and goes with the cursor, same as any other hover
+                        affordance) — but once `focusRectDirty` (it's been moved/resized at least
+                        once this session), it stays on for good, cursor or no cursor, rather than
+                        blinking off the moment the mouse happens to leave right after a release. */}
                     <div
-                      className={cn('absolute inset-0 rounded-[inherit] transition-colors', focusRectHovered ? 'bg-white/10' : 'bg-white/0')}
+                      className={cn('absolute inset-0 rounded-[inherit] transition-colors', focusRectHovered || focusRectDirty ? 'bg-white/10' : 'bg-white/0')}
                     />
                     <FocusRectCorners expanded={focusRectExpanded} />
                     {RESIZE_HANDLES.map((handle) => (
