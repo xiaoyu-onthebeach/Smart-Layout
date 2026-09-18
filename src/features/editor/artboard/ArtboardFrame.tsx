@@ -54,39 +54,52 @@ function focusHandleStyle(handle: ResizeHandle): CSSProperties {
 }
 
 // The focus box's own corner-bracket outline — idle, only these 4 short arms show; hovering the
-// box (or, for the editable one, actively dragging it) grows them out to the midpoint of their own
-// edge via a plain width/height transition, closing into a full border. Same technique/thickness/
-// glow as the layer selection box's own corner brackets, just in this box's own established
-// 80%-white (not pure white) stroke color.
-const FOCUS_STROKE_THICKNESS = 6;
+// box (or, for the editable one, actively dragging it) grows them out past the midpoint of their
+// own edge (a small overlap, not an exact 50/50 split — see FOCUS_STROKE_OVERLAP) and thins down to
+// FOCUS_STROKE_THICKNESS_EXPANDED, closing into one continuous, evenly-toned full border.
+const FOCUS_STROKE_THICKNESS_IDLE = 6;
+const FOCUS_STROKE_THICKNESS_EXPANDED = 2;
 const FOCUS_STROKE_ARM_LENGTH = 'min(28px, 35%)';
-const FOCUS_STROKE_COLOR = 'rgba(255,255,255,0.8)';
-const FOCUS_STROKE_GLOW = '0 0 8px rgba(255,255,255,0.25)';
-const FOCUS_STROKE_TRANSITION = 'width 200ms ease, height 200ms ease';
+// Deliberately past the true 50% midpoint — the matching arm growing in from the neighboring
+// corner overlaps it by a couple px rather than meeting it edge-to-edge, so a sub-pixel rounding
+// gap can never open up between them right as they close into a full border.
+const FOCUS_STROKE_OVERLAP = 'calc(50% + 2px)';
+const FOCUS_STROKE_COLOR = '#ffffff';
+// This box's own established stroke tone is 80%-white, not pure white — applied here as `opacity`
+// on the *group* (see FocusRectCorners) rather than baked into each segment's own color, precisely
+// so the two segments overlapping at each corner (and again at each edge's midpoint, once expanded)
+// don't stack into a visibly higher-opacity seam the way two individually-translucent layers would.
+const FOCUS_STROKE_OPACITY = 0.8;
+const FOCUS_STROKE_GLOW = 'drop-shadow(0 0 8px rgba(255,255,255,0.25))';
+const FOCUS_STROKE_TRANSITION = 'all 200ms ease';
 const FOCUS_CORNERS = ['nw', 'ne', 'sw', 'se'] as const;
 
 function focusStrokeSegmentStyle(axis: 'h' | 'v', corner: (typeof FOCUS_CORNERS)[number], expanded: boolean): CSSProperties {
+  const thickness = expanded ? FOCUS_STROKE_THICKNESS_EXPANDED : FOCUS_STROKE_THICKNESS_IDLE;
+  const half = thickness / 2;
   return {
     position: 'absolute',
     background: FOCUS_STROKE_COLOR,
-    boxShadow: FOCUS_STROKE_GLOW,
     transition: FOCUS_STROKE_TRANSITION,
-    borderRadius: FOCUS_STROKE_THICKNESS / 2,
-    top: corner.includes('n') ? -FOCUS_STROKE_THICKNESS / 2 : undefined,
-    bottom: corner.includes('s') ? -FOCUS_STROKE_THICKNESS / 2 : undefined,
-    left: corner.includes('w') ? -FOCUS_STROKE_THICKNESS / 2 : undefined,
-    right: corner.includes('e') ? -FOCUS_STROKE_THICKNESS / 2 : undefined,
-    width: axis === 'h' ? (expanded ? '50%' : FOCUS_STROKE_ARM_LENGTH) : FOCUS_STROKE_THICKNESS,
-    height: axis === 'v' ? (expanded ? '50%' : FOCUS_STROKE_ARM_LENGTH) : FOCUS_STROKE_THICKNESS,
+    borderRadius: half,
+    top: corner.includes('n') ? -half : undefined,
+    bottom: corner.includes('s') ? -half : undefined,
+    left: corner.includes('w') ? -half : undefined,
+    right: corner.includes('e') ? -half : undefined,
+    width: axis === 'h' ? (expanded ? FOCUS_STROKE_OVERLAP : FOCUS_STROKE_ARM_LENGTH) : thickness,
+    height: axis === 'v' ? (expanded ? FOCUS_STROKE_OVERLAP : FOCUS_STROKE_ARM_LENGTH) : thickness,
   };
 }
 
 /** Shared by both the confirmed and editable focus-box states — the only difference between them
  * is what `expanded` gets computed from (plain hover for the confirmed box; hover-or-dragging,
- * with the release-suppresses-hover behavior, for the editable one). */
+ * with the release-suppresses-hover behavior, for the editable one). The 80%-white tone and the
+ * soft glow are both applied here, once, to the whole group — see FOCUS_STROKE_OPACITY/_GLOW's own
+ * comments for why that (rather than per-segment) is what keeps overlapping segments from reading
+ * as a darker/brighter seam. */
 function FocusRectCorners({ expanded }: { expanded: boolean }) {
   return (
-    <div className="pointer-events-none absolute inset-0">
+    <div className="pointer-events-none absolute inset-0" style={{ opacity: FOCUS_STROKE_OPACITY, filter: FOCUS_STROKE_GLOW }}>
       {FOCUS_CORNERS.map((corner) => (
         <div key={corner}>
           <div style={focusStrokeSegmentStyle('h', corner, expanded)} />
@@ -961,7 +974,7 @@ export function ArtboardFrame({
                   width: `${(layout.focusRect.w / nativeWidth) * 100}%`,
                   height: `${(layout.focusRect.h / nativeHeight) * 100}%`,
                   background: 'rgba(255,255,255,0.1)',
-                  borderRadius: 16,
+                  borderRadius: 24,
                 }}
               >
                 {/* Hover affordance so the box still reads as clickable (re-opens editing) even
@@ -989,9 +1002,12 @@ export function ArtboardFrame({
                       // rest of the (clipped, `overflow-hidden`) overlay with the dim color, while
                       // the box's own background stays fully transparent — so only the area inside
                       // reads at full clarity, everything outside it dims, without a second overlay
-                      // element (and its own separate cutout) to keep in sync with the box.
-                      boxShadow: '0 0 0 9999px rgba(38,38,44,0.5)',
-                      borderRadius: 16,
+                      // element (and its own separate cutout) to keep in sync with the box. Only
+                      // shown while actively dragging — released (or never dragged yet), it drops
+                      // out immediately (no transition on box-shadow), same look as the confirmed
+                      // box until the next drag brings it back.
+                      boxShadow: focusRectDragging ? '0 0 0 9999px rgba(38,38,44,0.5)' : undefined,
+                      borderRadius: 24,
                     }}
                     onMouseDown={startFocusRectMove}
                     onMouseEnter={() => setFocusRectHovered(true)}
