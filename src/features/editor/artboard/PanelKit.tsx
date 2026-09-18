@@ -426,7 +426,7 @@ export function PositionSection({
 
 export function PanelSection({ label, icon, children, style }: { label: string; icon?: ReactNode; children: ReactNode; style?: CSSProperties }) {
   return (
-    <div className="flex flex-col gap-2 px-4" style={style}>
+    <div data-panel-section className="flex flex-col gap-2 px-4" style={style}>
       <span className="flex items-center gap-1.5 text-[13px] font-semibold tracking-[-0.01em] text-white">
         {icon}
         {label}

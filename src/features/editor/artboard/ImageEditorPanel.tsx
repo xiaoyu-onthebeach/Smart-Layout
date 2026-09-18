@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Minus, Plus } from 'lucide-react';
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAppStore } from '@/store/useAppStore';
 import type { LayoutElement } from '@/types';
 import { layerName } from '@/lib/layer-name';
@@ -8,6 +9,7 @@ import { cn } from '@/lib/utils';
 import {
   BORDER_STYLE_ICONS,
   CornerRadiusRow,
+  ImageHoverReplace,
   INLINE_VALUE_COL_WIDTH,
   InlineColorField,
   InlineRow,
@@ -23,9 +25,102 @@ import {
   ShadowSection,
   type EditorTarget,
 } from './PanelKit';
+import { ImagePickerDialog } from './ImagePickerDialog';
 
 type SolidBorderStyle = 'solid' | 'dashed' | 'dotted';
 const BORDER_STYLE_LABELS: Record<SolidBorderStyle, string> = { solid: 'Solid', dashed: 'Dashed', dotted: 'Dotted' };
+
+/**
+ * The Image panel's own "Fill" control — an image's fill *is* the image itself, so the swatch is a
+ * small rounded-rect thumbnail of it (not a color circle), the label just reads "Image" (there's no
+ * hex code to show), and clicking the thumbnail opens a preview of the full image with a "Replace"
+ * button, not a color picker. Opacity is real here (backed by `style.opacity`, which `ImageBox`
+ * already renders) — unlike the same-looking opacity field on a plain color fill elsewhere, which
+ * has no per-fill alpha to actually change.
+ */
+function ImageFillField({
+  imageUrl,
+  opacity,
+  onOpacityCommit,
+  onReplace,
+}: {
+  imageUrl: string | undefined;
+  opacity: number;
+  onOpacityCommit: (value: number) => void;
+  onReplace: () => void;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
+  // Same virtual-anchor technique ColorPickerPopover uses — decouples the popover's floating
+  // position from the trigger's own varying indent, and recomputed fresh every render so Popper's
+  // reference-equality check re-feeds floating-ui a current rect.
+  const virtualAnchorRef = useRef({ getBoundingClientRect: () => new DOMRect() });
+  if (anchor) {
+    const { left, top } = anchor;
+    virtualAnchorRef.current = { getBoundingClientRect: () => new DOMRect(left, top, 1, 1) };
+  }
+
+  // Floats outside the panel to its left (8px gap), top-aligned with the *Styles section* this
+  // field lives in — not with this specific row, the way ColorPickerPopover aligns to its own
+  // trigger row — since a full image preview reads better anchored to the section's own top than
+  // wherever "Fill" happens to fall inside it.
+  function handleOpenChange(next: boolean) {
+    if (next) {
+      const trigger = triggerRef.current;
+      const panel = trigger?.closest('[data-panel-card]');
+      const section = trigger?.closest('[data-panel-section]');
+      const panelRect = (panel ?? trigger)?.getBoundingClientRect();
+      const sectionRect = (section ?? trigger)?.getBoundingClientRect();
+      if (panelRect && sectionRect) setAnchor({ left: panelRect.left, top: sectionRect.top });
+    }
+    setOpen(next);
+  }
+
+  return (
+    <div className="flex h-9 shrink-0 items-center gap-2 rounded-lg pr-2 pl-1" style={{ width: INLINE_VALUE_COL_WIDTH, background: '#26262C' }}>
+      <Popover open={open} onOpenChange={handleOpenChange}>
+        <PopoverAnchor virtualRef={virtualAnchorRef} />
+        <PopoverTrigger asChild>
+          <button
+            ref={triggerRef}
+            type="button"
+            aria-label={t('Image')}
+            className="size-6 shrink-0 rounded-[4px] border border-black/20 bg-cover bg-center"
+            style={{ backgroundColor: '#40404A', backgroundImage: imageUrl ? `url(${imageUrl})` : undefined }}
+          />
+        </PopoverTrigger>
+        <PopoverContent
+          side="left"
+          align="start"
+          sideOffset={8}
+          className="border-[#2F2F37] p-4 text-chrome-fg"
+          style={{ width: 279, background: '#19191D', borderRadius: 16, boxShadow: '0px 4px 32px 4px rgba(0,0,0,0.24)' }}
+        >
+          <ImageHoverReplace onReplace={onReplace}>
+            <div
+              className="h-[238px] w-[247px] rounded-2xl border bg-cover bg-center"
+              style={{ backgroundColor: '#26262C', backgroundImage: imageUrl ? `url(${imageUrl})` : undefined, borderColor: '#40404A' }}
+            />
+          </ImageHoverReplace>
+        </PopoverContent>
+      </Popover>
+      <span className="min-w-0 flex-1 truncate text-sm text-white">{t('Image')}</span>
+      <div className="h-4 w-px shrink-0" style={{ background: '#40404A' }} />
+      <div className="flex shrink-0 items-center">
+        <input
+          defaultValue={String(opacity)}
+          key={opacity}
+          onBlur={(e) => onOpacityCommit(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
+          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+          className="w-6 bg-transparent text-right text-sm text-white outline-none"
+        />
+        <span className="text-sm text-white/65">%</span>
+      </div>
+    </div>
+  );
+}
 
 /** Right-corner panel shown while one or more image elements are selected — edits broadcast to every target. */
 export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
@@ -34,6 +129,12 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const updateElement = useAppStore((s) => s.updateElement);
   const primary = targets[0].element;
   const [aspectLocked, setAspectLocked] = useState(false);
+  const [replacingImage, setReplacingImage] = useState(false);
+
+  function replaceImageUrl(url: string) {
+    for (const tgt of targets) updateElement(tgt.layoutId, tgt.element.id, { imageUrl: url });
+    setReplacingImage(false);
+  }
 
   // Same collapsed-by-default, reset-per-selection convention as the text panel's own Border section.
   const [borderExpanded, setBorderExpanded] = useState(() => (primary.style.strokeWidth ?? 0) > 0);
@@ -147,7 +248,12 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
 
       <PanelSection label={t('Styles')}>
         <InlineRow label={t('Fill')}>
-          <InlineColorField color={primary.style.fill ?? '#d9d9d9'} onChange={(fill) => patchStyle({ fill })} />
+          <ImageFillField
+            imageUrl={primary.imageUrl}
+            opacity={primary.style.opacity ?? 100}
+            onOpacityCommit={(opacity) => patchStyle({ opacity })}
+            onReplace={() => setReplacingImage(true)}
+          />
         </InlineRow>
 
         <CornerRadiusRow value={primary.style.radius ?? 0} onCommit={(radius) => patchStyle({ radius })} max={Math.floor(Math.min(primary.frame.w, primary.frame.h) / 2)} />
@@ -195,6 +301,10 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
       <PanelDivider />
 
       <ShadowSection dropShadow={primary.style.dropShadow} innerShadow={primary.style.innerShadow} onPatch={patchStyle} />
+
+      {replacingImage && (
+        <ImagePickerDialog open onOpenChange={(open) => !open && setReplacingImage(false)} onSelect={replaceImageUrl} />
+      )}
     </PanelCard>
   );
 }
