@@ -136,7 +136,11 @@ export function SceneEditorPanel({ layout, setId }: { layout: Layout; setId: str
         <InlineRow label={t('Fill')}>
           <InlineColorField color={layout.backgroundColor ?? '#131316'} onChange={(backgroundColor) => updateLayoutStyle(layout.id, { backgroundColor })} />
         </InlineRow>
-        <CornerRadiusRow value={layout.radius ?? 0} onCommit={(radius) => updateLayoutStyle(layout.id, { radius })} />
+        <CornerRadiusRow
+          value={layout.radius ?? 0}
+          onCommit={(radius) => updateLayoutStyle(layout.id, { radius })}
+          max={Math.floor(Math.min(layout.size.width, layout.size.height) / 2)}
+        />
       </PanelSection>
 
       <PanelDivider />

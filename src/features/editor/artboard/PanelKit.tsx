@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { ChevronDown, RefreshCw } from 'lucide-react';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -770,24 +770,118 @@ export const BORDER_STYLE_ICONS: Record<'none' | 'solid' | 'dashed' | 'dotted', 
 // Reused for every corner via CSS rotation (see the per-corner radius row below) — one asset, four orientations.
 const CORNER_ROTATIONS = [0, 90, -90, -180];
 
+/**
+ * A number field that doubles as a drag-to-scrub control — mousedown-and-drag left/right adjusts
+ * the value 1:1 with however many px the cursor has moved from where the drag started, tracked via
+ * window-level listeners so a fast drag isn't capped by the field's own small width (the cursor can
+ * leave it entirely and the drag keeps tracking). A press that never moves past a few px still
+ * resolves as a normal click, so the field stays directly typable too. Hovering (or actively
+ * dragging) swaps the background to `#2F2F37` and the cursor to the browser's own `ew-resize`
+ * (left/right) glyph, so the affordance reads the same everywhere this is used.
+ */
+function ScrubbableNumberField({
+  value,
+  max,
+  onCommit,
+  icon,
+  wrapperClassName,
+  inputClassName,
+}: {
+  value: number;
+  max: number;
+  onCommit: (value: number) => void;
+  /** An optional leading icon inside the same hover/drag-highlighted pill (the per-corner fields'
+   * own orientation glyph) — absent for the plain uniform field, which is just the input itself. */
+  icon?: ReactNode;
+  wrapperClassName: string;
+  inputClassName: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [hovered, setHovered] = useState(false);
+  const [dragging, setDragging] = useState(false);
+
+  function handleMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    const startX = e.clientX;
+    const startValue = value;
+    let moved = false;
+
+    function onMove(ev: MouseEvent) {
+      const dx = ev.clientX - startX;
+      if (!moved && Math.abs(dx) > 3) {
+        moved = true;
+        setDragging(true);
+        // Drops the caret/selection before the drag takes over, so dragging across the page never
+        // also drags out a native text selection underneath it.
+        inputRef.current?.blur();
+      }
+      if (moved) {
+        ev.preventDefault();
+        onCommit(Math.round(Math.min(max, Math.max(0, startValue + dx))));
+      }
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      setDragging(false);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  const highlighted = hovered || dragging;
+
+  return (
+    <div
+      className={wrapperClassName}
+      onMouseDown={handleMouseDown}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ background: highlighted ? '#2F2F37' : undefined, cursor: highlighted ? 'ew-resize' : undefined }}
+    >
+      {icon}
+      <input
+        ref={inputRef}
+        defaultValue={String(value)}
+        key={value}
+        onBlur={(e) => onCommit(Math.min(max, Math.max(0, Number(e.target.value) || 0)))}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        className={inputClassName}
+      />
+    </div>
+  );
+}
+
 /** "Radius" row shared by the banner/shape/image panels — clicking "per-corner" reveals a second
  * row of four corner fields below it, each its own rounded box within the panel's own padding (not
  * a joined pill, so nothing can overflow the panel edge the way an unbroken 4-way pill at this
- * width would). Both the toggle and the four fields are decorative — no per-corner radius concept
- * exists in the layout engine yet. */
-export function CornerRadiusRow({ value, onCommit }: { value: number; onCommit: (value: number) => void }) {
+ * width would). The four fields are still decorative (no per-corner radius concept exists in the
+ * layout engine yet) — dragging the uniform field above just overwrites all four's own local state
+ * to match, the same way it always overwrites the one real `value` this row is wired to. */
+export function CornerRadiusRow({ value, onCommit, max }: { value: number; onCommit: (value: number) => void; max: number }) {
   const t = useT();
   const [mode, setMode] = useState<'uniform' | 'corners'>('uniform');
+  const [corners, setCorners] = useState<number[]>([value, value, value, value]);
+
+  function commitUniform(next: number) {
+    onCommit(next);
+    setCorners([next, next, next, next]);
+  }
+
+  function commitCorner(index: number, next: number) {
+    setCorners((prev) => prev.map((v, i) => (i === index ? next : v)));
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <InlineRow label={t('Radius')}>
         <div className="flex items-center justify-between" style={{ width: INLINE_VALUE_COL_WIDTH }}>
-          <input
-            defaultValue={String(value)}
-            key={value}
-            onBlur={(e) => onCommit(Math.max(0, Number(e.target.value) || 0))}
-            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-            className="flex h-8 w-[68px] items-center justify-center rounded-md bg-[#26262C] text-center text-base font-bold text-white outline-none"
+          <ScrubbableNumberField
+            value={value}
+            max={max}
+            onCommit={commitUniform}
+            wrapperClassName="flex h-8 w-[68px] items-center justify-center rounded-md bg-[#26262C] transition-colors"
+            inputClassName="w-full min-w-0 bg-transparent text-center text-base font-bold text-white outline-none"
           />
           <div className="flex items-center gap-1 rounded-md p-0.5" style={{ background: '#26262C' }}>
             <button
@@ -818,12 +912,20 @@ export function CornerRadiusRow({ value, onCommit }: { value: number; onCommit: 
         <div className="flex flex-col items-end gap-3 px-0">
           {[CORNER_ROTATIONS.slice(0, 2), CORNER_ROTATIONS.slice(2, 4)].map((row, rowIdx) => (
             <div key={rowIdx} className="flex items-center justify-end gap-3">
-              {row.map((deg, i) => (
-                <div key={i} className="flex h-8 w-[97px] shrink-0 items-center gap-2 rounded-md bg-[#26262C] pl-3">
-                  <img src="/icons/edit_panel/radius-each%20corner.svg" alt="" className="size-3.5 shrink-0" style={{ transform: `rotate(${deg}deg)` }} />
-                  <input defaultValue="0" className="w-0 min-w-0 flex-1 bg-transparent text-center text-base font-bold text-white outline-none" />
-                </div>
-              ))}
+              {row.map((deg, i) => {
+                const idx = rowIdx * 2 + i;
+                return (
+                  <ScrubbableNumberField
+                    key={idx}
+                    value={corners[idx]}
+                    max={max}
+                    onCommit={(next) => commitCorner(idx, next)}
+                    icon={<img src="/icons/edit_panel/radius-each%20corner.svg" alt="" className="size-3.5 shrink-0" style={{ transform: `rotate(${deg}deg)` }} />}
+                    wrapperClassName="flex h-8 w-[97px] shrink-0 items-center gap-2 rounded-md bg-[#26262C] pl-3 transition-colors"
+                    inputClassName="w-0 min-w-0 flex-1 bg-transparent text-center text-base font-bold text-white outline-none"
+                  />
+                );
+              })}
             </div>
           ))}
         </div>

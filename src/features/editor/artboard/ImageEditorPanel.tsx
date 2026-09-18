@@ -150,7 +150,7 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
           <InlineColorField color={primary.style.fill ?? '#d9d9d9'} onChange={(fill) => patchStyle({ fill })} />
         </InlineRow>
 
-        <CornerRadiusRow value={primary.style.radius ?? 0} onCommit={(radius) => patchStyle({ radius })} />
+        <CornerRadiusRow value={primary.style.radius ?? 0} onCommit={(radius) => patchStyle({ radius })} max={Math.floor(Math.min(primary.frame.w, primary.frame.h) / 2)} />
       </PanelSection>
 
       <PanelDivider />
