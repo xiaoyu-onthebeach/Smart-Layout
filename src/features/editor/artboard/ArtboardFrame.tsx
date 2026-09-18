@@ -864,6 +864,7 @@ export function ArtboardFrame({
                 onExpandClick={handleExpandClick(imageElement)}
                 onExpandToFrameClick={handleExpandToFrameClick(imageElement)}
                 isBackgroundImage={imageElement.id === backgroundElementId}
+                sceneHasBackgroundColor={Boolean(layout.backgroundColor)}
                 onSelect={makeOnSelect(imageElement)}
                 onContextMenu={handleLayerContextMenu(imageElement.id)}
                 onEnterGroup={imageElement.groupId && imageElement.groupId !== enteredGroupId ? makeOnEnterGroup(imageElement) : undefined}
@@ -881,6 +882,7 @@ export function ArtboardFrame({
                 onExpandClick={handleExpandClick(imageElement)}
                 onExpandToFrameClick={handleExpandToFrameClick(imageElement)}
                 isBackgroundImage={imageElement.id === backgroundElementId}
+                sceneHasBackgroundColor={Boolean(layout.backgroundColor)}
               />
             )}
           </div>

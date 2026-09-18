@@ -58,6 +58,7 @@ export function ImageBox({
   onExpandToFrameClick,
   isBackgroundImage,
   suppressFrameGapAffordance,
+  sceneHasBackgroundColor,
   onMouseDown,
   onContextMenu,
   onDoubleClick,
@@ -82,6 +83,10 @@ export function ImageBox({
   isBackgroundImage?: boolean;
   /** True during an active move/resize drag and for a short settle delay after — hides the frame-gap grid/button so they don't flicker in mid-drag. */
   suppressFrameGapAffordance?: boolean;
+  /** True once the scene has its own background color fill — the margin around the frame reads as
+   * filled space at that point, not empty canvas, so the frame-gap grid/button (which exist to flag
+   * genuinely empty space left over) no longer apply there. */
+  sceneHasBackgroundColor?: boolean;
   onMouseDown?: (e: ReactMouseEvent) => void;
   onContextMenu?: (e: ReactMouseEvent) => void;
   onDoubleClick?: (e: ReactMouseEvent) => void;
@@ -125,6 +130,7 @@ export function ImageBox({
     isBackgroundImage &&
     element.hasCoveredFrame &&
     !suppressFrameGapAffordance &&
+    !sceneHasBackgroundColor &&
     !hasGap &&
     !expanding &&
     (gapRight || gapLeft || gapBottom || gapTop);

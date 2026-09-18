@@ -24,6 +24,7 @@ export function DraggableImageElement({
   onExpandClick,
   onExpandToFrameClick,
   isBackgroundImage,
+  sceneHasBackgroundColor,
   onSelect,
   onContextMenu,
   onEnterGroup,
@@ -39,6 +40,7 @@ export function DraggableImageElement({
   onExpandClick?: (e: ReactMouseEvent) => void;
   onExpandToFrameClick?: (e: ReactMouseEvent) => void;
   isBackgroundImage?: boolean;
+  sceneHasBackgroundColor?: boolean;
   onSelect: (e: ReactMouseEvent) => void;
   onContextMenu?: (e: ReactMouseEvent) => void;
   /** Set only when this element belongs to a group that isn't currently "entered" — double-click enters it. */
@@ -232,6 +234,7 @@ export function DraggableImageElement({
       onExpandClick={onExpandClick}
       onExpandToFrameClick={onExpandToFrameClick}
       isBackgroundImage={isBackgroundImage}
+      sceneHasBackgroundColor={sceneHasBackgroundColor}
       suppressFrameGapAffordance={isPositioning}
       onContextMenu={onContextMenu}
       onDoubleClick={
