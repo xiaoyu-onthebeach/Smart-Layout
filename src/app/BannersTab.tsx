@@ -160,6 +160,7 @@ export function BannersTab() {
   const updateLayoutStyle = useAppStore((s) => s.updateLayoutStyle);
   const loadSet = useAppStore((s) => s.loadSet);
   const attachStandalonePage = useAppStore((s) => s.attachStandalonePage);
+  const requestFocusPage = useAppStore((s) => s.requestFocusPage);
 
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
@@ -251,6 +252,7 @@ export function BannersTab() {
     }
     attachStandalonePage(setId, anchorRoot);
     setActiveCanvas(anchorRoot);
+    requestFocusPage(setId);
   }
 
   function renderRow(setId: string) {
