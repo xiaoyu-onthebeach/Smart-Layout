@@ -128,16 +128,6 @@ function isRealLayer(element: LayoutElement): boolean {
   return true;
 }
 
-function BackgroundRow({ color }: { color: string }) {
-  const t = useT();
-  return (
-    <div className="flex h-10 w-full shrink-0 items-center gap-2 rounded-lg py-1 pr-4 pl-1 text-left">
-      <div className="size-8 shrink-0 rounded-lg border border-white/10" style={{ background: color }} />
-      <span className="min-w-0 flex-1 truncate text-[13px] tracking-[-0.01em] text-white">{t('Background')}</span>
-    </div>
-  );
-}
-
 function SceneLayerRows({
   layout,
   isSelected,
@@ -149,7 +139,6 @@ function SceneLayerRows({
 }) {
   return (
     <>
-      <BackgroundRow color={layout.backgroundColor || '#FFFFFF'} />
       {/* Newest-added element first — `elements` itself stays oldest-to-newest (that order is
           also z-stacking order, back-to-front, for ElementRenderer), so only the list's own
           display order is reversed here, not the underlying data. */}
