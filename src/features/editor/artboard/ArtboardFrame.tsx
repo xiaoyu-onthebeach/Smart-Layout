@@ -59,7 +59,10 @@ function focusHandleStyle(handle: ResizeHandle): CSSProperties {
 // FOCUS_STROKE_THICKNESS_EXPANDED, closing into one continuous, evenly-toned full border.
 const FOCUS_STROKE_THICKNESS_IDLE = 6;
 const FOCUS_STROKE_THICKNESS_EXPANDED = 2;
-const FOCUS_STROKE_ARM_LENGTH = 'min(28px, 35%)';
+// Total reach from the corner, curve included — the straight arm beyond the curve piece is this
+// minus FOCUS_BOX_RADIUS (see focusArmSegmentStyle), so this needs to clear that by a real margin
+// or the "arm" all but disappears into the curve itself.
+const FOCUS_STROKE_ARM_LENGTH = 'min(52px, 45%)';
 // Deliberately past the true 50% midpoint — the matching arm growing in from the neighboring
 // corner overlaps it by a couple px rather than meeting it edge-to-edge, so a sub-pixel rounding
 // gap can never open up between them right as they close into a full border.
@@ -73,37 +76,107 @@ const FOCUS_STROKE_OPACITY = 0.8;
 const FOCUS_STROKE_GLOW = 'drop-shadow(0 0 8px rgba(255,255,255,0.25))';
 const FOCUS_STROKE_TRANSITION = 'all 200ms ease';
 const FOCUS_CORNERS = ['nw', 'ne', 'sw', 'se'] as const;
+// Same radius as the box itself (see the two `borderRadius: FOCUS_BOX_RADIUS` container styles
+// below) — the stroke's own corner piece traces an actual quarter-circle at this radius, rather
+// than just rounding a thin bar's own small end-cap, so it reads as part of the same rounded-rect
+// shape instead of a slightly-off approximation of it.
+const FOCUS_BOX_RADIUS = 24;
 
-function focusStrokeSegmentStyle(axis: 'h' | 'v', corner: (typeof FOCUS_CORNERS)[number], expanded: boolean): CSSProperties {
+/**
+ * The curved piece of one corner's own bracket. Built as a 24x24 window (`overflow: hidden`) onto a
+ * 48x48 square that's fully rounded (all four corners, uniform border on all four sides) and offset
+ * so only *this* corner's own quarter peeks through the window — that quarter is a real quarter-
+ * circle stroke, not a straight bar with a rounded end.
+ *
+ * Deliberately NOT built from one 24x24 box with two of its four border-sides colored and the other
+ * two left `transparent` (which is what this looked like at first) — a single element mixing a
+ * colored and a transparent border side leaves a faint miter seam where the two meet, visible once
+ * the whole group gets `opacity`/`drop-shadow` applied (see FocusRectCorners). Giving every side of
+ * the underlying square the *same* color and clipping away the sides we don't want, instead of
+ * coloring only the sides we do, has no such seam to begin with.
+ */
+function FocusCornerCurve({ corner, expanded }: { corner: (typeof FOCUS_CORNERS)[number]; expanded: boolean }) {
+  const thickness = expanded ? FOCUS_STROKE_THICKNESS_EXPANDED : FOCUS_STROKE_THICKNESS_IDLE;
+  const isNorth = corner.includes('n');
+  const isWest = corner.includes('w');
+  const size = FOCUS_BOX_RADIUS * 2;
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        width: FOCUS_BOX_RADIUS,
+        height: FOCUS_BOX_RADIUS,
+        top: isNorth ? 0 : undefined,
+        bottom: !isNorth ? 0 : undefined,
+        left: isWest ? 0 : undefined,
+        right: !isWest ? 0 : undefined,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          width: size,
+          height: size,
+          top: isNorth ? 0 : undefined,
+          bottom: !isNorth ? 0 : undefined,
+          left: isWest ? 0 : undefined,
+          right: !isWest ? 0 : undefined,
+          boxSizing: 'border-box',
+          border: `${thickness}px solid ${FOCUS_STROKE_COLOR}`,
+          borderRadius: FOCUS_BOX_RADIUS,
+          transition: FOCUS_STROKE_TRANSITION,
+        }}
+      />
+    </div>
+  );
+}
+
+/** The straight arm continuing on from one corner's own curve piece, along one of its two edges —
+ * starts exactly `FOCUS_BOX_RADIUS` away from the true corner (right where the curve piece's own
+ * reach ends) so the two meet with no gap or overlap, and grows from there the same way the layer
+ * selection box's own (straight, uncurved) corner arms do. */
+function focusArmSegmentStyle(axis: 'h' | 'v', corner: (typeof FOCUS_CORNERS)[number], expanded: boolean): CSSProperties {
   const thickness = expanded ? FOCUS_STROKE_THICKNESS_EXPANDED : FOCUS_STROKE_THICKNESS_IDLE;
   const half = thickness / 2;
-  return {
-    position: 'absolute',
-    background: FOCUS_STROKE_COLOR,
-    transition: FOCUS_STROKE_TRANSITION,
-    borderRadius: half,
-    top: corner.includes('n') ? -half : undefined,
-    bottom: corner.includes('s') ? -half : undefined,
-    left: corner.includes('w') ? -half : undefined,
-    right: corner.includes('e') ? -half : undefined,
-    width: axis === 'h' ? (expanded ? FOCUS_STROKE_OVERLAP : FOCUS_STROKE_ARM_LENGTH) : thickness,
-    height: axis === 'v' ? (expanded ? FOCUS_STROKE_OVERLAP : FOCUS_STROKE_ARM_LENGTH) : thickness,
-  };
+  const reach = expanded ? FOCUS_STROKE_OVERLAP : FOCUS_STROKE_ARM_LENGTH;
+  // The straight run beyond the curve piece — whatever's left of the arm's own total reach from the
+  // corner once the curve's own FOCUS_BOX_RADIUS is subtracted, floored at 0 so a box too small for
+  // the curve to fit twice over never goes negative.
+  const armLength = `max(0px, calc(${reach} - ${FOCUS_BOX_RADIUS}px))`;
+  const style: CSSProperties = { position: 'absolute', background: FOCUS_STROKE_COLOR, transition: FOCUS_STROKE_TRANSITION, borderRadius: half };
+  if (axis === 'h') {
+    style.top = corner.includes('n') ? -half : undefined;
+    style.bottom = corner.includes('s') ? -half : undefined;
+    style.height = thickness;
+    style.width = armLength;
+    if (corner.includes('w')) style.left = FOCUS_BOX_RADIUS;
+    else style.right = FOCUS_BOX_RADIUS;
+  } else {
+    style.left = corner.includes('w') ? -half : undefined;
+    style.right = corner.includes('e') ? -half : undefined;
+    style.width = thickness;
+    style.height = armLength;
+    if (corner.includes('n')) style.top = FOCUS_BOX_RADIUS;
+    else style.bottom = FOCUS_BOX_RADIUS;
+  }
+  return style;
 }
 
 /** Shared by both the confirmed and editable focus-box states — the only difference between them
  * is what `expanded` gets computed from (plain hover for the confirmed box; hover-or-dragging,
  * with the release-suppresses-hover behavior, for the editable one). The 80%-white tone and the
  * soft glow are both applied here, once, to the whole group — see FOCUS_STROKE_OPACITY/_GLOW's own
- * comments for why that (rather than per-segment) is what keeps overlapping segments from reading
- * as a darker/brighter seam. */
+ * comments for why that (rather than per-piece) is what keeps overlapping pieces from reading as a
+ * darker/brighter seam. */
 function FocusRectCorners({ expanded }: { expanded: boolean }) {
   return (
     <div className="pointer-events-none absolute inset-0" style={{ opacity: FOCUS_STROKE_OPACITY, filter: FOCUS_STROKE_GLOW }}>
       {FOCUS_CORNERS.map((corner) => (
         <div key={corner}>
-          <div style={focusStrokeSegmentStyle('h', corner, expanded)} />
-          <div style={focusStrokeSegmentStyle('v', corner, expanded)} />
+          <FocusCornerCurve corner={corner} expanded={expanded} />
+          <div style={focusArmSegmentStyle('h', corner, expanded)} />
+          <div style={focusArmSegmentStyle('v', corner, expanded)} />
         </div>
       ))}
     </div>
@@ -974,7 +1047,7 @@ export function ArtboardFrame({
                   width: `${(layout.focusRect.w / nativeWidth) * 100}%`,
                   height: `${(layout.focusRect.h / nativeHeight) * 100}%`,
                   background: 'rgba(255,255,255,0.1)',
-                  borderRadius: 24,
+                  borderRadius: FOCUS_BOX_RADIUS,
                 }}
               >
                 {/* Hover affordance so the box still reads as clickable (re-opens editing) even
@@ -1007,7 +1080,7 @@ export function ArtboardFrame({
                       // out immediately (no transition on box-shadow), same look as the confirmed
                       // box until the next drag brings it back.
                       boxShadow: focusRectDragging ? '0 0 0 9999px rgba(38,38,44,0.5)' : undefined,
-                      borderRadius: 24,
+                      borderRadius: FOCUS_BOX_RADIUS,
                     }}
                     onMouseDown={startFocusRectMove}
                     onMouseEnter={() => setFocusRectHovered(true)}
