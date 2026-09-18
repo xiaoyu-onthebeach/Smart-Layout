@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { Children, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, Search, Upload } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
@@ -47,11 +47,23 @@ const LIBRARY_COLLECTIONS: LibraryCollection[] = [
 function AssetGrid({ children, empty }: { children: ReactNode; empty: boolean }) {
   const t = useT();
   if (empty) return <div className="px-1 py-6 text-center text-sm text-white/45">{t('No images to show.')}</div>;
-  // A real grid (not a CSS multi-column masonry) — with an odd item count, multi-column's own
-  // height-balancing can just as easily leave the last image alone in the *right* column as the
-  // left one, depending on every other image's own aspect ratio. A grid always flows items
-  // left-to-right, row by row, so a lone last item reliably lands in the grid's first (left) column.
-  return <div className="grid grid-cols-2 gap-2">{children}</div>;
+  // Two independent stacked columns, not a CSS grid — a grid's row height is set by the *taller*
+  // of the pair of images sharing that row, so a wide/short image next to a tall one gets stretched
+  // to match and leaves visible empty space below itself instead of ending where its own aspect
+  // ratio says it should. Splitting by index parity into two flex columns instead means every
+  // image's own container height comes purely from its own ratio, with no neighbor involved — and
+  // it's still deterministic (not a CSS multi-column masonry's own height-balancing, which could
+  // just as easily leave a lone last item in the *right* column as the left one): an odd item count
+  // always lands its last image in the left column, same as a plain row-by-row grid would.
+  const items = Children.toArray(children);
+  const left = items.filter((_, i) => i % 2 === 0);
+  const right = items.filter((_, i) => i % 2 === 1);
+  return (
+    <div className="flex w-full items-start gap-2">
+      <div className="flex min-w-0 flex-1 flex-col gap-2">{left}</div>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">{right}</div>
+    </div>
+  );
 }
 
 function DraggableThumb({ url, label }: { url: string; label?: string }) {
