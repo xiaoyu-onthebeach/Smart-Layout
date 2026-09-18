@@ -61,8 +61,6 @@ export function ImageBox({
   onMouseDown,
   onContextMenu,
   onDoubleClick,
-  onMouseEnter,
-  onMouseLeave,
   children,
 }: {
   element: LayoutElement;
@@ -87,8 +85,6 @@ export function ImageBox({
   onMouseDown?: (e: ReactMouseEvent) => void;
   onContextMenu?: (e: ReactMouseEvent) => void;
   onDoubleClick?: (e: ReactMouseEvent) => void;
-  onMouseEnter?: () => void;
-  onMouseLeave?: () => void;
   children?: ReactNode;
 }) {
   const t = useT();
@@ -226,8 +222,6 @@ export function ImageBox({
         onMouseDown={onMouseDown}
         onContextMenu={onContextMenu}
         onDoubleClick={onDoubleClick}
-        onMouseEnter={onMouseEnter}
-        onMouseLeave={onMouseLeave}
       >
         {hasGap && <GridLines />}
         <div

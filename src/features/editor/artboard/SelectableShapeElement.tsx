@@ -1,4 +1,4 @@
-import { useState, type MouseEvent as ReactMouseEvent } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
 import { boxShadowCss } from '@/lib/shadow';
@@ -33,9 +33,6 @@ export function SelectableShapeElement({
   const { startDragOrDeferredSelect, startResize, startRotate } = useElementDrag(layoutId, element.id, scale);
   const { frame, style } = element;
   const isLine = element.shape === 'line';
-  // Drives SelectionBoundingBox's own idle-vs-expanded look — see DraggableImageElement's own copy
-  // of this same comment for why it's lifted up here instead of detected inside that overlay itself.
-  const [hovered, setHovered] = useState(false);
 
   return (
     <div
@@ -55,8 +52,6 @@ export function SelectableShapeElement({
         startDragOrDeferredSelect(e, frame, onSelect);
       }}
       onContextMenu={onContextMenu}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       onDoubleClick={
         onEnterGroup &&
         ((e) => {
@@ -81,7 +76,6 @@ export function SelectableShapeElement({
       </div>
       {selected && (
         <SelectionBoundingBox
-          hovered={hovered}
           onResizeStart={(handle, e) => startResize(e, handle, frame)}
           onRotateStart={(_handle, e) => {
             const boxEl = (e.target as HTMLElement).closest('[data-resize-box]') as HTMLElement | null;

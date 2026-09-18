@@ -47,10 +47,6 @@ export function DraggableImageElement({
   const updateElement = useAppStore((s) => s.updateElement);
   const { startResize, startRotate } = useElementDrag(layoutId, element.id, scale);
   const { frame, pendingExpand } = element;
-  // Drives SelectionBoundingBox's own idle-vs-expanded look — lifted up here since that overlay is
-  // `pointer-events: none` over its own interior (so a click there still falls through to start a
-  // move-drag) and so can't detect hover on itself.
-  const [hovered, setHovered] = useState(false);
   // The "finish the drag first" affordances (expand button + prompt entry) only make sense once
   // the box has actually settled — showing them mid-drag is just noise following the cursor.
   const [isDraggingExpand, setIsDraggingExpand] = useState(false);
@@ -238,8 +234,6 @@ export function DraggableImageElement({
       isBackgroundImage={isBackgroundImage}
       suppressFrameGapAffordance={isPositioning}
       onContextMenu={onContextMenu}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       onDoubleClick={
         onEnterGroup &&
         ((e) => {
@@ -263,7 +257,6 @@ export function DraggableImageElement({
     >
       {selected && (
         <SelectionBoundingBox
-          hovered={hovered}
           onResizeStart={(handle, e) => {
             if (e.metaKey) {
               startExpandResize(e, handle);
