@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
@@ -45,6 +45,9 @@ export function EditableTextElement({
   const ref = useRef<HTMLDivElement>(null);
   const updateElement = useAppStore((s) => s.updateElement);
   const { startDragOrDeferredSelect, startRotate } = useElementDrag(layoutId, element.id, scale);
+  // Drives SelectionBoundingBox's own idle-vs-expanded look — see DraggableImageElement's own copy
+  // of this same comment for why it's lifted up here instead of detected inside that overlay itself.
+  const [hovered, setHovered] = useState(false);
 
   useEffect(() => {
     if (!isEditing || !ref.current) return;
@@ -178,6 +181,8 @@ export function EditableTextElement({
         onStartEditing();
       }}
       onContextMenu={onContextMenu}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       <div
         ref={ref}
@@ -205,6 +210,7 @@ export function EditableTextElement({
       </div>
       {selected && (
         <SelectionBoundingBox
+          hovered={hovered}
           onResizeStart={(handle, e) => startFontResize(e, handle)}
           onRotateStart={(_handle, e) => {
             const boxEl = (e.target as HTMLElement).closest('[data-resize-box]') as HTMLElement | null;
