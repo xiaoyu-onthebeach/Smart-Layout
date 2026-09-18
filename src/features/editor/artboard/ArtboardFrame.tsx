@@ -400,7 +400,12 @@ export function ArtboardFrame({
 
   const imageElement = layout.elements.find((el) => el.kind === 'image');
   const hasImage = Boolean(imageElement?.imageUrl);
-  const extraElements = layout.elements.filter((el) => el.slot === null && el.visible);
+  // Excludes the filled hero once it's actually filled — a freshly dropped image (as opposed to
+  // one seeded into a pre-existing named slot) gets `slot: null` same as any decorative element,
+  // so without this it'd double up here *and* in the dedicated hero block below, rendering two
+  // fully overlapping copies of the same element (each with its own independent expand icon,
+  // frame-gap grid, etc. — everywhere else the overlap was pixel-identical enough to go unnoticed).
+  const extraElements = layout.elements.filter((el) => el.slot === null && el.visible && !(hasImage && el.id === imageElement?.id));
 
   // The "background image" to keep visible while every other layer hides during a focus-rect
   // drag: the real hero slot if it's filled, otherwise whichever image-kind decorative layer was
@@ -989,6 +994,7 @@ export function ArtboardFrame({
                   onExpandClick={handleExpandClick(el)}
                   onExpandToFrameClick={handleExpandToFrameClick(el)}
                   isBackgroundImage={el.id === backgroundElementId}
+                  sceneHasBackgroundColor={Boolean(layout.backgroundColor)}
                   onSelect={makeOnSelect(el)}
                   onContextMenu={handleLayerContextMenu(el.id)}
                   onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
