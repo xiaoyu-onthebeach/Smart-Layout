@@ -8,6 +8,7 @@ import { layoutHasSiblingSizes } from '@/lib/match-select';
 import { useT } from '@/lib/i18n';
 import { exportLayout, type ExportFileType, type ExportScale } from '@/lib/export-image';
 import { isGradient } from '@/lib/gradient';
+import { isValidHex } from '@/lib/color';
 import { ColorPickerPopover } from './ColorPickerPopover';
 import type { Layout, LayoutElement, ShadowStyle } from '@/types';
 
@@ -501,21 +502,74 @@ export function InlineRow({ label, children }: { label: string; children: ReactN
   );
 }
 
+/** Local "type to commit" state for a hex text field — mirrors the same draft/blur-commit/revert-
+ * on-invalid pattern `ColorPickerPopover`'s own hex row uses, so typing a color code here behaves
+ * identically to typing one inside the popover. */
+function useHexDraft(color: string, onChange: (color: string) => void) {
+  const gradient = isGradient(color);
+  const [draft, setDraft] = useState(gradient ? '' : color);
+  useEffect(() => setDraft(gradient ? '' : color), [color, gradient]);
+  function commit() {
+    if (isValidHex(draft)) onChange(draft.startsWith('#') ? draft.toUpperCase() : `#${draft.toUpperCase()}`);
+    else setDraft(color);
+  }
+  return { gradient, draft, setDraft, commit };
+}
+
+/**
+ * Local "type to commit" state for the opacity percentage shown next to a fill's hex code. There's
+ * no per-fill alpha concept in the data model yet — like `PositionSection`'s alignment icons and
+ * anchor preview elsewhere in this file, it's a self-contained, no-op preview of the control rather
+ * than something wired to a real value, so typing a number here just clamps/redisplays it.
+ */
+function useOpacityDraft() {
+  const [draft, setDraft] = useState('100');
+  function commit() {
+    setDraft(String(Math.round(Math.min(100, Math.max(0, Number(draft) || 0)))));
+  }
+  return { draft, setDraft, commit };
+}
+
 /** Fill/Border's value control — swatch, hex, and opacity all inside one pill, divided by a
  * hairline, rather than a separate swatch button beside a field (the shared `ColorRow`'s layout). */
 export function InlineColorField({ color, onChange }: { color: string; onChange: (color: string) => void }) {
   const t = useT();
+  const [open, setOpen] = useState(false);
+  const hex = useHexDraft(color, onChange);
+  const opacity = useOpacityDraft();
   return (
-    <div className="flex h-9 shrink-0 items-center justify-between rounded-lg px-2" style={{ width: INLINE_VALUE_COL_WIDTH, background: '#26262C' }}>
+    <div
+      className="flex h-9 shrink-0 items-center justify-between rounded-lg px-2 transition-colors"
+      style={{ width: INLINE_VALUE_COL_WIDTH, background: open ? '#2F2F37' : '#26262C' }}
+    >
       <div className="flex min-w-0 items-center gap-2">
-        <ColorPickerPopover color={color} onChange={onChange}>
+        <ColorPickerPopover color={color} onChange={onChange} onOpenChange={setOpen}>
           <button type="button" aria-label={t('Color')} className="size-6 shrink-0 rounded-full border border-black/20" style={{ background: color }} />
         </ColorPickerPopover>
-        <span className="truncate text-[11px] text-white uppercase">{isGradient(color) ? t('Linear') : color}</span>
+        {hex.gradient ? (
+          <span className="truncate text-[11px] text-white uppercase">{t('Linear')}</span>
+        ) : (
+          <input
+            value={hex.draft}
+            onChange={(e) => hex.setDraft(e.target.value)}
+            onBlur={hex.commit}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            className="w-full min-w-0 bg-transparent text-[11px] text-white uppercase outline-none"
+          />
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <div className="h-4 w-px shrink-0" style={{ background: '#40404A' }} />
-        <span className="text-[11px] text-white/65">100%</span>
+        <div className="flex shrink-0 items-center">
+          <input
+            value={opacity.draft}
+            onChange={(e) => opacity.setDraft(e.target.value.replace(/[^0-9]/g, ''))}
+            onBlur={opacity.commit}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            className="w-5 bg-transparent text-right text-[11px] text-white/65 outline-none"
+          />
+          <span className="text-[11px] text-white/65">%</span>
+        </div>
       </div>
     </div>
   );
@@ -523,16 +577,41 @@ export function InlineColorField({ color, onChange }: { color: string; onChange:
 
 export function ColorRow({ color, onChange }: { color: string; onChange: (color: string) => void }) {
   const t = useT();
+  const [open, setOpen] = useState(false);
+  const hex = useHexDraft(color, onChange);
+  const opacity = useOpacityDraft();
   return (
     <div className="flex items-center gap-2">
-      <ColorPickerPopover color={color} onChange={onChange}>
+      <ColorPickerPopover color={color} onChange={onChange} onOpenChange={setOpen}>
         <button type="button" aria-label={t('Color')} className="size-8 shrink-0 rounded-full border border-black/20" style={{ background: color }} />
       </ColorPickerPopover>
-      <div className="flex h-8 flex-1 items-center gap-2 rounded-lg border border-chrome-border bg-chrome-border-subtle px-3 text-sm text-chrome-fg">
+      <div
+        className="flex h-8 flex-1 items-center gap-2 rounded-lg border border-chrome-border bg-chrome-border-subtle px-3 text-sm text-chrome-fg transition-colors"
+        style={open ? { background: '#2F2F37', borderColor: '#2F2F37' } : undefined}
+      >
         {/* A gradient's own CSS string is an implementation detail, not something worth spelling
             out in full here — "Linear" names the fill kind the same way a hex value names a color. */}
-        <span className="flex-1 truncate uppercase">{isGradient(color) ? t('Linear') : color}</span>
-        <span className="shrink-0 text-white/45">100%</span>
+        {hex.gradient ? (
+          <span className="flex-1 truncate uppercase">{t('Linear')}</span>
+        ) : (
+          <input
+            value={hex.draft}
+            onChange={(e) => hex.setDraft(e.target.value)}
+            onBlur={hex.commit}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            className="w-full min-w-0 flex-1 bg-transparent uppercase outline-none"
+          />
+        )}
+        <div className="flex shrink-0 items-center text-white/45">
+          <input
+            value={opacity.draft}
+            onChange={(e) => opacity.setDraft(e.target.value.replace(/[^0-9]/g, ''))}
+            onBlur={opacity.commit}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            className="w-6 bg-transparent text-right outline-none"
+          />
+          <span>%</span>
+        </div>
       </div>
     </div>
   );

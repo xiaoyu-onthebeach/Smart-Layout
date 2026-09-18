@@ -15,9 +15,7 @@ export const sizePresets: SizePreset[] = [
   { id: 'amazon-980x55', platformId: 'amazon', label: '980x55', width: 980, height: 55, required: false, ruleSetId: NO_RULES_ID },
   { id: 'amazon-homepage-banner-stripe', platformId: 'amazon', label: 'Homepage Banner (Stripe)', width: 640, height: 100, required: false, ruleSetId: NO_RULES_ID },
   { id: 'amazon-home-page-banner-large', platformId: 'amazon', label: 'Home Page Banner (Large)', width: 600, height: 500, required: false, ruleSetId: NO_RULES_ID },
-  { id: 'amazon-deals-page-banner', platformId: 'amazon', label: 'Deals Page Banner', width: 640, height: 100, required: false, ruleSetId: NO_RULES_ID },
   { id: 'amazon-detail-page-banner', platformId: 'amazon', label: 'Detail Page Banner', width: 828, height: 250, required: false, ruleSetId: NO_RULES_ID },
-  { id: 'amazon-thank-you-page-banner', platformId: 'amazon', label: 'Thank You Page Banner', width: 640, height: 100, required: false, ruleSetId: NO_RULES_ID },
   { id: 'amazon-detail-page-banner-tablet', platformId: 'amazon', label: 'Detail Page Banner (Tablet)', width: 1940, height: 500, required: false, ruleSetId: NO_RULES_ID },
   { id: 'amazon-encore-banner', platformId: 'amazon', label: 'Encore Banner', width: 2560, height: 2560, required: false, ruleSetId: NO_RULES_ID },
 

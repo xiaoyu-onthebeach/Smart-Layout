@@ -379,7 +379,19 @@ const POPOVER_WIDTH = 308;
  * Border swatch is clicked. Both tabs are fully wired to `onChange`: the Color tab commits a plain
  * hex string, the Gradient tab commits a serialized `linear-gradient(...)` string into the very
  * same field (see `src/lib/gradient.ts` for how callers tell the two apart). */
-export function ColorPickerPopover({ color, onChange, children }: { color: string; onChange: (value: string) => void; children: ReactNode }) {
+export function ColorPickerPopover({
+  color,
+  onChange,
+  onOpenChange,
+  children,
+}: {
+  color: string;
+  onChange: (value: string) => void;
+  /** Lets a caller (e.g. the Fill row) reflect this popover's open state in its own styling —
+   * highlighting the row while its own color picker is the thing open. */
+  onOpenChange?: (open: boolean) => void;
+  children: ReactNode;
+}) {
   const t = useT();
   const [tab, setTab] = useState<'color' | 'gradient'>(() => (isGradient(color) ? 'gradient' : 'color'));
   const [open, setOpen] = useState(false);
@@ -411,6 +423,7 @@ export function ColorPickerPopover({ color, onChange, children }: { color: strin
       if (triggerRect && panelRect) setAnchor({ left: panelRect.left, top: triggerRect.top });
     }
     setOpen(next);
+    onOpenChange?.(next);
   }
 
   const triggerWithRef = isValidElement(children) ? cloneElement(children as ReactElement<{ ref?: Ref<HTMLElement> }>, { ref: triggerRef }) : children;
