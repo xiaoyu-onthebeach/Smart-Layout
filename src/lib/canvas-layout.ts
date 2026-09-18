@@ -95,6 +95,27 @@ export function isPrimaryPage(state: Pick<AppState, 'pageGroupIdByPage' | 'pageG
   return !group || group.memberIds[0] === pageId;
 }
 
+/** `pageId`'s own root primary — itself if it's a bare standalone page or already a group's
+ * `memberIds[0]`, otherwise that group's primary. */
+function rootPrimaryId(state: Pick<AppState, 'pageGroupIdByPage' | 'pageGroups'>, pageId: string): string {
+  const group = state.pageGroups[state.pageGroupIdByPage[pageId]];
+  return group ? group.memberIds[0] : pageId;
+}
+
+/** Whether `pageId` traces back to the very first primary <-> child size set ever created in this
+ * project — the demo-only prototype auto-fill (see prototype-size-fill.ts) and mocked overlay
+ * composition are meant to show off the concept exactly once, not repeat it for every later
+ * primary a user adds via "+". `pageOrder`'s own creation order plus `isPrimaryPage` finds that
+ * first primary: whichever page was created earliest that's *itself* still a primary today (a
+ * later page's own primary-ness can't retroactively make it "the first" one — it's always
+ * whichever root primary existed before any other, and a root primary's identity never changes
+ * once assigned, short of an explicit `setGroupPrimary` reassignment).  */
+export function isFirstPrimaryGroup(state: Pick<AppState, 'pageOrder' | 'pageGroupIdByPage' | 'pageGroups'>, pageId: string): boolean {
+  const firstPrimaryId = state.pageOrder.find((id) => isPrimaryPage(state, id));
+  if (!firstPrimaryId) return true;
+  return rootPrimaryId(state, pageId) === firstPrimaryId;
+}
+
 /** Whether the scene a given layout belongs to is a "primary size banner" — a bare standalone page,
  * or a real group's own primary (`memberIds[0]`) — as opposed to one of that group's own added
  * sizes. Used to gate primary-only editor controls (e.g. Position mode) off of a sibling's panel. */

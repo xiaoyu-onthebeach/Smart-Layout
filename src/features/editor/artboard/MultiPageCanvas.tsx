@@ -16,6 +16,7 @@ import { QuickSizeMenu, type QuickSizeResult } from './QuickSizeMenu';
 import { SceneContextMenu } from './SceneContextMenu';
 import {
   canvasRootOf,
+  isFirstPrimaryGroup,
   isPrimaryPage,
   PAGE_GAP,
   PAGE_TITLE_RESERVE,
@@ -1251,27 +1252,33 @@ export function MultiPageCanvas() {
             y: source.pos.y + source.layout.size.height + PAGE_GAP,
           };
 
+    // Both of these are a demo-only convenience meant to show off the auto-fill concept once —
+    // repeating it for every later primary a user adds via "+" would just be redundant noise on
+    // top of a group they're deliberately building fresh. See isFirstPrimaryGroup's own comment.
+    const showDemoFill = isFirstPrimaryGroup(useAppStore.getState(), source.id);
+
     let cursorX = anchor.x;
     const newIds: string[] = [];
     const newHeightById: Record<string, number> = {};
     for (const result of results) {
       const setId = nextId('set');
       const productId = nextId('product');
-      const filledLayout = applyPrototypeSizeFill(
-        createAdaptedLayout(source.layout, {
-          setId,
-          productId,
-          width: result.width,
-          height: result.height,
-          label: result.label,
-          presetId: result.presetId,
-          ruleSetId: result.ruleSetId,
-        }),
-      );
+      const adaptedLayout = createAdaptedLayout(source.layout, {
+        setId,
+        productId,
+        width: result.width,
+        height: result.height,
+        label: result.label,
+        presetId: result.presetId,
+        ruleSetId: result.ruleSetId,
+      });
+      const filledLayout = showDemoFill ? applyPrototypeSizeFill(adaptedLayout) : adaptedLayout;
       // Mocks the finished composition (coupon/logo/headline/button/bottom_banner/product shot)
       // onto every freshly generated size, per public/samples/position-overlay-spec.md — percentage
       // positions keyed off the new size's own wide/square/tall aspect-ratio archetype.
-      const newLayout: Layout = { ...filledLayout, elements: [...filledLayout.elements, ...buildOverlayElements(result.width, result.height)] };
+      const newLayout: Layout = showDemoFill
+        ? { ...filledLayout, elements: [...filledLayout.elements, ...buildOverlayElements(result.width, result.height)] }
+        : filledLayout;
       const newSet: BannerSet = {
         id: setId,
         name: result.label,
