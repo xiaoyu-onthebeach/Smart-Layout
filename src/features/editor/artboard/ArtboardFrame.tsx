@@ -53,6 +53,50 @@ function focusHandleStyle(handle: ResizeHandle): CSSProperties {
   return style;
 }
 
+// The focus box's own corner-bracket outline — idle, only these 4 short arms show; hovering the
+// box (or, for the editable one, actively dragging it) grows them out to the midpoint of their own
+// edge via a plain width/height transition, closing into a full border. Same technique/thickness/
+// glow as the layer selection box's own corner brackets, just in this box's own established
+// 80%-white (not pure white) stroke color.
+const FOCUS_STROKE_THICKNESS = 6;
+const FOCUS_STROKE_ARM_LENGTH = 'min(28px, 35%)';
+const FOCUS_STROKE_COLOR = 'rgba(255,255,255,0.8)';
+const FOCUS_STROKE_GLOW = '0 0 8px rgba(255,255,255,0.25)';
+const FOCUS_STROKE_TRANSITION = 'width 200ms ease, height 200ms ease';
+const FOCUS_CORNERS = ['nw', 'ne', 'sw', 'se'] as const;
+
+function focusStrokeSegmentStyle(axis: 'h' | 'v', corner: (typeof FOCUS_CORNERS)[number], expanded: boolean): CSSProperties {
+  return {
+    position: 'absolute',
+    background: FOCUS_STROKE_COLOR,
+    boxShadow: FOCUS_STROKE_GLOW,
+    transition: FOCUS_STROKE_TRANSITION,
+    borderRadius: FOCUS_STROKE_THICKNESS / 2,
+    top: corner.includes('n') ? -FOCUS_STROKE_THICKNESS / 2 : undefined,
+    bottom: corner.includes('s') ? -FOCUS_STROKE_THICKNESS / 2 : undefined,
+    left: corner.includes('w') ? -FOCUS_STROKE_THICKNESS / 2 : undefined,
+    right: corner.includes('e') ? -FOCUS_STROKE_THICKNESS / 2 : undefined,
+    width: axis === 'h' ? (expanded ? '50%' : FOCUS_STROKE_ARM_LENGTH) : FOCUS_STROKE_THICKNESS,
+    height: axis === 'v' ? (expanded ? '50%' : FOCUS_STROKE_ARM_LENGTH) : FOCUS_STROKE_THICKNESS,
+  };
+}
+
+/** Shared by both the confirmed and editable focus-box states — the only difference between them
+ * is what `expanded` gets computed from (plain hover for the confirmed box; hover-or-dragging,
+ * with the release-suppresses-hover behavior, for the editable one). */
+function FocusRectCorners({ expanded }: { expanded: boolean }) {
+  return (
+    <div className="pointer-events-none absolute inset-0">
+      {FOCUS_CORNERS.map((corner) => (
+        <div key={corner}>
+          <div style={focusStrokeSegmentStyle('h', corner, expanded)} />
+          <div style={focusStrokeSegmentStyle('v', corner, expanded)} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const EXPAND_DURATION_MS = 5000;
 
 /** The frame a shape-tool drag should produce — plain bounding box for rect/ellipse, but a 1px-
@@ -202,6 +246,20 @@ export function ArtboardFrame({
   // box while it's still being adjusted, then reappears the instant the mouse is released.
   const [focusRectDragging, setFocusRectDragging] = useState(false);
   const isPickingFocus = pickingFocusForLayoutId === layoutId;
+
+  // Drives the focus box's own corner-brackets-vs-full-border look — hovering either box state (or
+  // actively dragging the editable one) grows its corner strokes into a full border; releasing a
+  // drag always snaps back to corners-only, even if the cursor is still sitting on the box, via
+  // `suppressFocusHover` blocking the ordinary hover state from immediately re-expanding it until
+  // the cursor actually leaves and re-enters (same technique the layer selection box's own hover-
+  // vs-drag corner brackets use).
+  const [focusRectHovered, setFocusRectHovered] = useState(false);
+  const [confirmedRectHovered, setConfirmedRectHovered] = useState(false);
+  const [suppressFocusHover, setSuppressFocusHover] = useState(false);
+  useEffect(() => {
+    if (!focusRectHovered) setSuppressFocusHover(false);
+  }, [focusRectHovered]);
+  const focusRectExpanded = focusRectDragging || (focusRectHovered && !suppressFocusHover);
 
   // Entering picking mode seeds the box immediately — a fresh centered DEFAULT_FOCUS_RECT_SIZE
   // square, or the existing focusRect if one's already set (so "Change" edits it in place instead
@@ -438,6 +496,7 @@ export function ArtboardFrame({
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       setFocusRectDragging(false);
+      setSuppressFocusHover(true);
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -478,6 +537,7 @@ export function ArtboardFrame({
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       setFocusRectDragging(false);
+      setSuppressFocusHover(true);
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -891,14 +951,15 @@ export function ArtboardFrame({
               // same as "Change"), which switches this back into the fully editable state below —
               // same as re-entering via the "Change" button.
               <div
-                className="group/focus-rect-confirmed pointer-events-auto absolute cursor-pointer border-3"
+                className="group/focus-rect-confirmed pointer-events-auto absolute cursor-pointer"
                 onClick={() => startPickingFocus(layoutId)}
+                onMouseEnter={() => setConfirmedRectHovered(true)}
+                onMouseLeave={() => setConfirmedRectHovered(false)}
                 style={{
                   left: `${(layout.focusRect.x / nativeWidth) * 100}%`,
                   top: `${(layout.focusRect.y / nativeHeight) * 100}%`,
                   width: `${(layout.focusRect.w / nativeWidth) * 100}%`,
                   height: `${(layout.focusRect.h / nativeHeight) * 100}%`,
-                  borderColor: 'rgba(255,255,255,0.8)',
                   background: 'rgba(255,255,255,0.1)',
                   borderRadius: 16,
                 }}
@@ -906,6 +967,7 @@ export function ArtboardFrame({
                 {/* Hover affordance so the box still reads as clickable (re-opens editing) even
                     once it's already settled, not just while it's mid-edit. */}
                 <div className="absolute inset-0 rounded-[inherit] bg-white/0 transition-colors group-hover/focus-rect-confirmed:bg-white/10" />
+                <FocusRectCorners expanded={confirmedRectHovered} />
               </div>
             ) : (
               focusDrawRect && (
@@ -917,13 +979,12 @@ export function ArtboardFrame({
                       with no way to dismiss it except that one small button. */}
                   <div className="pointer-events-auto absolute inset-0" onClick={confirmFocusRect} />
                   <div
-                    className="group/focus-rect pointer-events-auto absolute cursor-move border-3 transition-colors"
+                    className="group/focus-rect pointer-events-auto absolute cursor-move transition-colors"
                     style={{
                       left: `${(focusDrawRect.x / nativeWidth) * 100}%`,
                       top: `${(focusDrawRect.y / nativeHeight) * 100}%`,
                       width: `${(focusDrawRect.w / nativeWidth) * 100}%`,
                       height: `${(focusDrawRect.h / nativeHeight) * 100}%`,
-                      borderColor: 'rgba(255,255,255,0.8)',
                       // A "spotlight": an enormous, non-blurred shadow spread fills the entire
                       // rest of the (clipped, `overflow-hidden`) overlay with the dim color, while
                       // the box's own background stays fully transparent — so only the area inside
@@ -933,12 +994,15 @@ export function ArtboardFrame({
                       borderRadius: 16,
                     }}
                     onMouseDown={startFocusRectMove}
+                    onMouseEnter={() => setFocusRectHovered(true)}
+                    onMouseLeave={() => setFocusRectHovered(false)}
                   >
                     {/* Hover affordance while the box is just sitting there waiting to be adjusted —
                         a subtle white wash, gone again the instant an actual drag starts (`active`
                         already covers mid-drag via the box's own :active state, but this stays
                         visible on hover alone too, before any mousedown). */}
                     <div className="absolute inset-0 rounded-[inherit] bg-white/0 transition-colors group-hover/focus-rect:bg-white/10" />
+                    <FocusRectCorners expanded={focusRectExpanded} />
                     {RESIZE_HANDLES.map((handle) => (
                       <div key={handle} style={focusHandleStyle(handle)} onMouseDown={(e) => startFocusRectResize(handle, e)} />
                     ))}
