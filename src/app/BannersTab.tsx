@@ -15,7 +15,7 @@ import type { BannerSet } from '@/types';
 /** Every new main size added via the left panel's "+" starts at this size — a plain empty frame,
  * disambiguated against existing names (see nextAvailableName) rather than offering a choice of
  * starting ratio. */
-const DEFAULT_MAIN_SIZE = { width: 600, height: 600, label: 'Main Square' };
+const DEFAULT_MAIN_SIZE = { width: 600, height: 500, label: 'Main Square' };
 
 function BannerRow({
   width,
