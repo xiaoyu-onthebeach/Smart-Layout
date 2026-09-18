@@ -770,14 +770,20 @@ export const BORDER_STYLE_ICONS: Record<'none' | 'solid' | 'dashed' | 'dotted', 
 // Reused for every corner via CSS rotation (see the per-corner radius row below) — one asset, four orientations.
 const CORNER_ROTATIONS = [0, 90, -90, -180];
 
+/** The custom left/right drag glyph shown while hovering or actively scrubbing a radius field —
+ * `ew-resize` is the fallback for any browser that can't load the custom cursor image. */
+const SCRUB_CURSOR = "url('/icons/drag-cursor.svg') 16 16, ew-resize";
+
 /**
  * A number field that doubles as a drag-to-scrub control — mousedown-and-drag left/right adjusts
  * the value 1:1 with however many px the cursor has moved from where the drag started, tracked via
  * window-level listeners so a fast drag isn't capped by the field's own small width (the cursor can
  * leave it entirely and the drag keeps tracking). A press that never moves past a few px still
  * resolves as a normal click, so the field stays directly typable too. Hovering (or actively
- * dragging) swaps the background to `#2F2F37` and the cursor to the browser's own `ew-resize`
- * (left/right) glyph, so the affordance reads the same everywhere this is used.
+ * dragging) swaps the background to `#2F2F37` and the cursor to `SCRUB_CURSOR`, so the affordance
+ * reads the same everywhere this is used. While actively dragging, the cursor is set on `body`
+ * (not just this field) so it stays the drag glyph even once the mouse has left the field, matching
+ * how the drag itself keeps tracking past the field's own edge.
  */
 function ScrubbableNumberField({
   value,
@@ -814,6 +820,7 @@ function ScrubbableNumberField({
         // Drops the caret/selection before the drag takes over, so dragging across the page never
         // also drags out a native text selection underneath it.
         inputRef.current?.blur();
+        document.body.style.cursor = SCRUB_CURSOR;
       }
       if (moved) {
         ev.preventDefault();
@@ -824,6 +831,7 @@ function ScrubbableNumberField({
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       setDragging(false);
+      document.body.style.cursor = '';
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -837,7 +845,7 @@ function ScrubbableNumberField({
       onMouseDown={handleMouseDown}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{ background: highlighted ? '#2F2F37' : undefined, cursor: highlighted ? 'ew-resize' : undefined }}
+      style={{ background: highlighted ? '#2F2F37' : undefined, cursor: highlighted ? SCRUB_CURSOR : undefined }}
     >
       {icon}
       <input
