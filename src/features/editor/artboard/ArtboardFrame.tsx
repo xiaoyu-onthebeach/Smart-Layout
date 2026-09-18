@@ -143,7 +143,8 @@ function focusArmSegmentStyle(axis: 'h' | 'v', corner: (typeof FOCUS_CORNERS)[nu
   // corner once the curve's own FOCUS_BOX_RADIUS is subtracted, floored at 0 so a box too small for
   // the curve to fit twice over never goes negative.
   const armLength = `max(0px, calc(${reach} - ${FOCUS_BOX_RADIUS}px))`;
-  const style: CSSProperties = { position: 'absolute', background: FOCUS_STROKE_COLOR, transition: FOCUS_STROKE_TRANSITION, borderRadius: thickness / 2 };
+  const half = thickness / 2;
+  const style: CSSProperties = { position: 'absolute', background: FOCUS_STROKE_COLOR, transition: FOCUS_STROKE_TRANSITION };
   // Flush against the box's own edge (0 to `thickness`, not straddling it via a `-half` offset) —
   // a border can never straddle its own box's edge, so the curve piece's stroke (see
   // FocusCornerCurve) is unavoidably flush like this; the arm has to match that same convention or
@@ -154,15 +155,28 @@ function focusArmSegmentStyle(axis: 'h' | 'v', corner: (typeof FOCUS_CORNERS)[nu
     style.bottom = corner.includes('s') ? 0 : undefined;
     style.height = thickness;
     style.width = armLength;
-    if (corner.includes('w')) style.left = FOCUS_BOX_RADIUS;
+    const connectingLeft = corner.includes('w');
+    if (connectingLeft) style.left = FOCUS_BOX_RADIUS;
     else style.right = FOCUS_BOX_RADIUS;
+    // Rounded only at the free end (toward the middle of the edge) — the end butting against the
+    // curve piece stays square, or its own round cap leaves a lens-shaped gap against the curve's
+    // flat-cut edge instead of a flush join.
+    style.borderTopLeftRadius = connectingLeft ? 0 : half;
+    style.borderBottomLeftRadius = connectingLeft ? 0 : half;
+    style.borderTopRightRadius = connectingLeft ? half : 0;
+    style.borderBottomRightRadius = connectingLeft ? half : 0;
   } else {
     style.left = corner.includes('w') ? 0 : undefined;
     style.right = corner.includes('e') ? 0 : undefined;
     style.width = thickness;
     style.height = armLength;
-    if (corner.includes('n')) style.top = FOCUS_BOX_RADIUS;
+    const connectingTop = corner.includes('n');
+    if (connectingTop) style.top = FOCUS_BOX_RADIUS;
     else style.bottom = FOCUS_BOX_RADIUS;
+    style.borderTopLeftRadius = connectingTop ? 0 : half;
+    style.borderTopRightRadius = connectingTop ? 0 : half;
+    style.borderBottomLeftRadius = connectingTop ? half : 0;
+    style.borderBottomRightRadius = connectingTop ? half : 0;
   }
   return style;
 }
@@ -1096,11 +1110,12 @@ export function ArtboardFrame({
                       // rest of the (clipped, `overflow-hidden`) overlay with the dim color, while
                       // the box's own background stays fully transparent — so only the area inside
                       // reads at full clarity, everything outside it dims, without a second overlay
-                      // element (and its own separate cutout) to keep in sync with the box. Only
-                      // shown while actively dragging — released (or never dragged yet), it drops
-                      // out immediately (no transition on box-shadow), same look as the confirmed
-                      // box until the next drag brings it back.
-                      boxShadow: focusRectDragging ? '0 0 0 9999px rgba(38,38,44,0.5)' : undefined,
+                      // element (and its own separate cutout) to keep in sync with the box. Shown
+                      // up front (before the box has ever been touched) and again while actively
+                      // dragging, but dropped the instant a drag ends (no transition on box-shadow)
+                      // — once you've adjusted it at least once you've already seen where it sits,
+                      // so the dim doesn't need to keep reminding you on every subsequent hover.
+                      boxShadow: focusRectDragging || !focusRectDirty ? '0 0 0 9999px rgba(38,38,44,0.5)' : undefined,
                       borderRadius: FOCUS_BOX_RADIUS,
                     }}
                     onMouseDown={startFocusRectMove}
@@ -1108,10 +1123,14 @@ export function ArtboardFrame({
                     onMouseLeave={() => setFocusRectHovered(false)}
                   >
                     {/* Hover affordance while the box is just sitting there waiting to be adjusted —
-                        a subtle white wash, gone again the instant an actual drag starts (`active`
-                        already covers mid-drag via the box's own :active state, but this stays
-                        visible on hover alone too, before any mousedown). */}
-                    <div className="absolute inset-0 rounded-[inherit] bg-white/0 transition-colors group-hover/focus-rect:bg-white/10" />
+                        a subtle white wash. Driven by the same JS hover-minus-suppression state as
+                        the corner brackets (not raw CSS :hover) so it collapses right on release even
+                        if the cursor never actually left the box — otherwise the box's own interior
+                        would keep reading as tinted instead of plainly transparent, just because the
+                        mouse happened to still be sitting on it. */}
+                    <div
+                      className={cn('absolute inset-0 rounded-[inherit] transition-colors', focusRectHovered && !suppressFocusHover ? 'bg-white/10' : 'bg-white/0')}
+                    />
                     <FocusRectCorners expanded={focusRectExpanded} />
                     {RESIZE_HANDLES.map((handle) => (
                       <div key={handle} style={focusHandleStyle(handle)} onMouseDown={(e) => startFocusRectResize(handle, e)} />
