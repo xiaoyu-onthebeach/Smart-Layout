@@ -295,27 +295,11 @@ export function BannersTab() {
 
   // Only groups that actually have added sizes are collapsible — a lone primary has no chevron at
   // all (see CategoryRow), so it shouldn't count against "everything is collapsed".
-  const collapsibleGroupIds = groups.filter((g) => g.siblingIds.length > 0).map((g) => g.primaryId);
-  const allCollapsed = collapsibleGroupIds.length > 0 && collapsibleGroupIds.every((id) => collapsedGroups.has(id));
-
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="flex h-6 w-full shrink-0 items-center justify-between gap-[44px] px-1">
         <span className="truncate text-[11px] font-semibold tracking-[-0.01em] text-white/45 uppercase">{t('Banners')}</span>
         <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            aria-label={allCollapsed ? t('Expand all') : t('Collapse all')}
-            onClick={() => setCollapsedGroups(allCollapsed ? new Set() : new Set(collapsibleGroupIds))}
-            className="flex size-6 shrink-0 items-center justify-center text-white/45 transition-colors hover:text-white"
-          >
-            <img
-              src="/icons/collapse-top.svg"
-              alt=""
-              className="size-3"
-              style={{ transform: `rotate(${allCollapsed ? 270 : 90}deg)` }}
-            />
-          </button>
           <Tooltip>
             <TooltipTrigger asChild>
               <button

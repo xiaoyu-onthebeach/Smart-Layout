@@ -830,7 +830,7 @@ const SCRUB_CURSOR = "url('/icons/drag-cursor.svg') 16 16, ew-resize";
  * styling itself — callers read back `hovered`/`dragging` to render that however fits their own
  * layout (a bare input vs. one with a leading label inside the same box).
  */
-function useScrubDrag(currentValue: number, onCommit: (value: string) => void) {
+function useScrubDrag(currentValue: number, onCommit: (value: string) => void, step: number = 1) {
   const [hovered, setHovered] = useState(false);
   const [dragging, setDragging] = useState(false);
 
@@ -852,7 +852,11 @@ function useScrubDrag(currentValue: number, onCommit: (value: string) => void) {
       }
       if (moved) {
         ev.preventDefault();
-        onCommit(String(Math.round(startValue + dx)));
+        const next = startValue + dx * step;
+        // A sub-1 step (line height's own 0.01-per-px) needs real decimal precision — rounding
+        // that to the nearest whole number the way every other field's step=1 already does would
+        // make it impossible to land on anything but whole multiples.
+        onCommit(String(step < 1 ? Math.round(next * 100) / 100 : Math.round(next)));
       }
     }
     function onUp() {
@@ -1062,6 +1066,7 @@ export function NumberField({
   onCommit,
   className,
   scrubbable = false,
+  scrubStep = 1,
 }: {
   value: string;
   onCommit: (value: string) => void;
@@ -1069,9 +1074,13 @@ export function NumberField({
   /** Opts into the same drag-to-scrub behavior as the radius/shadow fields — off by default since
    * plenty of this component's callers (font size, letter spacing, ...) weren't asked to scrub. */
   scrubbable?: boolean;
+  /** How much the value changes per px dragged — 1 (the default) for a plain px/percent/whole-
+   * number field; a sub-1 value (line height's own 0.01) for a field whose whole usable range would
+   * otherwise blow past in a few px. */
+  scrubStep?: number;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const scrub = useScrubDrag(Number(value) || 0, onCommit);
+  const scrub = useScrubDrag(Number(value) || 0, onCommit, scrubStep);
   const highlighted = scrubbable && (scrub.hovered || scrub.dragging);
   return (
     <input
@@ -1123,11 +1132,23 @@ export function SegmentedControl<T extends string>({
 
 /** `icon` is usually an asset path, rendered as an `<img>` — but a couple of fields (e.g. rotation)
  * have no matching 16px asset yet, so a `ReactNode` (a lucide icon) is accepted directly too. */
-export function IconNumberField({ icon, value, onCommit }: { icon: string | ReactNode; value: string; onCommit: (value: string) => void }) {
+export function IconNumberField({
+  icon,
+  value,
+  onCommit,
+  scrubbable = false,
+  scrubStep = 1,
+}: {
+  icon: string | ReactNode;
+  value: string;
+  onCommit: (value: string) => void;
+  scrubbable?: boolean;
+  scrubStep?: number;
+}) {
   return (
     <div className="flex items-center gap-1.5">
       {typeof icon === 'string' ? <img src={icon} alt="" className="size-4 shrink-0 opacity-70" /> : <span className="flex size-4 shrink-0 items-center justify-center text-white/70">{icon}</span>}
-      <NumberField className="w-full" value={value} onCommit={onCommit} />
+      <NumberField className="w-full" value={value} onCommit={onCommit} scrubbable={scrubbable} scrubStep={scrubStep} />
     </div>
   );
 }
@@ -1146,31 +1167,6 @@ export function PopoverMenuItem({ active, onClick, children }: { active: boolean
         {children}
       </button>
     </PopoverClose>
-  );
-}
-
-export function IconPopoverButton({ icon, active, children }: { icon: string; active?: boolean; children: ReactNode }) {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'flex h-8 w-10 shrink-0 items-center justify-center rounded-lg border border-chrome-border bg-chrome-border-subtle transition-colors hover:bg-white/10',
-            active && 'bg-white/10',
-          )}
-        >
-          {/* This asset's own glyph only fills about half its 32x32 canvas — size-4 (16px) was
-              rendering the whole canvas at 16px, so the actual glyph came out ~8px, reading as
-              "too small". size-8 renders the canvas at its native size, so the glyph itself ends
-              up the intended ~16px instead. */}
-          <img src={icon} alt="" className="size-8" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={6} className="w-auto min-w-[140px] border-chrome-border bg-[#26262C]/95 p-1 text-chrome-fg backdrop-blur-lg">
-        <div className="flex flex-col gap-0.5">{children}</div>
-      </PopoverContent>
-    </Popover>
   );
 }
 

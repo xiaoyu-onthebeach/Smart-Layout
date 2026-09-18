@@ -4,11 +4,10 @@ import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
-type AssetsTab = 'library' | 'yourVisuals' | 'uploads';
+type AssetsTab = 'library' | 'uploads';
 
 const TABS: { id: AssetsTab; label: string }[] = [
   { id: 'library', label: 'Library' },
-  { id: 'yourVisuals', label: 'Your visuals' },
   { id: 'uploads', label: 'Uploads' },
 ];
 
@@ -205,7 +204,7 @@ function UploadsEmptyState() {
   );
 }
 
-/** Left panel's Assets card: a Library/Your visuals/Uploads switcher, a search box, and a
+/** Left panel's Assets card: a Library/Uploads switcher, a search box, and a
  * scrollable image grid below — drag any image onto a banner frame on the canvas to add it as a
  * new image layer there. Library's own content is organized into a brand collection of named
  * folders (see `LIBRARY_COLLECTIONS`) rather than one flat pool. */
@@ -262,7 +261,7 @@ export function AssetsPanel() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={t(tab === 'yourVisuals' ? 'Search visuals' : 'Search an asset')}
+              placeholder={t('Search an asset')}
               className="w-full min-w-0 bg-transparent text-[13px] text-chrome-fg placeholder:text-white/25 outline-none"
             />
           </div>
@@ -344,8 +343,6 @@ export function AssetsPanel() {
                 ))}
               </div>
             ))}
-
-          {tab === 'yourVisuals' && <AssetGrid empty>{null}</AssetGrid>}
         </div>
       )}
     </div>

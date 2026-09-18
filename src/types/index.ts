@@ -83,6 +83,12 @@ export type LayoutElement = {
     stretch?: number;
     lineHeight?: number;
     textDecoration?: 'none' | 'underline' | 'line-through';
+    /** Text only — the "Style" row's own Italic toggle in the decoration popover. */
+    fontStyle?: 'normal' | 'italic';
+    /** Text only — the decoration popover's "Case" row. */
+    textTransform?: 'none' | 'uppercase' | 'capitalize' | 'lowercase';
+    /** Text only — the decoration popover's "Features" row (superscript/subscript). */
+    verticalAlign?: 'baseline' | 'super' | 'sub';
     /** Shape/image only, 0-100. */
     opacity?: number;
     /** Text only — 'vertical-rl' stacks characters top-to-bottom (traditional Japanese layout). */

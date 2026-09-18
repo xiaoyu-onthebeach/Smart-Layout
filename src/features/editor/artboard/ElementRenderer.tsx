@@ -139,6 +139,8 @@ export function ElementRenderer({
         lineHeight: style.lineHeight ?? 1.2,
         letterSpacing: style.letterSpacing ? `${style.letterSpacing}px` : undefined,
         textDecoration: style.textDecoration && style.textDecoration !== 'none' ? style.textDecoration : undefined,
+        fontStyle: style.fontStyle,
+        textTransform: style.textTransform && style.textTransform !== 'none' ? style.textTransform : undefined,
         WebkitTextStroke: style.strokeWidth ? `${style.strokeWidth}px ${style.strokeColor ?? '#000000'}` : undefined,
         textShadow: textShadowCss(style.dropShadow),
         paddingInline: isPill ? '0.6em' : undefined,
@@ -149,7 +151,20 @@ export function ElementRenderer({
     >
       <span
         style={{
-          transform: style.stretch ? `scaleX(${1 + style.stretch / 100})` : undefined,
+          // `vertical-align` has no effect here — this span is the flex container's own (sole)
+          // flex item, and vertical-align only ever applies to inline-level/table-cell boxes — so
+          // super/subscript is faked with a baseline-style shift + a proportionally smaller size
+          // instead, the same trick line-height-relative CSS superscripts have always used.
+          display: style.verticalAlign && style.verticalAlign !== 'baseline' ? 'inline-block' : undefined,
+          fontSize: style.verticalAlign && style.verticalAlign !== 'baseline' ? '0.7em' : undefined,
+          transform:
+            style.verticalAlign === 'super'
+              ? 'translateY(-0.3em)'
+              : style.verticalAlign === 'sub'
+                ? 'translateY(0.3em)'
+                : style.stretch
+                  ? `scaleX(${1 + style.stretch / 100})`
+                  : undefined,
           transformOrigin: style.align === 'center' ? 'center' : style.align === 'right' ? 'right' : 'left',
         }}
       >
