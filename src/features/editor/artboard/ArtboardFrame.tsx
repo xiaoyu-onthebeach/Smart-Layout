@@ -138,23 +138,27 @@ function FocusCornerCurve({ corner, expanded }: { corner: (typeof FOCUS_CORNERS)
  * selection box's own (straight, uncurved) corner arms do. */
 function focusArmSegmentStyle(axis: 'h' | 'v', corner: (typeof FOCUS_CORNERS)[number], expanded: boolean): CSSProperties {
   const thickness = expanded ? FOCUS_STROKE_THICKNESS_EXPANDED : FOCUS_STROKE_THICKNESS_IDLE;
-  const half = thickness / 2;
   const reach = expanded ? FOCUS_STROKE_OVERLAP : FOCUS_STROKE_ARM_LENGTH;
   // The straight run beyond the curve piece — whatever's left of the arm's own total reach from the
   // corner once the curve's own FOCUS_BOX_RADIUS is subtracted, floored at 0 so a box too small for
   // the curve to fit twice over never goes negative.
   const armLength = `max(0px, calc(${reach} - ${FOCUS_BOX_RADIUS}px))`;
-  const style: CSSProperties = { position: 'absolute', background: FOCUS_STROKE_COLOR, transition: FOCUS_STROKE_TRANSITION, borderRadius: half };
+  const style: CSSProperties = { position: 'absolute', background: FOCUS_STROKE_COLOR, transition: FOCUS_STROKE_TRANSITION, borderRadius: thickness / 2 };
+  // Flush against the box's own edge (0 to `thickness`, not straddling it via a `-half` offset) —
+  // a border can never straddle its own box's edge, so the curve piece's stroke (see
+  // FocusCornerCurve) is unavoidably flush like this; the arm has to match that same convention or
+  // the two pieces' centerlines land half a stroke-width apart, opening a visible split right where
+  // they're supposed to meet.
   if (axis === 'h') {
-    style.top = corner.includes('n') ? -half : undefined;
-    style.bottom = corner.includes('s') ? -half : undefined;
+    style.top = corner.includes('n') ? 0 : undefined;
+    style.bottom = corner.includes('s') ? 0 : undefined;
     style.height = thickness;
     style.width = armLength;
     if (corner.includes('w')) style.left = FOCUS_BOX_RADIUS;
     else style.right = FOCUS_BOX_RADIUS;
   } else {
-    style.left = corner.includes('w') ? -half : undefined;
-    style.right = corner.includes('e') ? -half : undefined;
+    style.left = corner.includes('w') ? 0 : undefined;
+    style.right = corner.includes('e') ? 0 : undefined;
     style.width = thickness;
     style.height = armLength;
     if (corner.includes('n')) style.top = FOCUS_BOX_RADIUS;
@@ -356,6 +360,11 @@ export function ArtboardFrame({
   // otherwise re-fire.
   useEffect(() => {
     if (!isPickingFocus) return;
+    // Skipped mid-drag — a resize/move started directly from the confirmed box's own hover state
+    // (see focusHandleStyle's onMouseDown below) flips isPickingFocus true in the same tick it also
+    // sets focusRectDirty/focusRectDragging true, and this effect would otherwise fire right after
+    // and stomp both back to false before the user's even moved the mouse.
+    if (focusRectDragging) return;
     const existing = layout.focusRect;
     if (existing) {
       setFocusDrawRect(existing);
@@ -590,12 +599,14 @@ export function ArtboardFrame({
 
   // Same corner/edge handle math as useElementDrag's startResize, but clamped to the frame's own
   // bounds (0..nativeWidth/Height) instead of growing freely, and writing to local focusDrawRect
-  // state instead of an element's frame.
-  function startFocusRectResize(handle: ResizeHandle, e: ReactMouseEvent) {
+  // state instead of an element's frame. `initialRect` defaults to the in-progress focusDrawRect,
+  // but the confirmed box's own handles (see below) pass layout.focusRect directly instead — they
+  // fire in the same tick as startPickingFocus, before focusDrawRect has actually been seeded yet.
+  function startFocusRectResize(handle: ResizeHandle, e: ReactMouseEvent, initialRect?: { x: number; y: number; w: number; h: number }) {
     e.preventDefault();
     e.stopPropagation();
-    if (!focusDrawRect) return;
-    const startRect = focusDrawRect;
+    const startRect = initialRect ?? focusDrawRect;
+    if (!startRect) return;
     const startX = e.clientX;
     const startY = e.clientY;
     setFocusRectDirty(true);
@@ -1031,11 +1042,11 @@ export function ArtboardFrame({
         <>
           <div data-focus-pick-overlay className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
             {focusPickConfirmed && layout.focusRect ? (
-              // Confirmed this session — the picked rect just stays outlined on top, no dimming and
-              // no resize/move controls in the way now that there's nothing left to decide, but
-              // it's still clickable: that re-runs startPickingFocus (resetting focusPickConfirmed,
-              // same as "Change"), which switches this back into the fully editable state below —
-              // same as re-entering via the "Change" button.
+              // Confirmed this session — the picked rect just stays outlined on top, no dimming, but
+              // its own resize handles are live right away on hover (no click-to-enter-editing first
+              // — see each handle's onMouseDown below), and the box itself is still clickable too:
+              // that re-runs startPickingFocus (resetting focusPickConfirmed, same as "Change"),
+              // which switches this back into the fully editable state below.
               <div
                 className="group/focus-rect-confirmed pointer-events-auto absolute cursor-pointer"
                 onClick={() => startPickingFocus(layoutId)}
@@ -1054,6 +1065,16 @@ export function ArtboardFrame({
                     once it's already settled, not just while it's mid-edit. */}
                 <div className="absolute inset-0 rounded-[inherit] bg-white/0 transition-colors group-hover/focus-rect-confirmed:bg-white/10" />
                 <FocusRectCorners expanded={confirmedRectHovered} />
+                {RESIZE_HANDLES.map((handle) => (
+                  <div
+                    key={handle}
+                    style={focusHandleStyle(handle)}
+                    onMouseDown={(e) => {
+                      startPickingFocus(layoutId);
+                      startFocusRectResize(handle, e, layout.focusRect);
+                    }}
+                  />
+                ))}
               </div>
             ) : (
               focusDrawRect && (
