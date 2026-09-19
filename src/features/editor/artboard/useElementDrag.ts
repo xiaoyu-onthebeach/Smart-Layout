@@ -149,7 +149,8 @@ export function useElementDrag(layoutId: string, elementId: string, scale: numbe
   }
 
   // Entry point for a plain mousedown on a selectable element (text/shape today — the image layer
-  // hand-rolls its own equivalent since it also has to carry `pendingExpand` along). Shift-clicks
+  // hand-rolls its own equivalent, since it also drives a group move for every other selected
+  // element in the layout). Shift-clicks
   // and clicks on anything not already part of a multi-selection behave exactly as before: select
   // immediately, then drag. But a plain click landing on one of *several* already-selected
   // elements defers the actual selection change — dragging past the threshold moves the whole

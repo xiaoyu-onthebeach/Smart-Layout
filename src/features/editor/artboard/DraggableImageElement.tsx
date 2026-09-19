@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 
 import { useAppStore } from '@/store/useAppStore';
 import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
-import { useElementDrag, applyElementSnap, MIN_SIZE, ELEMENT_PAN_THRESHOLD, type ResizeHandle } from './useElementDrag';
+import { useElementDrag, applyElementSnap, ELEMENT_PAN_THRESHOLD } from './useElementDrag';
 import { SelectionBoundingBox } from './SelectionBoundingBox';
 import { ImageBox } from './ImageBox';
 
@@ -21,7 +21,6 @@ export function DraggableImageElement({
   activeTool,
   selected,
   expanding,
-  onExpandClick,
   onExpandToFrameClick,
   isBackgroundImage,
   sceneHasBackgroundColor,
@@ -37,7 +36,6 @@ export function DraggableImageElement({
   activeTool: Tool;
   selected: boolean;
   expanding?: boolean;
-  onExpandClick?: (e: ReactMouseEvent) => void;
   onExpandToFrameClick?: (e: ReactMouseEvent) => void;
   isBackgroundImage?: boolean;
   sceneHasBackgroundColor?: boolean;
@@ -48,15 +46,7 @@ export function DraggableImageElement({
 }) {
   const updateElement = useAppStore((s) => s.updateElement);
   const { startResize, startRotate } = useElementDrag(layoutId, element.id, scale);
-  const { frame, pendingExpand } = element;
-  // The "finish the drag first" affordances (expand button + prompt entry) only make sense once
-  // the box has actually settled — showing them mid-drag is just noise following the cursor.
-  const [isDraggingExpand, setIsDraggingExpand] = useState(false);
-  // Which handle grew the box last — so the expand button/prompt can sit near whichever corner is
-  // actually "new" (e.g. dragging the nw handle out should put them top-left, not the fixed
-  // bottom-right every direction used to get). Corner handles map directly; a pure edge handle
-  // (just 'n'/'e'/'s'/'w') only pins one axis, leaving the other at its default.
-  const [expandHandle, setExpandHandle] = useState<ResizeHandle | null>(null);
+  const { frame } = element;
 
   // Suppresses the frame-gap grid/expand-button for the duration of a move or resize drag, plus a
   // short settle delay after release — otherwise they'd flicker in and out mid-drag every time the
@@ -80,17 +70,14 @@ export function DraggableImageElement({
     }, FRAME_GAP_REVEAL_DELAY_MS);
   }
 
-  // A plain move shifts the pending-expand box along with the image, so the gap doesn't get left
-  // behind at its old spot. Every OTHER currently-selected element in this layout rides along at
-  // the same delta too, so a multi-selection moves as one unit (pendingExpand only ever follows
-  // the literally-dragged image, not other selected group members).
+  // Every OTHER currently-selected element in this layout rides along at the same delta too, so a
+  // multi-selection moves as one unit.
   function startMove(e: ReactMouseEvent) {
     e.stopPropagation();
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
     const startFrame = frame;
-    const startPending = pendingExpand;
     const state = useAppStore.getState();
     const groupFrames = state.selectedElements
       .filter((r) => r.layoutId === layoutId && r.elementId !== element.id)
@@ -106,10 +93,7 @@ export function DraggableImageElement({
       let dy = (ev.clientY - startY) / scale;
       const candidateFrame = { ...startFrame, x: startFrame.x + dx, y: startFrame.y + dy };
       ({ dx, dy } = applyElementSnap(layoutId, movingIds, candidateFrame, dx, dy));
-      updateElement(layoutId, element.id, {
-        frame: { ...startFrame, x: startFrame.x + dx, y: startFrame.y + dy },
-        ...(startPending ? { pendingExpand: { ...startPending, x: startPending.x + dx, y: startPending.y + dy } } : {}),
-      });
+      updateElement(layoutId, element.id, { frame: { ...startFrame, x: startFrame.x + dx, y: startFrame.y + dy } });
       for (const g of groupFrames) {
         updateElement(layoutId, g.elementId, { frame: { ...g.frame, x: g.frame.x + dx, y: g.frame.y + dy } });
       }
@@ -181,46 +165,6 @@ export function DraggableImageElement({
     window.addEventListener('mouseup', onUp);
   }
 
-  // Cmd+drag grows a box beyond the image's own frame instead of resizing the image itself — the
-  // image stays exactly where it was; the new area is an unfilled, transparent gap. Free to grow
-  // past the artboard's own bounds in every direction — ImageBox's expand button/prompt entry
-  // clamp their own on-screen position to the frame separately, so this drag itself doesn't need
-  // to stop at the frame edge just to keep them reachable.
-  function startExpandResize(e: ReactMouseEvent, handle: ResizeHandle) {
-    e.stopPropagation();
-    e.preventDefault();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startBox = pendingExpand ?? frame;
-    const minW = Math.max(MIN_SIZE, frame.w);
-    const minH = Math.max(MIN_SIZE, frame.h);
-    setIsDraggingExpand(true);
-    setExpandHandle(handle);
-    function onMove(ev: globalThis.MouseEvent) {
-      const dx = (ev.clientX - startX) / scale;
-      const dy = (ev.clientY - startY) / scale;
-      let { x, y, w, h } = startBox;
-      if (handle.includes('e')) w = Math.max(minW, startBox.w + dx);
-      if (handle.includes('s')) h = Math.max(minH, startBox.h + dy);
-      if (handle.includes('w')) {
-        w = Math.max(minW, startBox.w - dx);
-        x = startBox.x + startBox.w - w;
-      }
-      if (handle.includes('n')) {
-        h = Math.max(minH, startBox.h - dy);
-        y = startBox.y + startBox.h - h;
-      }
-      updateElement(layoutId, element.id, { pendingExpand: { x, y, w, h } });
-    }
-    function onUp() {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      setIsDraggingExpand(false);
-    }
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }
-
   return (
     <ImageBox
       element={element}
@@ -229,9 +173,6 @@ export function DraggableImageElement({
       cursor={activeTool === 'select' ? 'move' : undefined}
       scale={scale}
       expanding={expanding}
-      isDraggingExpand={isDraggingExpand}
-      expandHandle={expandHandle}
-      onExpandClick={onExpandClick}
       onExpandToFrameClick={onExpandToFrameClick}
       isBackgroundImage={isBackgroundImage}
       sceneHasBackgroundColor={sceneHasBackgroundColor}
@@ -261,13 +202,8 @@ export function DraggableImageElement({
       {selected && (
         <SelectionBoundingBox
           onResizeStart={(handle, e) => {
-            if (e.metaKey) {
-              startExpandResize(e, handle);
-              return;
-            }
             beginPositioning();
             startResize(e, handle, frame);
-            if (pendingExpand) updateElement(layoutId, element.id, { pendingExpand: undefined });
             function onUp() {
               window.removeEventListener('mouseup', onUp);
               endPositioning();

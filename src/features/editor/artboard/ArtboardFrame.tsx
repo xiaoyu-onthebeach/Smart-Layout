@@ -541,27 +541,10 @@ export function ArtboardFrame({
     img.src = url;
   }
 
-  // Commits a Cmd-dragged expand box: 2s of "generating", then the image covers the whole new area.
-  // Any image element can have a pending expand — the primary slot or a decorative layer alike.
-  function handleExpandClick(element: LayoutElement) {
-    return (e: ReactMouseEvent) => {
-      e.stopPropagation();
-      e.preventDefault();
-      if (!element.pendingExpand || expandingElementId) return;
-      const nextFrame = element.pendingExpand;
-      setExpandingElementId(element.id);
-      setTimeout(() => {
-        updateElement(layoutId, element.id, { frame: nextFrame, pendingExpand: undefined });
-        setExpandingElementId(null);
-      }, EXPAND_DURATION_MS);
-    };
-  }
-
   // Commits the background image straight to the frame's own full bounds — the one-click fix for a
-  // moved/undersized image leaving a gap, as opposed to handleExpandClick above which finishes an
-  // already-drawn Cmd-drag box. Reuses the same pendingExpand + shimmer machinery for a consistent
-  // "generating" beat: setting pendingExpand first makes ImageBox treat this exactly like a
-  // just-finished Cmd-drag for the rest of the animation.
+  // moved/undersized image leaving a gap. Sets pendingExpand first (briefly, just for the duration
+  // of the animation) so ImageBox's shimmer overlay can size itself to the target box ahead of the
+  // real frame update landing, for a consistent "generating" beat.
   function handleExpandToFrameClick(element: LayoutElement) {
     return (e: ReactMouseEvent) => {
       e.stopPropagation();
@@ -866,7 +849,6 @@ export function ArtboardFrame({
                 activeTool={activeTool}
                 selected={showsBoundsBox(imageElement.id)}
                 expanding={expandingElementId === imageElement.id}
-                onExpandClick={handleExpandClick(imageElement)}
                 onExpandToFrameClick={handleExpandToFrameClick(imageElement)}
                 isBackgroundImage={imageElement.id === backgroundElementId}
                 sceneHasBackgroundColor={Boolean(layout.backgroundColor)}
@@ -884,7 +866,6 @@ export function ArtboardFrame({
                 outlined={showsBoundsBox(imageElement.id)}
                 scale={scale}
                 expanding={expandingElementId === imageElement.id}
-                onExpandClick={handleExpandClick(imageElement)}
                 onExpandToFrameClick={handleExpandToFrameClick(imageElement)}
                 isBackgroundImage={imageElement.id === backgroundElementId}
                 sceneHasBackgroundColor={Boolean(layout.backgroundColor)}
@@ -991,7 +972,6 @@ export function ArtboardFrame({
                   activeTool={activeTool}
                   selected={showsBoundsBox(el.id)}
                   expanding={expandingElementId === el.id}
-                  onExpandClick={handleExpandClick(el)}
                   onExpandToFrameClick={handleExpandToFrameClick(el)}
                   isBackgroundImage={el.id === backgroundElementId}
                   sceneHasBackgroundColor={Boolean(layout.backgroundColor)}

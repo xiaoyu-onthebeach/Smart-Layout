@@ -54,9 +54,9 @@ export type LayoutElement = {
   focalPoint?: { x: number; y: number };
   frame: { x: number; y: number; w: number; h: number }; // absolute px in layout space
   /**
-   * Image only: a larger box dragged out (Cmd+drag a resize handle) beyond `frame` — the image
-   * itself stays put at `frame`'s size/position, and the extra area shows as an unfilled, transparent
-   * gap with an expand affordance until the user commits it, promoting it to `frame`.
+   * Image only: briefly holds the target box while an "expand to frame" commit is animating (see
+   * ArtboardFrame's `handleExpandToFrameClick`) — set immediately, then cleared once `frame` itself
+   * is updated to match, a couple seconds later.
    */
   pendingExpand?: { x: number; y: number; w: number; h: number };
   /**

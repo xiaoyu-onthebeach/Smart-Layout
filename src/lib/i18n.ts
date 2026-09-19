@@ -85,7 +85,6 @@ export const ja: Record<string, string> = {
   'Uploaded image': 'アップロード済みの画像',
   'Expand image': '画像を拡大',
   'Expanding image…': '画像を拡大しています…',
-  'Describe the expanded area...': '拡大するエリアを入力…',
 
   // Size-select & templates
   'Choose the primary banner size': 'メインバナーサイズを選択',
