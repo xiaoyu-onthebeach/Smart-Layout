@@ -864,6 +864,7 @@ export function ArtboardFrame({
                 layoutWidth={nativeWidth}
                 layoutHeight={nativeHeight}
                 outlined={showsBoundsBox(imageElement.id)}
+                selected={showsBoundsBox(imageElement.id)}
                 scale={scale}
                 expanding={expandingElementId === imageElement.id}
                 onExpandToFrameClick={handleExpandToFrameClick(imageElement)}

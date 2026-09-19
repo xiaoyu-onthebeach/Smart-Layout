@@ -173,6 +173,7 @@ export function DraggableImageElement({
       cursor={activeTool === 'select' ? 'move' : undefined}
       scale={scale}
       expanding={expanding}
+      selected={selected}
       onExpandToFrameClick={onExpandToFrameClick}
       isBackgroundImage={isBackgroundImage}
       sceneHasBackgroundColor={sceneHasBackgroundColor}

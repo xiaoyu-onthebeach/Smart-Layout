@@ -48,6 +48,7 @@ export function ImageBox({
   layoutWidth,
   layoutHeight,
   outlined,
+  selected,
   cursor,
   scale,
   expanding,
@@ -64,6 +65,10 @@ export function ImageBox({
   layoutWidth: number;
   layoutHeight: number;
   outlined?: boolean;
+  /** Whether this layer is currently selected — distinct from `outlined` (which only applies to the
+   * inactive/preview render path's own plain-outline indicator): this gates the frame-gap grid/
+   * button below, which should only ever show while the background image is the one selected. */
+  selected?: boolean;
   cursor?: CSSProperties['cursor'];
   /** Rendered px per native layout px (camera/fit-to-screen zoom) — below 30% the expand icons hide, since they'd be too small to read or reliably click. */
   scale?: number;
@@ -103,6 +108,7 @@ export function ImageBox({
   const gapTop = frame.y > 0.5;
   const hasFrameGap =
     isBackgroundImage &&
+    selected &&
     element.hasCoveredFrame &&
     !suppressFrameGapAffordance &&
     !sceneHasBackgroundColor &&
