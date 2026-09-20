@@ -215,7 +215,7 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
 
   return (
     <PanelCard gap={16}>
-      <PanelHeader icon={<PanelHeaderIcon src="/icons/edit_panel/image%20header.svg" />} title={title} trailing={<MatchSelectButton targets={targets} />} />
+      <PanelHeader icon={<PanelHeaderIcon src="/icons/edit_panel/panel_image.svg" />} title={title} trailing={<MatchSelectButton targets={targets} />} />
 
       <PositionSection x={primary.frame.x} y={primary.frame.y} showPositionMode={false} resetKey={primary.id} />
 

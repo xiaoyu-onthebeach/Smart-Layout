@@ -303,14 +303,7 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
 
   return (
     <PanelCard gap={16}>
-      {/* This asset's own glyph sits ~1px above its true center too (see SceneEditorPanel's own
-          banner-icon nudge for the same reasoning) — the icon's box is already centered against
-          the title via `items-center`, this just recenters the glyph within that box. */}
-      <PanelHeader
-        icon={<PanelHeaderIcon src="/icons/edit_panel/editing.svg" style={{ transform: 'translateY(1px)' }} />}
-        title={title}
-        trailing={<MatchSelectButton targets={targets} />}
-      />
+      <PanelHeader icon={<PanelHeaderIcon src="/icons/edit_panel/Panel_text.svg" />} title={title} trailing={<MatchSelectButton targets={targets} />} />
 
       <PositionSection x={primary.frame.x} y={primary.frame.y} showPositionMode={false} resetKey={primary.id} />
 

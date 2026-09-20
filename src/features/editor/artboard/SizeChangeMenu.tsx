@@ -173,7 +173,7 @@ export function SizeChangeMenu({
                 value={customWidth}
                 onChange={(e) => setCustomWidth(e.target.value)}
                 placeholder={t('Width')}
-                className="h-10 w-full min-w-0 rounded-lg border border-chrome-border bg-chrome-bg px-3 text-sm text-chrome-fg placeholder:text-white/45 outline-none"
+                className="h-10 w-full min-w-0 rounded-lg border border-chrome-border bg-chrome-bg px-3 text-sm text-chrome-fg placeholder:text-white/45 outline-none focus:border-[#4570FF]"
               />
               <input
                 type="number"
@@ -182,16 +182,16 @@ export function SizeChangeMenu({
                 onChange={(e) => setCustomHeight(e.target.value)}
                 placeholder={t('Height')}
                 onKeyDown={(e) => e.key === 'Enter' && addCustomEntry()}
-                className="h-10 w-full min-w-0 rounded-lg border border-chrome-border bg-chrome-bg px-3 text-sm text-chrome-fg placeholder:text-white/45 outline-none"
+                className="h-10 w-full min-w-0 rounded-lg border border-chrome-border bg-chrome-bg px-3 text-sm text-chrome-fg placeholder:text-white/45 outline-none focus:border-[#4570FF]"
               />
               <button
                 type="button"
                 aria-label={t('Add custom size')}
                 onClick={addCustomEntry}
                 disabled={!canAddCustom}
-                className="flex size-10 shrink-0 items-center justify-center rounded-full bg-button-primary text-white transition-opacity disabled:opacity-40"
+                className="flex size-6 shrink-0 items-center justify-center rounded-full bg-button-primary text-white transition-opacity disabled:opacity-40"
               >
-                <Plus className="size-4" />
+                <Plus className="size-3.5" />
               </button>
             </div>
           )}

@@ -29,6 +29,13 @@ import {
 type SolidBorderStyle = 'solid' | 'dashed' | 'dotted';
 const BORDER_STYLE_LABELS: Record<SolidBorderStyle, string> = { solid: 'Solid', dashed: 'Dashed', dotted: 'Dotted' };
 
+/** Header glyph reflects the selected shape's own kind rather than one generic "shape" icon. */
+const SHAPE_HEADER_ICONS: Record<NonNullable<LayoutElement['shape']>, string> = {
+  rect: '/icons/edit_panel/panel%20rectangle.svg',
+  ellipse: '/icons/edit_panel/panel_circle.svg',
+  line: '/icons/edit_panel/panel_line.svg',
+};
+
 /** Right-corner panel shown while one or more shape elements are selected — edits broadcast to every target. */
 export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const t = useT();
@@ -88,7 +95,7 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
 
   return (
     <PanelCard gap={16}>
-      <PanelHeader icon={<PanelHeaderIcon src="/icons/edit_panel/shape%20header.svg" />} title={title} trailing={<MatchSelectButton targets={targets} />} />
+      <PanelHeader icon={<PanelHeaderIcon src={SHAPE_HEADER_ICONS[primary.shape ?? 'rect']} />} title={title} trailing={<MatchSelectButton targets={targets} />} />
 
       <PositionSection x={primary.frame.x} y={primary.frame.y} showPositionMode={false} resetKey={primary.id} />
 

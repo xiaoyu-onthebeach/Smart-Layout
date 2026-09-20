@@ -103,10 +103,7 @@ export function SceneEditorPanel({ layout, setId }: { layout: Layout; setId: str
     <PanelCard gap={16}>
       <div className="flex items-center justify-between gap-1.5 px-4">
         <div className="flex min-w-0 items-center gap-1.5">
-          {/* The glyph inside this asset's own canvas sits ~1.25px above its true center (more
-              transparent padding below it than above) — the icon's own box is already centered
-              against the title via `items-center`, this just recenters the glyph within that box. */}
-          <PanelHeaderIcon src="/icons/banner%20edit%20panel.svg" style={{ transform: 'translateY(1.25px)' }} />
+          <PanelHeaderIcon src="/icons/edit_panel/frame.svg" />
           <span className="min-w-0 truncate text-[13px] font-semibold text-white">{bannerName}</span>
         </div>
       </div>
