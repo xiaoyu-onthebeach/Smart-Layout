@@ -564,17 +564,20 @@ export function InlineColorField({ color, onChange }: { color: string; onChange:
   const t = useT();
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
   const hex = useHexDraft(color, onChange);
   const opacity = useOpacityDraft();
+  const active = open || focused;
   return (
     <div
-      className="flex h-9 shrink-0 items-center justify-between rounded-lg border px-2 transition-colors"
+      className="flex h-9 shrink-0 items-center justify-between rounded-lg border px-2 transition-[background-color,border-color,box-shadow]"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         width: INLINE_VALUE_COL_WIDTH,
-        background: open || hovered ? FIELD_HOVER_BG : '#26262C',
-        borderColor: open ? FIELD_ACTIVE_BORDER : 'transparent',
+        background: active || hovered ? FIELD_HOVER_BG : '#26262C',
+        borderColor: active ? FIELD_ACTIVE_BORDER : 'transparent',
+        boxShadow: active ? FIELD_ACTIVE_GLOW : 'none',
       }}
     >
       <div className="flex min-w-0 items-center gap-2">
@@ -587,7 +590,11 @@ export function InlineColorField({ color, onChange }: { color: string; onChange:
           <input
             value={hex.draft}
             onChange={(e) => hex.setDraft(e.target.value)}
-            onBlur={hex.commit}
+            onFocus={() => setFocused(true)}
+            onBlur={() => {
+              setFocused(false);
+              hex.commit();
+            }}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             className="w-full min-w-0 bg-transparent text-[11px] text-white uppercase outline-none"
           />
@@ -599,7 +606,11 @@ export function InlineColorField({ color, onChange }: { color: string; onChange:
           <input
             value={opacity.draft}
             onChange={(e) => opacity.setDraft(e.target.value.replace(/[^0-9]/g, ''))}
-            onBlur={opacity.commit}
+            onFocus={() => setFocused(true)}
+            onBlur={() => {
+              setFocused(false);
+              opacity.commit();
+            }}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             className="w-5 bg-transparent text-right text-[11px] text-white/65 outline-none"
           />
@@ -614,24 +625,24 @@ export function ColorRow({ color, onChange }: { color: string; onChange: (color:
   const t = useT();
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
   const hex = useHexDraft(color, onChange);
   const opacity = useOpacityDraft();
+  const active = open || focused;
   return (
     <div className="flex items-center gap-2">
       <ColorPickerPopover color={color} onChange={onChange} onOpenChange={setOpen}>
         <button type="button" aria-label={t('Color')} className="size-8 shrink-0 rounded-full border border-black/20" style={{ background: color }} />
       </ColorPickerPopover>
       <div
-        className="flex h-8 flex-1 items-center gap-2 rounded-lg border border-chrome-border bg-chrome-border-subtle px-3 text-sm text-chrome-fg transition-colors"
+        className="flex h-8 flex-1 items-center gap-2 rounded-lg border border-chrome-border bg-chrome-border-subtle px-3 text-sm text-chrome-fg transition-[background-color,border-color,box-shadow]"
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        style={
-          open
-            ? { background: FIELD_HOVER_BG, borderColor: FIELD_ACTIVE_BORDER }
-            : hovered
-              ? { background: FIELD_HOVER_BG }
-              : undefined
-        }
+        style={{
+          background: active || hovered ? FIELD_HOVER_BG : undefined,
+          borderColor: active ? FIELD_ACTIVE_BORDER : undefined,
+          boxShadow: active ? FIELD_ACTIVE_GLOW : 'none',
+        }}
       >
         {/* A gradient's own CSS string is an implementation detail, not something worth spelling
             out in full here — "Linear" names the fill kind the same way a hex value names a color. */}
@@ -641,7 +652,11 @@ export function ColorRow({ color, onChange }: { color: string; onChange: (color:
           <input
             value={hex.draft}
             onChange={(e) => hex.setDraft(e.target.value)}
-            onBlur={hex.commit}
+            onFocus={() => setFocused(true)}
+            onBlur={() => {
+              setFocused(false);
+              hex.commit();
+            }}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             className="w-full min-w-0 flex-1 bg-transparent uppercase outline-none"
           />
@@ -650,7 +665,11 @@ export function ColorRow({ color, onChange }: { color: string; onChange: (color:
           <input
             value={opacity.draft}
             onChange={(e) => opacity.setDraft(e.target.value.replace(/[^0-9]/g, ''))}
-            onBlur={opacity.commit}
+            onFocus={() => setFocused(true)}
+            onBlur={() => {
+              setFocused(false);
+              opacity.commit();
+            }}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             className="w-6 bg-transparent text-right outline-none"
           />
@@ -889,6 +908,12 @@ const SCRUB_CURSOR = "url('/icons/drag-cursor.svg') 16 16, ew-resize";
  * fields (Size/Rotation in Image/Shape/Text) can match without duplicating the literals. */
 export const FIELD_HOVER_BG = '#2F2F37';
 export const FIELD_ACTIVE_BORDER = '#4570FF';
+/** A soft blurred glow around a color-fill pill's own outer edge (Fill's swatch+hex+opacity pill,
+ * and the image-fill equivalent) while it's active — editing its hex/opacity, or its color/image
+ * picker is open — layered on top of the plain FIELD_ACTIVE_BORDER outline above rather than
+ * replacing it, since a border alone doesn't read as clearly against the panel's own dark
+ * background as it does on a lighter surface. */
+export const FIELD_ACTIVE_GLOW = '0 0 8px 2px rgba(69,112,255,0.45)';
 
 /** Hover/focus tracking for the bespoke Size/Rotation pills (Image/Shape/Text panels), which are
  * plain `<input>`s with no drag-to-scrub — just enough state to tint on hover and outline on focus,

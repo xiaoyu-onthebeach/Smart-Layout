@@ -10,6 +10,7 @@ import {
   BORDER_STYLE_ICONS,
   CornerRadiusRow,
   FIELD_ACTIVE_BORDER,
+  FIELD_ACTIVE_GLOW,
   fieldHighlightStyle,
   FIELD_HOVER_BG,
   ImageHoverReplace,
@@ -89,13 +90,14 @@ function ImageFillField({
   const highlighted = active || hovered;
   return (
     <div
-      className="flex h-9 shrink-0 items-center gap-2 rounded-lg border pr-2 pl-1 transition-colors"
+      className="flex h-9 shrink-0 items-center gap-2 rounded-lg border pr-2 pl-1 transition-[background-color,border-color,box-shadow]"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         width: INLINE_VALUE_COL_WIDTH,
         background: highlighted ? FIELD_HOVER_BG : '#26262C',
         borderColor: active ? FIELD_ACTIVE_BORDER : 'transparent',
+        boxShadow: active ? FIELD_ACTIVE_GLOW : 'none',
       }}
     >
       <Popover open={open} onOpenChange={handleOpenChange}>
