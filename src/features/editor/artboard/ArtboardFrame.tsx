@@ -75,6 +75,10 @@ const FOCUS_STROKE_COLOR = '#ffffff';
 const FOCUS_STROKE_OPACITY = 0.8;
 const FOCUS_STROKE_GLOW = 'drop-shadow(0 0 8px rgba(255,255,255,0.25))';
 const FOCUS_STROKE_TRANSITION = 'all 200ms ease';
+// Soft shadow the selection box itself casts, independent of the corner-bracket stroke's own small
+// glow above — applied to the box's own background/dim layer in both its states (see the two
+// `boxShadow` usages below), not to `FocusRectCorners`.
+const FOCUS_BOX_SHADOW = '0 4px 24px rgba(255,255,255,0.35)';
 const FOCUS_CORNERS = ['nw', 'ne', 'sw', 'se'] as const;
 // Same radius as the box itself (see the two `borderRadius: FOCUS_BOX_RADIUS` container styles
 // below) — the stroke's own corner piece traces an actual quarter-circle at this radius, rather
@@ -143,40 +147,28 @@ function focusArmSegmentStyle(axis: 'h' | 'v', corner: (typeof FOCUS_CORNERS)[nu
   // corner once the curve's own FOCUS_BOX_RADIUS is subtracted, floored at 0 so a box too small for
   // the curve to fit twice over never goes negative.
   const armLength = `max(0px, calc(${reach} - ${FOCUS_BOX_RADIUS}px))`;
-  const half = thickness / 2;
   const style: CSSProperties = { position: 'absolute', background: FOCUS_STROKE_COLOR, transition: FOCUS_STROKE_TRANSITION };
   // Flush against the box's own edge (0 to `thickness`, not straddling it via a `-half` offset) —
   // a border can never straddle its own box's edge, so the curve piece's stroke (see
   // FocusCornerCurve) is unavoidably flush like this; the arm has to match that same convention or
   // the two pieces' centerlines land half a stroke-width apart, opening a visible split right where
-  // they're supposed to meet.
+  // they're supposed to meet. Square at both ends (no border-radius at all) — the connecting end
+  // for the same flush-join reason, and the free end deliberately squared off too, per the
+  // reference design's flat-cut bracket ends rather than a rounded/pill-shaped cap.
   if (axis === 'h') {
     style.top = corner.includes('n') ? 0 : undefined;
     style.bottom = corner.includes('s') ? 0 : undefined;
     style.height = thickness;
     style.width = armLength;
-    const connectingLeft = corner.includes('w');
-    if (connectingLeft) style.left = FOCUS_BOX_RADIUS;
+    if (corner.includes('w')) style.left = FOCUS_BOX_RADIUS;
     else style.right = FOCUS_BOX_RADIUS;
-    // Rounded only at the free end (toward the middle of the edge) — the end butting against the
-    // curve piece stays square, or its own round cap leaves a lens-shaped gap against the curve's
-    // flat-cut edge instead of a flush join.
-    style.borderTopLeftRadius = connectingLeft ? 0 : half;
-    style.borderBottomLeftRadius = connectingLeft ? 0 : half;
-    style.borderTopRightRadius = connectingLeft ? half : 0;
-    style.borderBottomRightRadius = connectingLeft ? half : 0;
   } else {
     style.left = corner.includes('w') ? 0 : undefined;
     style.right = corner.includes('e') ? 0 : undefined;
     style.width = thickness;
     style.height = armLength;
-    const connectingTop = corner.includes('n');
-    if (connectingTop) style.top = FOCUS_BOX_RADIUS;
+    if (corner.includes('n')) style.top = FOCUS_BOX_RADIUS;
     else style.bottom = FOCUS_BOX_RADIUS;
-    style.borderTopLeftRadius = connectingTop ? 0 : half;
-    style.borderTopRightRadius = connectingTop ? 0 : half;
-    style.borderBottomLeftRadius = connectingTop ? half : 0;
-    style.borderBottomRightRadius = connectingTop ? half : 0;
   }
   return style;
 }
@@ -1062,6 +1054,7 @@ export function ArtboardFrame({
                   height: `${(layout.focusRect.h / nativeHeight) * 100}%`,
                   background: 'rgba(255,255,255,0.1)',
                   borderRadius: FOCUS_BOX_RADIUS,
+                  boxShadow: FOCUS_BOX_SHADOW,
                 }}
               >
                 {/* Hover affordance so the box still reads as clickable (re-opens editing) even
@@ -1104,7 +1097,12 @@ export function ArtboardFrame({
                       // dragging, but dropped the instant a drag ends (no transition on box-shadow)
                       // — once you've adjusted it at least once you've already seen where it sits,
                       // so the dim doesn't need to keep reminding you on every subsequent hover.
-                      boxShadow: focusRectDragging || !focusRectDirty ? '0 0 0 9999px rgba(38,38,44,0.5)' : undefined,
+                      // Layered together with the box's own persistent drop shadow (comma-separated
+                      // — CSS box-shadow takes a list, painted in the order given) rather than one
+                      // replacing the other.
+                      boxShadow: [focusRectDragging || !focusRectDirty ? '0 0 0 9999px rgba(38,38,44,0.5)' : null, FOCUS_BOX_SHADOW]
+                        .filter(Boolean)
+                        .join(', '),
                       borderRadius: FOCUS_BOX_RADIUS,
                     }}
                     onMouseDown={startFocusRectMove}
