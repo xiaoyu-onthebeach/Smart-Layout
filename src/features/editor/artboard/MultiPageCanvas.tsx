@@ -232,7 +232,6 @@ function UnifiedAllSizesHeader({
   top,
   totalWidth,
   icons,
-  zoom,
 }: {
   left: number;
   top: number;
@@ -240,9 +239,6 @@ function UnifiedAllSizesHeader({
   totalWidth: number;
   /** Each column's icon center x — screen-px, relative to `left`, already zoom-scaled by the caller — plus its own confirm/focus handlers. */
   icons: Array<{ x: number; entry: PageEntry; onConfirm: (results: QuickSizeResult[]) => void; onFocusPrimary: () => void }>;
-  /** Below 40% the circle itself is hidden (same threshold `ArtboardFrame` already uses to hide its
-   * own bottom "Add more sizes" hotspot) — the divider line stays, just without the button on it. */
-  zoom: number;
 }) {
   const t = useT();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -267,11 +263,9 @@ function UnifiedAllSizesHeader({
               />
             )}
             <div className="pointer-events-auto absolute" style={{ left: icon.x - ADD_ICON_SIZE / 2, top: -ADD_ICON_SIZE / 2 }}>
-              {zoom >= 0.4 && (
-                <QuickSizeMenu onConfirm={icon.onConfirm} sourceLayoutId={icon.entry.layout.id}>
-                  <AddSizeIconButton onHoverChange={(v) => setHoveredIndex(v ? i : null)} onClick={icon.onFocusPrimary} />
-                </QuickSizeMenu>
-              )}
+              <QuickSizeMenu onConfirm={icon.onConfirm} sourceLayoutId={icon.entry.layout.id}>
+                <AddSizeIconButton onHoverChange={(v) => setHoveredIndex(v ? i : null)} onClick={icon.onFocusPrimary} />
+              </QuickSizeMenu>
             </div>
           </div>
         );
@@ -447,8 +441,10 @@ function PageCard({
 
       {!isLoading && showRightAdd && <AddPageHotspot edge="right" sourceLayoutId={layout.id} onConfirm={(r) => onAddAdjacent('right', r)} />}
       {/* Below the card only ever offers to adapt a scene that actually has something to adapt —
-          a still-empty primary shows no affordance at all here, not even on hover. */}
-      {!isLoading && showBottomAdd && scale >= 0.4 && layoutHasContent(layout) && (
+          a still-empty primary shows no affordance at all here, not even on hover. Persistent at
+          every zoom level once it does — unlike the old scale >= 0.4 gate, unmounting this on zoom
+          out would also close an already-open QuickSizeMenu panel along with it. */}
+      {!isLoading && showBottomAdd && layoutHasContent(layout) && (
         <AddPageHotspot edge="bottom" sourceLayoutId={layout.id} onConfirm={(r) => onAddAdjacent('bottom', r)} />
       )}
     </div>
@@ -1434,7 +1430,6 @@ export function MultiPageCanvas() {
                       left={left}
                       top={headerTop}
                       totalWidth={dividerWidth}
-                      zoom={camera.zoom}
                       icons={[
                         {
                           // Centered on the *primary's own* width, not `dividerWidth` (the wider of
@@ -1468,7 +1463,6 @@ export function MultiPageCanvas() {
                   left={left}
                   top={headerTop}
                   totalWidth={header.totalWidth * camera.zoom}
-                  zoom={camera.zoom}
                   icons={header.icons.map(({ x, entry }) => ({
                     x: x * camera.zoom,
                     entry,
