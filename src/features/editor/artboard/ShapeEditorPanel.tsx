@@ -160,7 +160,7 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
               onClick={() => setAspectLocked((v) => !v)}
               className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors', aspectLocked ? 'bg-white/15' : 'hover:bg-white/10')}
             >
-              <img src="/icons/layer%20list/Unlock%20.svg" alt="" className={cn('size-3.5 transition-opacity', aspectLocked ? 'opacity-100' : 'opacity-45')} />
+              <img src={aspectLocked ? '/icons/edit_panel/lock%2012.svg' : '/icons/edit_panel/unlock%2012.svg'} alt="" className="size-3.5" />
             </button>
           </div>
         </div>

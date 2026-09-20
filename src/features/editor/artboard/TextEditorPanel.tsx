@@ -331,7 +331,7 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
               <span className="text-white/65">H</span>
               <span className="ml-auto text-white">{Math.round(primary.frame.h)}</span>
             </div>
-            <img src="/icons/layer%20list/Unlock%20.svg" alt="" className="size-3.5 shrink-0 opacity-45" />
+            <img src="/icons/edit_panel/lock%2012.svg" alt="" className="size-3.5 shrink-0 opacity-45" />
           </div>
         </div>
 

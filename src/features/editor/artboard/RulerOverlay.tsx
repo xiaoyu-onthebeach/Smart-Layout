@@ -132,8 +132,13 @@ export function RulerOverlay({
       <TopRuler offset={camera.x + canvasOffsetX - RULER_SIZE} zoom={camera.zoom} trackWidth={canvasOffsetX + viewport.width - RULER_SIZE} />
       <LeftRuler offset={camera.y - RULER_SIZE} zoom={camera.zoom} trackHeight={viewport.height - RULER_SIZE} />
       {/* Corner square at the true top-left of the app, where the (fixed) left ruler starts —
-          matches the header's own push-down-and-right so nothing overlaps it. */}
-      <div className="pointer-events-none fixed top-0 left-0 z-20" style={{ width: RULER_SIZE, height: RULER_SIZE, background: '#19191D' }} />
+          matches the header's own push-down-and-right so nothing overlaps it. The crosshair inside
+          it (one line continuing each ruler's own edge tick) marks where the two rulers' zero
+          points meet, the same corner crosshair every ruler-equipped design tool shows. */}
+      <div className="pointer-events-none fixed top-0 left-0 z-20" style={{ width: RULER_SIZE, height: RULER_SIZE, background: '#19191D' }}>
+        <div className="absolute right-[1px] bottom-0" style={{ width: 1, height: 8, background: TICK_MAJOR_COLOR }} />
+        <div className="absolute right-0 bottom-[1px]" style={{ width: 8, height: 1, background: TICK_MAJOR_COLOR }} />
+      </div>
     </>
   );
 }
