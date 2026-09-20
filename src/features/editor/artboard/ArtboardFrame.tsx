@@ -569,23 +569,32 @@ export function ArtboardFrame({
     const { x: startRectX, y: startRectY, w, h } = focusDrawRect;
     const startX = e.clientX;
     const startY = e.clientY;
+    // `focusDrawRect` state itself is stale inside this closure — onMove keeps this in sync with
+    // every intermediate position so onUp can commit wherever the box actually ended up, not
+    // wherever it was when the drag started.
+    let latestRect = focusDrawRect;
     setFocusRectDirty(true);
     setFocusRectDragging(true);
     function onMove(ev: globalThis.MouseEvent) {
       const dx = (ev.clientX - startX) / scale;
       const dy = (ev.clientY - startY) / scale;
-      setFocusDrawRect({
+      latestRect = {
         x: Math.max(0, Math.min(nativeWidth - w, startRectX + dx)),
         y: Math.max(0, Math.min(nativeHeight - h, startRectY + dy)),
         w,
         h,
-      });
+      };
+      setFocusDrawRect(latestRect);
     }
     function onUp() {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       setFocusRectDragging(false);
       setSuppressFocusHover(true);
+      // Moving the box already is the deliberate "I'm placing this" gesture — commit it right here
+      // instead of leaving the "Change" button disabled until some separate confirming click lands
+      // elsewhere in the frame.
+      commitFocusRect(latestRect);
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -603,6 +612,9 @@ export function ArtboardFrame({
     if (!startRect) return;
     const startX = e.clientX;
     const startY = e.clientY;
+    // See startFocusRectMove's own copy of this — onUp needs wherever the box actually ended up,
+    // not the stale value `focusDrawRect` still holds inside this closure.
+    let latestRect = startRect;
     setFocusRectDirty(true);
     setFocusRectDragging(true);
     function onMove(ev: globalThis.MouseEvent) {
@@ -622,23 +634,29 @@ export function ArtboardFrame({
         h = Math.max(FOCUS_RECT_MIN_SIZE, Math.min(startRect.y + startRect.h, startRect.h - dy));
         y = startRect.y + startRect.h - h;
       }
-      setFocusDrawRect({ x, y, w, h });
+      latestRect = { x, y, w, h };
+      setFocusDrawRect(latestRect);
     }
     function onUp() {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       setFocusRectDragging(false);
       setSuppressFocusHover(true);
+      // Resizing already is the deliberate "I'm placing this" gesture — commit it right here
+      // instead of leaving the "Change" button disabled until some separate confirming click lands
+      // elsewhere in the frame.
+      commitFocusRect(latestRect);
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   }
 
-  function confirmFocusRect(e: ReactMouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!focusDrawRect) return;
-    updateLayoutStyle(layoutId, { focusRect: focusDrawRect });
+  // Saves `rect` as the layout's real, committed focusRect and marks this picking session
+  // confirmed — shared by the click-catcher's own explicit confirm below and by a move/resize
+  // drag's own release (see startFocusRectMove/startFocusRectResize), so finishing either kind of
+  // adjustment is itself enough to confirm, with no separate click required afterward.
+  function commitFocusRect(rect: { x: number; y: number; w: number; h: number }) {
+    updateLayoutStyle(layoutId, { focusRect: rect });
     confirmFocusPick();
     // Stays in picking mode rather than exiting outright — clearing focusDrawRect (with
     // focusPickConfirmed now true) switches the overlay below into its "confirmed" display: the
@@ -646,6 +664,13 @@ export function ArtboardFrame({
     // rather than a still-open prompt. Leaving picking mode only happens when the "Add more
     // sizes" panel itself closes (see QuickSizeMenu's closePanel) or "Change" re-enters it.
     setFocusDrawRect(null);
+  }
+
+  function confirmFocusRect(e: ReactMouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!focusDrawRect) return;
+    commitFocusRect(focusDrawRect);
   }
 
   function handleFrameMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
