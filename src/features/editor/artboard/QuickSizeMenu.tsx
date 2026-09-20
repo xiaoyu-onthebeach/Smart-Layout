@@ -27,7 +27,7 @@ function buildGroups(): ItemGroup[] {
 
   const otherGroup: ItemGroup = {
     id: 'other',
-    name: 'Other sizes',
+    name: 'All sizes',
     items: STANDARD_RATIOS.map((r) => {
       const nearest = nearestPreset(r.width, r.height);
       return { id: `ratio-${r.id}`, label: r.name, width: r.width, height: r.height, ruleSetId: nearest?.preset.ruleSetId ?? NO_RULES_ID };
@@ -359,7 +359,7 @@ export function QuickSizeMenu({
                     const selectedCount = group.items.filter((i) => selectedIds.has(i.id)).length;
                     const allSelected = selectedCount === group.items.length;
                     const expanded = expandedGroupIds.has(group.id);
-                    const groupDisplayName = group.id === 'other' ? t('Other sizes') : group.name;
+                    const groupDisplayName = group.id === 'other' ? t('All sizes') : group.name;
                     return (
                       <div key={group.id} className={cn('flex flex-col rounded-lg', expanded && 'overflow-hidden')}>
                         <button

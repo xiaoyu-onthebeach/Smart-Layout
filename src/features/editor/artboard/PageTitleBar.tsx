@@ -74,17 +74,17 @@ export function PageTitleBar({
             if (e.key === 'Enter') commit();
             if (e.key === 'Escape') onEditingChange(false);
           }}
-          className="min-w-0 flex-1 rounded-sm bg-chrome-border-subtle px-1 text-sm text-chrome-fg outline-none"
+          className="min-w-0 flex-1 rounded-sm bg-chrome-border-subtle px-1 text-[15px] text-chrome-fg outline-none"
         />
       ) : (
         <div className="group/name flex min-w-0 flex-1 items-center gap-1.5">
           {isPrimary ? (
-            <img src="/icons/primary.svg" alt={t('Primary')} className="size-4 shrink-0" />
+            <img src="/icons/primary%201.svg" alt={t('Primary')} className="size-4 shrink-0" />
           ) : (
             platformId && <PlatformMark platformId={platformId} className="size-4 shrink-0" />
           )}
           <span
-            className="truncate text-sm text-chrome-fg"
+            className="truncate text-[15px] text-chrome-fg"
             onDoubleClick={(e) => {
               if (!onRename) return;
               e.stopPropagation();

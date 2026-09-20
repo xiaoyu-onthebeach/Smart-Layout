@@ -42,10 +42,6 @@ export function SizeChangeMenu({
     if (!q) return GROUPS;
     return GROUPS.map((g) => ({ ...g, items: g.items.filter((item) => item.label.toLowerCase().includes(q)) })).filter((g) => g.items.length > 0);
   }, [query]);
-  // "Other sizes" isn't a real platform — its items render flat, above the collapsible EC platform
-  // groups, rather than as one more group to expand.
-  const otherItems = filteredGroups.find((g) => g.id === 'other')?.items ?? [];
-  const platformGroups = filteredGroups.filter((g) => g.id !== 'other');
 
   const canAddCustom = Number(customWidth) > 0 && Number(customHeight) > 0;
   const isCurrentSize = (width: number, height: number) => width === currentWidth && height === currentHeight;
@@ -219,24 +215,11 @@ export function SizeChangeMenu({
           <div className="h-px w-full shrink-0" style={{ background: '#40404A' }} />
 
           <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
-            {otherItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => choose({ width: item.width, height: item.height, label: item.label, presetId: item.presetId, ruleSetId: item.ruleSetId })}
-                className="flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-left transition-colors hover:bg-white/10"
-              >
-                <RatioIcon width={item.width} height={item.height} />
-                <span className="shrink-0 text-sm text-chrome-fg">
-                  {item.width}x{item.height}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{item.label}</span>
-                {isCurrentSize(item.width, item.height) && <Check className="size-4 shrink-0 text-white" />}
-              </button>
-            ))}
-
-            {platformGroups.map((group) => {
+            {/* "All sizes" (the generic Square/Landscape/Portrait/... ratios) sits last, after every
+                real EC platform group — GROUPS already orders it that way, so groups render as-is. */}
+            {filteredGroups.map((group) => {
               const expanded = expandedGroupId === group.id;
+              const groupDisplayName = group.id === 'other' ? t('All sizes') : group.name;
               return (
                 <div key={group.id} className="flex flex-col gap-0.5">
                   <button
@@ -245,8 +228,8 @@ export function SizeChangeMenu({
                     className="flex h-8 w-full shrink-0 items-center gap-1.5 rounded-md px-1 text-left transition-colors hover:bg-white/5"
                   >
                     <ChevronDown className={cn('size-4 shrink-0 text-white/70 transition-transform', !expanded && '-rotate-90')} />
-                    <img src={`/icons/ec-platform-icon/${group.id}.svg`} alt="" className="size-5 shrink-0 rounded" />
-                    <span className="min-w-0 flex-1 truncate text-sm text-[#D9D9D9]">{group.name}</span>
+                    {group.id !== 'other' && <img src={`/icons/ec-platform-icon/${group.id}.svg`} alt="" className="size-5 shrink-0 rounded" />}
+                    <span className="min-w-0 flex-1 truncate text-sm text-[#D9D9D9]">{groupDisplayName}</span>
                   </button>
 
                   {expanded &&
@@ -268,9 +251,7 @@ export function SizeChangeMenu({
                 </div>
               );
             })}
-            {otherItems.length === 0 && platformGroups.length === 0 && (
-              <div className="px-3 py-4 text-center text-sm text-white/45">{t('No sizes match')}</div>
-            )}
+            {filteredGroups.length === 0 && <div className="px-3 py-4 text-center text-sm text-white/45">{t('No sizes match')}</div>}
           </div>
         </div>
       )}

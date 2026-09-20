@@ -1,9 +1,18 @@
 import { useState } from 'react';
-import { Image as ImageIcon, Layers, Type } from 'lucide-react';
+import { Image as ImageIcon, Type } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import type { Layout } from '@/types';
 import { ImagePickerDialog } from '@/features/editor/artboard/ImagePickerDialog';
-import { ColorRow, ImageHoverReplace, PanelCard, PanelDivider, PanelExportFooter, PanelSection, SectionIconBadge } from '@/features/editor/artboard/PanelKit';
+import {
+  ColorRow,
+  ImageHoverReplace,
+  PanelCard,
+  PanelDivider,
+  PanelExportFooter,
+  PanelHeaderIcon,
+  PanelSection,
+  SectionIconBadge,
+} from '@/features/editor/artboard/PanelKit';
 import { useT } from '@/lib/i18n';
 
 type ImageUsage = { url: string; layoutIds: Set<string>; targets: { layoutId: string; elementId: string }[] };
@@ -100,9 +109,7 @@ export function MultiSceneContentPanel({ setIds }: { setIds: string[] }) {
   return (
     <PanelCard>
       <div className="flex items-center gap-1.5 px-4 pb-1">
-        <SectionIconBadge>
-          <Layers className="size-3.5 text-white/70" />
-        </SectionIconBadge>
+        <PanelHeaderIcon src="/icons/edit_panel/mult-select.svg" />
         <span className="truncate text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Edit content')}</span>
         <span className="ml-auto shrink-0 text-[11px]" style={{ color: 'rgba(255,255,255,0.65)' }}>
           {language === 'ja' ? `${setIds.length}件のサイズを選択中` : `${setIds.length} sizes selected`}

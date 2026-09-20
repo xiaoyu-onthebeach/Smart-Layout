@@ -147,7 +147,6 @@ export const ja: Record<string, string> = {
   Change: '変更',
   'Pick the scene focus': 'シーンのフォーカスを選択',
   Pick: '選択',
-  'Other sizes': 'その他のサイズ',
   'Add custom size': 'カスタムサイズを追加',
 
   // Inspector / layers / export
