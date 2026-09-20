@@ -14,6 +14,16 @@ import type { LayoutElement } from '@/types';
 const GRID_FADE_STOPS = 'rgba(0,0,0,0.5) 0%, #000 20%, #000 80%, rgba(0,0,0,0.5) 100%';
 const GRID_LINE_COLOR = '#74cee551';
 
+/** The expand-to-frame button's own corner preference — bottom-right by default, falling back
+ * through this same order to whichever corner actually lands in the frame's open margin instead
+ * of on top of the image itself (see `cornerIsOpen` below). */
+const EXPAND_ICON_CORNER_PRIORITY: { h: 'left' | 'right'; v: 'top' | 'bottom' }[] = [
+  { h: 'right', v: 'bottom' },
+  { h: 'right', v: 'top' },
+  { h: 'left', v: 'bottom' },
+  { h: 'left', v: 'top' },
+];
+
 function GridLines() {
   return (
     <div className="pointer-events-none absolute inset-0" style={{ mixBlendMode: 'plus-lighter', opacity: 0.8 }}>
@@ -114,8 +124,15 @@ export function ImageBox({
     !sceneHasBackgroundColor &&
     !expanding &&
     (gapRight || gapLeft || gapBottom || gapTop);
-  const frameGapHorizontalSide: 'left' | 'right' = gapRight ? 'right' : 'left';
-  const frameGapVerticalSide: 'top' | 'bottom' = gapBottom ? 'bottom' : 'top';
+  // Picks the button's own corner, not just an independent side per axis — a corner only counts
+  // as landing in the empty margin (rather than on top of the image itself) if at least one of its
+  // two edges actually has a gap; a corner where both edges are flush with the image is skipped in
+  // favor of the next one in EXPAND_ICON_CORNER_PRIORITY.
+  const cornerIsOpen = (corner: { h: 'left' | 'right'; v: 'top' | 'bottom' }) =>
+    (corner.h === 'right' ? gapRight : gapLeft) || (corner.v === 'bottom' ? gapBottom : gapTop);
+  const pickedCorner = EXPAND_ICON_CORNER_PRIORITY.find(cornerIsOpen) ?? EXPAND_ICON_CORNER_PRIORITY[0];
+  const frameGapHorizontalSide = pickedCorner.h;
+  const frameGapVerticalSide = pickedCorner.v;
   // Too small to read or reliably click once zoomed out past this — hides just the icon, not the
   // grid underneath it.
   const showExpandIcons = scale === undefined || scale >= 0.3;
