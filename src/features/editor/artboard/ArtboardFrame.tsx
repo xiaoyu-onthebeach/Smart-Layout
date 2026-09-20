@@ -78,7 +78,7 @@ const FOCUS_STROKE_TRANSITION = 'all 200ms ease';
 // Soft shadow the selection box itself casts, independent of the corner-bracket stroke's own small
 // glow above — applied to the box's own background/dim layer in both its states (see the two
 // `boxShadow` usages below), not to `FocusRectCorners`.
-const FOCUS_BOX_SHADOW = '0 4px 24px rgba(255,255,255,0.35)';
+const FOCUS_BOX_SHADOW = '0 4px 24px rgba(64,64,74,0.15)'; // #40404A at 15%
 const FOCUS_CORNERS = ['nw', 'ne', 'sw', 'se'] as const;
 // Same radius as the box itself (see the two `borderRadius: FOCUS_BOX_RADIUS` container styles
 // below) — the stroke's own corner piece traces an actual quarter-circle at this radius, rather
