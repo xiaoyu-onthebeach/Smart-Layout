@@ -262,20 +262,48 @@ function AnchorPreviewFrame({ shape, vertical, horizontal }: { shape: PreviewSha
  * than Smart, since anchoring — not cascading behavior — is what a primary's own position choice
  * is actually for.
  */
+/**
+ * The frame's own axis-aligned bounding box once `rotation` (degrees, pivoting around the frame's
+ * own center — matches every renderer's plain `transform: rotate()`, see `useElementDrag`'s
+ * `startRotate`) is applied: the center stays fixed, but a rotated rect's tightest enclosing
+ * axis-aligned box is wider/taller than the rect itself, so its own top-left (what "Position"
+ * means once the shape is tilted) shifts too, even though `frame.x`/`frame.y` themselves never do.
+ */
+function rotatedBoundingOrigin(frame: { x: number; y: number; w: number; h: number }, rotation: number) {
+  const rad = (rotation * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(rad));
+  const sin = Math.abs(Math.sin(rad));
+  const boundingW = frame.w * cos + frame.h * sin;
+  const boundingH = frame.w * sin + frame.h * cos;
+  const cx = frame.x + frame.w / 2;
+  const cy = frame.y + frame.h / 2;
+  return { x: cx - boundingW / 2, y: cy - boundingH / 2 };
+}
+
 export function PositionSection({
   x,
   y,
+  w = 0,
+  h = 0,
+  rotation = 0,
   showPositionMode = true,
   resetKey,
 }: {
+  /** The frame's own unrotated top-left corner and size — `w`/`h` are only needed alongside
+   * `rotation` to derive the rotated bounding box's origin shown below; omit both (or leave
+   * `rotation` at 0) to show `x`/`y` as-is. */
   x: number;
   y: number;
+  w?: number;
+  h?: number;
+  rotation?: number;
   showPositionMode?: boolean;
   /** Re-defaults `mode` (back to Anchored, for a primary) whenever this changes — pass the
    * selected element's own id so switching selection resets the preview instead of carrying over
    * whatever mode a previously-selected element was left in. */
   resetKey?: string;
 }) {
+  const displayOrigin = rotation ? rotatedBoundingOrigin({ x, y, w, h }, rotation) : { x, y };
   const t = useT();
   const [mode, setMode] = useState<PositionMode>(showPositionMode ? 'anchored' : 'smart');
   const [vertical, setVertical] = useState<VerticalAnchor>('center');
@@ -343,11 +371,11 @@ export function PositionSection({
         <div className="flex items-center gap-2">
           <div className="flex h-8 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm">
             <span className="text-white/65">X</span>
-            <span className="ml-auto text-white">{Math.round(x)}</span>
+            <span className="ml-auto text-white">{Math.round(displayOrigin.x)}</span>
           </div>
           <div className="flex h-8 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm">
             <span className="text-white/65">Y</span>
-            <span className="ml-auto text-white">{Math.round(y)}</span>
+            <span className="ml-auto text-white">{Math.round(displayOrigin.y)}</span>
           </div>
         </div>
       </div>

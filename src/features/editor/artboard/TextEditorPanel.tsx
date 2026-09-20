@@ -305,7 +305,15 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
     <PanelCard gap={16}>
       <PanelHeader icon={<PanelHeaderIcon src="/icons/edit_panel/Panel_text.svg" />} title={title} trailing={<MatchSelectButton targets={targets} />} />
 
-      <PositionSection x={primary.frame.x} y={primary.frame.y} showPositionMode={false} resetKey={primary.id} />
+      <PositionSection
+        x={primary.frame.x}
+        y={primary.frame.y}
+        w={primary.frame.w}
+        h={primary.frame.h}
+        rotation={primary.rotation ?? 0}
+        showPositionMode={false}
+        resetKey={primary.id}
+      />
 
       {/* Appended to the same visual section as Position/Alignment above (no divider in between) —
           Size stays locked (text always auto-fits its own box to content + font size, see

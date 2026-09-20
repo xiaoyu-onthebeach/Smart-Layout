@@ -97,7 +97,15 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
     <PanelCard gap={16}>
       <PanelHeader icon={<PanelHeaderIcon src={SHAPE_HEADER_ICONS[primary.shape ?? 'rect']} />} title={title} trailing={<MatchSelectButton targets={targets} />} />
 
-      <PositionSection x={primary.frame.x} y={primary.frame.y} showPositionMode={false} resetKey={primary.id} />
+      <PositionSection
+        x={primary.frame.x}
+        y={primary.frame.y}
+        w={primary.frame.w}
+        h={primary.frame.h}
+        rotation={primary.rotation ?? 0}
+        showPositionMode={false}
+        resetKey={primary.id}
+      />
 
       {/* Appended to the same visual section as Position/Alignment above (no divider in between) —
           unlike text (which always auto-fits to content), a shape's box is the thing being sized
