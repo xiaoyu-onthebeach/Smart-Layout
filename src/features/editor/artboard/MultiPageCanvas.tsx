@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
-import { Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 import { useAppStore } from '@/store/useAppStore';
@@ -123,13 +122,6 @@ type Camera = { x: number; y: number; zoom: number };
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
-}
-
-/** True if some other page already occupies the space to the right (blocking a new right-add). */
-function hasBlockerToRight(entry: PageEntry, others: PageEntry[]) {
-  return others.some(
-    (o) => o.id !== entry.id && o.pos.x >= entry.pos.x + entry.layout.size.width - 1 && o.pos.y < entry.pos.y + entry.layout.size.height && o.pos.y + o.layout.size.height > entry.pos.y,
-  );
 }
 
 /** True if some other page already occupies the space below (blocking a new bottom-add). */
@@ -292,42 +284,25 @@ function UnifiedAllSizesHeader({
   );
 }
 
-function AddPageHotspot({ edge, sourceLayoutId, onConfirm }: { edge: 'right' | 'bottom'; sourceLayoutId: string; onConfirm: (results: QuickSizeResult[]) => void }) {
-  const t = useT();
-  const isRight = edge === 'right';
+/** The hotspot below a scene card that offers to adapt it to another size — see `AddMoreSizesButton`
+ * for the pill itself. (A twin hotspot used to sit on the right edge too, with a small circular "+"
+ * instead of this pill; removed since the "ALL SIZES" divider's own "+" already covers that.) */
+function AddPageHotspot({ sourceLayoutId, onConfirm }: { sourceLayoutId: string; onConfirm: (results: QuickSizeResult[]) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
     <div
+      // The panel itself (rendered by QuickSizeMenu below, `position: fixed` elsewhere on screen)
+      // is still a DOM descendant of this wrapper — its own `opacity` cascades down regardless of
+      // the child's own positioning scheme, so this can't fade back out on mouse-leave while the
+      // panel is open, or the panel would visually vanish (it'd still be "open" in state, just
+      // invisible) even though the cursor simply left the hover zone.
       className={cn(
-        'absolute flex items-center justify-center',
-        isRight
-          ? 'group top-0 -right-16 h-full w-16'
-          : // The panel itself (rendered by QuickSizeMenu below, `position: fixed` elsewhere on
-            // screen) is still a DOM descendant of this wrapper — its own `opacity` cascades down
-            // regardless of the child's own positioning scheme, so this can't fade back out on
-            // mouse-leave while the panel is open, or the panel would visually vanish (it'd
-            // still be "open" in state, just invisible) even though the cursor simply left the
-            // hover zone.
-            cn('-bottom-16 left-0 h-16 w-full transition-opacity', menuOpen ? 'opacity-100' : 'opacity-0 group-hover/card:opacity-100'),
+        'absolute -bottom-16 left-0 flex h-16 w-full items-center justify-center transition-opacity',
+        menuOpen ? 'opacity-100' : 'opacity-0 group-hover/card:opacity-100',
       )}
     >
       <QuickSizeMenu onConfirm={onConfirm} onOpenChange={setMenuOpen} sourceLayoutId={sourceLayoutId}>
-        {isRight ? (
-          <button
-            type="button"
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            aria-label={t('Add page')}
-            className={cn(
-              'flex size-9 items-center justify-center rounded-xl bg-chrome-border-subtle text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)] transition-opacity',
-              menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-            )}
-          >
-            <Plus className="size-4" />
-          </button>
-        ) : (
-          <AddMoreSizesButton />
-        )}
+        <AddMoreSizesButton />
       </QuickSizeMenu>
     </div>
   );
@@ -350,7 +325,6 @@ function PageCard({
   reflowing,
   onActivate,
   onStartDrag,
-  showRightAdd,
   showBottomAdd,
   onAddAdjacent,
   onRename,
@@ -388,7 +362,6 @@ function PageCard({
   onActivate: () => void;
   /** Snap-aware drag starter shared by the title bar and a plain click on the scene body. */
   onStartDrag: (e: ReactMouseEvent) => void;
-  showRightAdd: boolean;
   showBottomAdd: boolean;
   onAddAdjacent: (edge: 'right' | 'bottom', results: QuickSizeResult[]) => void;
   onRename: (name: string) => void;
@@ -447,14 +420,11 @@ function PageCard({
         />
       )}
 
-      {!isLoading && showRightAdd && <AddPageHotspot edge="right" sourceLayoutId={layout.id} onConfirm={(r) => onAddAdjacent('right', r)} />}
       {/* Below the card only ever offers to adapt a scene that actually has something to adapt —
           a still-empty primary shows no affordance at all here, not even on hover. Persistent at
           every zoom level once it does — unlike the old scale >= 0.4 gate, unmounting this on zoom
           out would also close an already-open QuickSizeMenu panel along with it. */}
-      {!isLoading && showBottomAdd && layoutHasContent(layout) && (
-        <AddPageHotspot edge="bottom" sourceLayoutId={layout.id} onConfirm={(r) => onAddAdjacent('bottom', r)} />
-      )}
+      {!isLoading && showBottomAdd && layoutHasContent(layout) && <AddPageHotspot sourceLayoutId={layout.id} onConfirm={(r) => onAddAdjacent('bottom', r)} />}
     </div>
   );
 }
@@ -1543,7 +1513,6 @@ export function MultiPageCanvas() {
                 onRename={(name) => renamePage(entry.id, name)}
                 renaming={renamingEntryId === entry.id}
                 onRenamingChange={(v) => setRenamingEntryId(v ? entry.id : null)}
-                showRightAdd={!isMultiMemberGroupPage(entry.id) && !hasBlockerToRight(entry, entries)}
                 showBottomAdd={!isMultiMemberGroupPage(entry.id) && !hasBlockerBelow(entry, entries)}
                 onAddAdjacent={(edge, results) => handleAddAdjacent(entry, edge, results)}
                 onSceneContextMenu={(e) => setSceneContextMenu({ x: e.clientX, y: e.clientY, entryId: entry.id })}

@@ -570,14 +570,13 @@ export function InlineColorField({ color, onChange }: { color: string; onChange:
   const active = open || focused;
   return (
     <div
-      className="flex h-9 shrink-0 items-center justify-between rounded-lg border px-2 transition-[background-color,border-color,box-shadow]"
+      className="flex h-9 shrink-0 items-center justify-between rounded-lg border px-2 transition-colors"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         width: INLINE_VALUE_COL_WIDTH,
         background: active || hovered ? FIELD_HOVER_BG : '#26262C',
         borderColor: active ? FIELD_ACTIVE_BORDER : 'transparent',
-        boxShadow: active ? FIELD_ACTIVE_GLOW : 'none',
       }}
     >
       <div className="flex min-w-0 items-center gap-2">
@@ -635,13 +634,12 @@ export function ColorRow({ color, onChange }: { color: string; onChange: (color:
         <button type="button" aria-label={t('Color')} className="size-8 shrink-0 rounded-full border border-black/20" style={{ background: color }} />
       </ColorPickerPopover>
       <div
-        className="flex h-8 flex-1 items-center gap-2 rounded-lg border border-chrome-border bg-chrome-border-subtle px-3 text-sm text-chrome-fg transition-[background-color,border-color,box-shadow]"
+        className="flex h-8 flex-1 items-center gap-2 rounded-lg border border-chrome-border bg-chrome-border-subtle px-3 text-sm text-chrome-fg transition-colors"
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
           background: active || hovered ? FIELD_HOVER_BG : undefined,
           borderColor: active ? FIELD_ACTIVE_BORDER : undefined,
-          boxShadow: active ? FIELD_ACTIVE_GLOW : 'none',
         }}
       >
         {/* A gradient's own CSS string is an implementation detail, not something worth spelling
@@ -908,12 +906,6 @@ const SCRUB_CURSOR = "url('/icons/drag-cursor.svg') 16 16, ew-resize";
  * fields (Size/Rotation in Image/Shape/Text) can match without duplicating the literals. */
 export const FIELD_HOVER_BG = '#2F2F37';
 export const FIELD_ACTIVE_BORDER = '#4570FF';
-/** A soft blurred glow around a color-fill pill's own outer edge (Fill's swatch+hex+opacity pill,
- * and the image-fill equivalent) while it's active — editing its hex/opacity, or its color/image
- * picker is open — layered on top of the plain FIELD_ACTIVE_BORDER outline above rather than
- * replacing it, since a border alone doesn't read as clearly against the panel's own dark
- * background as it does on a lighter surface. */
-export const FIELD_ACTIVE_GLOW = '0 0 8px 2px rgba(69,112,255,0.45)';
 
 /** Hover/focus tracking for the bespoke Size/Rotation pills (Image/Shape/Text panels), which are
  * plain `<input>`s with no drag-to-scrub — just enough state to tint on hover and outline on focus,
