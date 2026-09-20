@@ -9,6 +9,9 @@ import { cn } from '@/lib/utils';
 import {
   BORDER_STYLE_ICONS,
   CornerRadiusRow,
+  FIELD_ACTIVE_BORDER,
+  fieldHighlightStyle,
+  FIELD_HOVER_BG,
   ImageHoverReplace,
   INLINE_VALUE_COL_WIDTH,
   InlineColorField,
@@ -24,6 +27,7 @@ import {
   SectionIconBadge,
   SegmentedControl,
   ShadowSection,
+  useFieldHighlight,
   type EditorTarget,
 } from './PanelKit';
 import { ImagePickerDialog } from './ImagePickerDialog';
@@ -52,6 +56,8 @@ function ImageFillField({
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
   // Same virtual-anchor technique ColorPickerPopover uses — decouples the popover's floating
@@ -79,8 +85,19 @@ function ImageFillField({
     setOpen(next);
   }
 
+  const active = open || focused;
+  const highlighted = active || hovered;
   return (
-    <div className="flex h-9 shrink-0 items-center gap-2 rounded-lg pr-2 pl-1" style={{ width: INLINE_VALUE_COL_WIDTH, background: '#26262C' }}>
+    <div
+      className="flex h-9 shrink-0 items-center gap-2 rounded-lg border pr-2 pl-1 transition-colors"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        width: INLINE_VALUE_COL_WIDTH,
+        background: highlighted ? FIELD_HOVER_BG : '#26262C',
+        borderColor: active ? FIELD_ACTIVE_BORDER : 'transparent',
+      }}
+    >
       <Popover open={open} onOpenChange={handleOpenChange}>
         <PopoverAnchor virtualRef={virtualAnchorRef} />
         <PopoverTrigger asChild>
@@ -119,7 +136,11 @@ function ImageFillField({
         <input
           defaultValue={String(opacity)}
           key={opacity}
-          onBlur={(e) => onOpacityCommit(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
+          onFocus={() => setFocused(true)}
+          onBlur={(e) => {
+            setFocused(false);
+            onOpacityCommit(Math.min(100, Math.max(0, Number(e.target.value) || 0)));
+          }}
           onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
           className="w-6 bg-transparent text-right text-sm text-white outline-none"
         />
@@ -137,6 +158,9 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const primary = targets[0].element;
   const [aspectLocked, setAspectLocked] = useState(false);
   const [replacingImage, setReplacingImage] = useState(false);
+  const widthField = useFieldHighlight();
+  const heightField = useFieldHighlight();
+  const rotationField = useFieldHighlight();
 
   function replaceImageUrl(url: string) {
     for (const tgt of targets) updateElement(tgt.layoutId, tgt.element.id, { imageUrl: url });
@@ -201,24 +225,42 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
         <div className="flex flex-col gap-1.5">
           <span className="text-[11px] text-white/65">{t('Size')}</span>
           <div className="flex items-center gap-2">
-            <div className="flex h-8 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm">
+            <div
+              className="flex h-8 flex-1 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
+              onMouseEnter={() => widthField.setHovered(true)}
+              onMouseLeave={() => widthField.setHovered(false)}
+              style={fieldHighlightStyle(widthField.hovered, widthField.focused)}
+            >
               <span className="shrink-0 text-white/65">W</span>
               <input
                 type="text"
                 defaultValue={String(Math.round(primary.frame.w))}
                 key={`${primary.id}-w-${Math.round(primary.frame.w)}`}
-                onBlur={(e) => commitWidth(e.target.value)}
+                onFocus={() => widthField.setFocused(true)}
+                onBlur={(e) => {
+                  widthField.setFocused(false);
+                  commitWidth(e.target.value);
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
                 className="w-0 min-w-0 flex-1 bg-transparent text-right text-white outline-none"
               />
             </div>
-            <div className="flex h-8 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm">
+            <div
+              className="flex h-8 flex-1 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
+              onMouseEnter={() => heightField.setHovered(true)}
+              onMouseLeave={() => heightField.setHovered(false)}
+              style={fieldHighlightStyle(heightField.hovered, heightField.focused)}
+            >
               <span className="shrink-0 text-white/65">H</span>
               <input
                 type="text"
                 defaultValue={String(Math.round(primary.frame.h))}
                 key={`${primary.id}-h-${Math.round(primary.frame.h)}`}
-                onBlur={(e) => commitHeight(e.target.value)}
+                onFocus={() => heightField.setFocused(true)}
+                onBlur={(e) => {
+                  heightField.setFocused(false);
+                  commitHeight(e.target.value);
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
                 className="w-0 min-w-0 flex-1 bg-transparent text-right text-white outline-none"
               />
@@ -236,13 +278,22 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
 
         <div className="flex flex-col gap-1.5">
           <span className="text-[11px] text-white/65">{t('Rotation')}</span>
-          <div className="flex h-8 shrink-0 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm" style={{ width: 119 }}>
+          <div
+            className="flex h-8 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
+            onMouseEnter={() => rotationField.setHovered(true)}
+            onMouseLeave={() => rotationField.setHovered(false)}
+            style={{ width: 119, ...fieldHighlightStyle(rotationField.hovered, rotationField.focused) }}
+          >
             <img src="/icons/angle.svg" alt="" className="size-4 shrink-0" />
             <input
               type="text"
               defaultValue={String(Math.round(primary.rotation ?? 0))}
               key={`${primary.id}-rot-${Math.round(primary.rotation ?? 0)}`}
-              onBlur={(e) => patchRotation(Number(e.target.value) || 0)}
+              onFocus={() => rotationField.setFocused(true)}
+              onBlur={(e) => {
+                rotationField.setFocused(false);
+                patchRotation(Number(e.target.value) || 0);
+              }}
               onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
               className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
             />

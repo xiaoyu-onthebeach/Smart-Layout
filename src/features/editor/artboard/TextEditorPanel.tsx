@@ -22,6 +22,7 @@ import { layerName } from '@/lib/layer-name';
 import { useT } from '@/lib/i18n';
 import {
   BORDER_STYLE_ICONS,
+  fieldHighlightStyle,
   IconNumberField,
   INLINE_VALUE_COL_WIDTH,
   InlineColorField,
@@ -37,6 +38,7 @@ import {
   SegmentedControl,
   SelectField,
   ShadowSection,
+  useFieldHighlight,
   type EditorTarget,
 } from './PanelKit';
 
@@ -254,6 +256,7 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
   useEffect(() => {
     setBorderExpanded((primary.style.strokeWidth ?? 0) > 0);
   }, [primary.id]);
+  const rotationField = useFieldHighlight();
 
   function patchStyle(patch: Partial<LayoutElement['style']>) {
     for (const tgt of targets) updateElement(tgt.layoutId, tgt.element.id, { style: { ...tgt.element.style, ...patch } });
@@ -333,13 +336,22 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
 
         <div className="flex flex-col gap-1.5">
           <span className="text-[11px] text-white/65">{t('Rotation')}</span>
-          <div className="flex h-8 shrink-0 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm" style={{ width: 119 }}>
+          <div
+            className="flex h-8 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
+            onMouseEnter={() => rotationField.setHovered(true)}
+            onMouseLeave={() => rotationField.setHovered(false)}
+            style={{ width: 119, ...fieldHighlightStyle(rotationField.hovered, rotationField.focused) }}
+          >
             <img src="/icons/angle.svg" alt="" className="size-4 shrink-0" />
             <input
               type="text"
               defaultValue={String(Math.round(primary.rotation ?? 0))}
               key={`${primary.id}-${Math.round(primary.rotation ?? 0)}`}
-              onBlur={(e) => patchRotation(Number(e.target.value) || 0)}
+              onFocus={() => rotationField.setFocused(true)}
+              onBlur={(e) => {
+                rotationField.setFocused(false);
+                patchRotation(Number(e.target.value) || 0);
+              }}
               onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
               className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
             />

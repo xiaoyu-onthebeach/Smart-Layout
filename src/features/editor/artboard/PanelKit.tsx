@@ -535,12 +535,19 @@ function useOpacityDraft() {
 export function InlineColorField({ color, onChange }: { color: string; onChange: (color: string) => void }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const hex = useHexDraft(color, onChange);
   const opacity = useOpacityDraft();
   return (
     <div
-      className="flex h-9 shrink-0 items-center justify-between rounded-lg px-2 transition-colors"
-      style={{ width: INLINE_VALUE_COL_WIDTH, background: open ? '#2F2F37' : '#26262C' }}
+      className="flex h-9 shrink-0 items-center justify-between rounded-lg border px-2 transition-colors"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        width: INLINE_VALUE_COL_WIDTH,
+        background: open || hovered ? FIELD_HOVER_BG : '#26262C',
+        borderColor: open ? FIELD_ACTIVE_BORDER : 'transparent',
+      }}
     >
       <div className="flex min-w-0 items-center gap-2">
         <ColorPickerPopover color={color} onChange={onChange} onOpenChange={setOpen}>
@@ -578,6 +585,7 @@ export function InlineColorField({ color, onChange }: { color: string; onChange:
 export function ColorRow({ color, onChange }: { color: string; onChange: (color: string) => void }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const hex = useHexDraft(color, onChange);
   const opacity = useOpacityDraft();
   return (
@@ -587,7 +595,15 @@ export function ColorRow({ color, onChange }: { color: string; onChange: (color:
       </ColorPickerPopover>
       <div
         className="flex h-8 flex-1 items-center gap-2 rounded-lg border border-chrome-border bg-chrome-border-subtle px-3 text-sm text-chrome-fg transition-colors"
-        style={open ? { background: '#2F2F37', borderColor: '#2F2F37' } : undefined}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={
+          open
+            ? { background: FIELD_HOVER_BG, borderColor: FIELD_ACTIVE_BORDER }
+            : hovered
+              ? { background: FIELD_HOVER_BG }
+              : undefined
+        }
       >
         {/* A gradient's own CSS string is an implementation detail, not something worth spelling
             out in full here — "Linear" names the fill kind the same way a hex value names a color. */}
@@ -647,21 +663,27 @@ function ShadowSwitch({ checked, onChange, label }: { checked: boolean; onChange
 function LabeledNumberInput({ label, value, onCommit }: { label: string; value: string; onCommit: (value: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const scrub = useScrubDrag(Number(value) || 0, onCommit);
-  const highlighted = scrub.hovered || scrub.dragging;
+  const [focused, setFocused] = useState(false);
+  const active = focused || scrub.dragging;
+  const highlighted = active || scrub.hovered;
   return (
     <div
       className="flex h-8 w-[51px] shrink-0 items-end gap-2 rounded-md border px-2 pb-1 transition-colors"
       onMouseDown={(e) => scrub.handleMouseDown(e, inputRef.current)}
       onMouseEnter={() => scrub.setHovered(true)}
       onMouseLeave={() => scrub.setHovered(false)}
-      style={{ background: highlighted ? '#2F2F37' : '#26262C', borderColor: '#40404A', cursor: highlighted ? SCRUB_CURSOR : undefined }}
+      style={{ background: highlighted ? FIELD_HOVER_BG : '#26262C', borderColor: active ? FIELD_ACTIVE_BORDER : '#40404A', cursor: highlighted ? SCRUB_CURSOR : undefined }}
     >
       <span className="text-xs text-white/45">{label}</span>
       <input
         ref={inputRef}
         defaultValue={value}
         key={value}
-        onBlur={(e) => onCommit(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={(e) => {
+          setFocused(false);
+          onCommit(e.target.value);
+        }}
         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         className="w-0 min-w-0 flex-1 bg-transparent text-right text-base font-bold text-white outline-none"
       />
@@ -675,20 +697,26 @@ function LabeledNumberInput({ label, value, onCommit }: { label: string; value: 
 function ShadowOpacityField({ value, onCommit }: { value: number; onCommit: (value: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const scrub = useScrubDrag(value, onCommit);
-  const highlighted = scrub.hovered || scrub.dragging;
+  const [focused, setFocused] = useState(false);
+  const active = focused || scrub.dragging;
+  const highlighted = active || scrub.hovered;
   return (
     <div
-      className="flex h-8 shrink-0 items-center rounded-md px-1 transition-colors"
+      className="flex h-8 shrink-0 items-center rounded-md border px-1 transition-colors"
       onMouseDown={(e) => scrub.handleMouseDown(e, inputRef.current)}
       onMouseEnter={() => scrub.setHovered(true)}
       onMouseLeave={() => scrub.setHovered(false)}
-      style={{ background: highlighted ? '#2F2F37' : undefined, cursor: highlighted ? SCRUB_CURSOR : undefined }}
+      style={{ background: highlighted ? FIELD_HOVER_BG : undefined, borderColor: active ? FIELD_ACTIVE_BORDER : 'transparent', cursor: highlighted ? SCRUB_CURSOR : undefined }}
     >
       <input
         ref={inputRef}
         defaultValue={String(value)}
         key={value}
-        onBlur={(e) => onCommit(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={(e) => {
+          setFocused(false);
+          onCommit(e.target.value);
+        }}
         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         className="w-6 bg-transparent text-right text-[11px] text-white/65 outline-none"
       />
@@ -710,10 +738,19 @@ function ShadowColorField({
   onColorChange: (color: string) => void;
   onOpacityCommit: (value: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const highlighted = open || hovered;
   return (
     <div className="flex items-center gap-1">
-      <ColorPickerPopover color={color} onChange={onColorChange}>
-        <button type="button" className="flex h-8 w-[60px] shrink-0 items-center gap-2 rounded-md border py-0 pr-2 pl-1" style={{ background: '#26262C', borderColor: '#40404A' }}>
+      <ColorPickerPopover color={color} onChange={onColorChange} onOpenChange={setOpen}>
+        <button
+          type="button"
+          className="flex h-8 w-[60px] shrink-0 items-center gap-2 rounded-md border py-0 pr-2 pl-1 transition-colors"
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          style={{ background: highlighted ? FIELD_HOVER_BG : '#26262C', borderColor: open ? FIELD_ACTIVE_BORDER : '#40404A' }}
+        >
           <span className="size-6 shrink-0 rounded" style={{ background: color }} />
           <ChevronDown className="size-3.5 shrink-0 text-white" />
         </button>
@@ -818,6 +855,31 @@ const CORNER_ROTATIONS = [0, 90, -90, -180];
  * `ew-resize` is the fallback for any browser that can't load the custom cursor image. */
 const SCRUB_CURSOR = "url('/icons/drag-cursor.svg') 16 16, ew-resize";
 
+/** Shared highlight colors for every editable pill across these panels — hovering alone (not yet
+ * editing) tints just the background; actively editing (focused), dragging to scrub, or having a
+ * color picker open additionally outlines the pill in blue. Exported so the per-panel bespoke
+ * fields (Size/Rotation in Image/Shape/Text) can match without duplicating the literals. */
+export const FIELD_HOVER_BG = '#2F2F37';
+export const FIELD_ACTIVE_BORDER = '#4570FF';
+
+/** Hover/focus tracking for the bespoke Size/Rotation pills (Image/Shape/Text panels), which are
+ * plain `<input>`s with no drag-to-scrub — just enough state to tint on hover and outline on focus,
+ * matching every other editable pill without pulling those fields onto `useScrubDrag`. */
+export function useFieldHighlight() {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  return { hovered, setHovered, focused, setFocused };
+}
+
+/** `style` for a pill using `useFieldHighlight`'s state — background tints on hover or while
+ * active, border stays transparent until active so the pill's size never shifts. */
+export function fieldHighlightStyle(hovered: boolean, focused: boolean) {
+  return {
+    background: hovered || focused ? FIELD_HOVER_BG : '#26262C',
+    borderColor: focused ? FIELD_ACTIVE_BORDER : 'transparent',
+  };
+}
+
 /**
  * Shared drag-to-scrub mechanics for a plain number input (border weight, shadow position/blur/
  * opacity, ...) — mousedown-and-drag left/right adjusts `currentValue` 1:1 with however many px the
@@ -903,6 +965,7 @@ function ScrubbableNumberField({
   const inputRef = useRef<HTMLInputElement>(null);
   const [hovered, setHovered] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [focused, setFocused] = useState(false);
 
   function handleMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
     if (e.button !== 0) return;
@@ -935,7 +998,8 @@ function ScrubbableNumberField({
     window.addEventListener('mouseup', onUp);
   }
 
-  const highlighted = hovered || dragging;
+  const active = focused || dragging;
+  const highlighted = active || hovered;
 
   return (
     <div
@@ -943,14 +1007,22 @@ function ScrubbableNumberField({
       onMouseDown={handleMouseDown}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{ background: highlighted ? '#2F2F37' : undefined, cursor: highlighted ? SCRUB_CURSOR : undefined }}
+      style={{
+        background: highlighted ? FIELD_HOVER_BG : undefined,
+        border: `1px solid ${active ? FIELD_ACTIVE_BORDER : 'transparent'}`,
+        cursor: highlighted ? SCRUB_CURSOR : undefined,
+      }}
     >
       {icon}
       <input
         ref={inputRef}
         defaultValue={String(value)}
         key={value}
-        onBlur={(e) => onCommit(Math.min(max, Math.max(0, Number(e.target.value) || 0)))}
+        onFocus={() => setFocused(true)}
+        onBlur={(e) => {
+          setFocused(false);
+          onCommit(Math.min(max, Math.max(0, Number(e.target.value) || 0)));
+        }}
         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         className={inputClassName}
       />
@@ -1081,18 +1153,28 @@ export function NumberField({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const scrub = useScrubDrag(Number(value) || 0, onCommit, scrubStep);
-  const highlighted = scrubbable && (scrub.hovered || scrub.dragging);
+  const [focused, setFocused] = useState(false);
+  const active = focused || scrub.dragging;
+  const highlighted = active || scrub.hovered;
   return (
     <input
       ref={inputRef}
       defaultValue={value}
       key={value}
       onMouseDown={scrubbable ? (e) => scrub.handleMouseDown(e, inputRef.current) : undefined}
-      onMouseEnter={scrubbable ? () => scrub.setHovered(true) : undefined}
-      onMouseLeave={scrubbable ? () => scrub.setHovered(false) : undefined}
-      onBlur={(e) => onCommit(e.target.value)}
+      onMouseEnter={() => scrub.setHovered(true)}
+      onMouseLeave={() => scrub.setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => {
+        setFocused(false);
+        onCommit(e.target.value);
+      }}
       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-      style={scrubbable ? { background: highlighted ? '#2F2F37' : undefined, cursor: highlighted ? SCRUB_CURSOR : undefined } : undefined}
+      style={{
+        background: highlighted ? FIELD_HOVER_BG : undefined,
+        borderColor: active ? FIELD_ACTIVE_BORDER : undefined,
+        cursor: scrubbable && scrub.hovered ? SCRUB_CURSOR : undefined,
+      }}
       className={cn(
         'flex h-8 items-center rounded-md border border-chrome-border bg-chrome-border-subtle px-2 text-center text-base font-bold text-chrome-fg outline-none transition-colors',
         className,

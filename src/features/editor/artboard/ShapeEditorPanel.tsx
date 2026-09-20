@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import {
   BORDER_STYLE_ICONS,
   CornerRadiusRow,
+  fieldHighlightStyle,
   INLINE_VALUE_COL_WIDTH,
   InlineColorField,
   InlineRow,
@@ -21,6 +22,7 @@ import {
   SegmentedControl,
   MatchSelectButton,
   ShadowSection,
+  useFieldHighlight,
   type EditorTarget,
 } from './PanelKit';
 
@@ -34,6 +36,9 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const updateElement = useAppStore((s) => s.updateElement);
   const primary = targets[0].element;
   const [aspectLocked, setAspectLocked] = useState(false);
+  const widthField = useFieldHighlight();
+  const heightField = useFieldHighlight();
+  const rotationField = useFieldHighlight();
 
   // Same collapsed-by-default, reset-per-selection convention as the text panel's own Border section.
   const [borderExpanded, setBorderExpanded] = useState(() => (primary.style.strokeWidth ?? 0) > 0);
@@ -94,24 +99,42 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
         <div className="flex flex-col gap-1.5">
           <span className="text-[11px] text-white/65">{t('Size')}</span>
           <div className="flex items-center gap-2">
-            <div className="flex h-8 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm">
+            <div
+              className="flex h-8 flex-1 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
+              onMouseEnter={() => widthField.setHovered(true)}
+              onMouseLeave={() => widthField.setHovered(false)}
+              style={fieldHighlightStyle(widthField.hovered, widthField.focused)}
+            >
               <span className="shrink-0 text-white/65">W</span>
               <input
                 type="text"
                 defaultValue={String(Math.round(primary.frame.w))}
                 key={`${primary.id}-w-${Math.round(primary.frame.w)}`}
-                onBlur={(e) => commitWidth(e.target.value)}
+                onFocus={() => widthField.setFocused(true)}
+                onBlur={(e) => {
+                  widthField.setFocused(false);
+                  commitWidth(e.target.value);
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
                 className="w-0 min-w-0 flex-1 bg-transparent text-right text-white outline-none"
               />
             </div>
-            <div className="flex h-8 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm">
+            <div
+              className="flex h-8 flex-1 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
+              onMouseEnter={() => heightField.setHovered(true)}
+              onMouseLeave={() => heightField.setHovered(false)}
+              style={fieldHighlightStyle(heightField.hovered, heightField.focused)}
+            >
               <span className="shrink-0 text-white/65">H</span>
               <input
                 type="text"
                 defaultValue={String(Math.round(primary.frame.h))}
                 key={`${primary.id}-h-${Math.round(primary.frame.h)}`}
-                onBlur={(e) => commitHeight(e.target.value)}
+                onFocus={() => heightField.setFocused(true)}
+                onBlur={(e) => {
+                  heightField.setFocused(false);
+                  commitHeight(e.target.value);
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
                 className="w-0 min-w-0 flex-1 bg-transparent text-right text-white outline-none"
               />
@@ -129,13 +152,22 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
 
         <div className="flex flex-col gap-1.5">
           <span className="text-[11px] text-white/65">{t('Rotation')}</span>
-          <div className="flex h-8 shrink-0 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm" style={{ width: 119 }}>
+          <div
+            className="flex h-8 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
+            onMouseEnter={() => rotationField.setHovered(true)}
+            onMouseLeave={() => rotationField.setHovered(false)}
+            style={{ width: 119, ...fieldHighlightStyle(rotationField.hovered, rotationField.focused) }}
+          >
             <img src="/icons/angle.svg" alt="" className="size-4 shrink-0" />
             <input
               type="text"
               defaultValue={String(Math.round(primary.rotation ?? 0))}
               key={`${primary.id}-rot-${Math.round(primary.rotation ?? 0)}`}
-              onBlur={(e) => patchRotation(Number(e.target.value) || 0)}
+              onFocus={() => rotationField.setFocused(true)}
+              onBlur={(e) => {
+                rotationField.setFocused(false);
+                patchRotation(Number(e.target.value) || 0);
+              }}
               onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
               className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
             />
