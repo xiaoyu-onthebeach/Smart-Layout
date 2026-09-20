@@ -171,7 +171,6 @@ export function LayersTab({ setId, onBack }: { setId: string; onBack: () => void
         <ChevronLeft className="size-3 shrink-0 text-white/45" />
         <span className="min-w-0 truncate text-[11px] font-semibold tracking-[-0.01em] text-white uppercase">{bannerSet?.name ?? t('Layers')}</span>
       </button>
-      <div className="h-px w-full shrink-0" style={{ background: '#40404A' }} />
 
       {!layout ? (
         <div className="flex flex-1 items-center justify-center px-2 text-center text-xs text-white/45">{t('Select a banner to see its layers')}</div>
