@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
 import { Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
@@ -23,7 +23,6 @@ import {
   PRIMARY_LABEL_RESERVE,
   SECTION_GAP_BOTTOM,
   SECTION_GAP_TOP,
-  SECTION_HEADER_HEIGHT,
   TITLE_CLEARANCE_BUFFER,
 } from '@/lib/canvas-layout';
 import { applyPrototypeSizeFill } from '@/lib/prototype-size-fill';
@@ -242,13 +241,19 @@ function UnifiedAllSizesHeader({
 }) {
   const t = useT();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  // A hovered icon lights up both of its own adjacent segments (the one before it and the one
+  // after), not just the one before — so the whole gap around whichever "+" the user is pointing
+  // at reads as highlighted, not just its left half.
+  function segmentStyle(hovered: boolean): CSSProperties {
+    return { background: hovered ? '#4570FF' : '#40404A', boxShadow: hovered ? '0 0 0 2px rgba(69,112,255,0.3)' : 'none' };
+  }
   return (
     <div className="pointer-events-none absolute" style={{ left, top, width: totalWidth, height: 0 }}>
       {/* Vertical centering here is done with explicit `top` offsets, not `transform: translateY`
           — a `transform` on an ancestor becomes the containing block for any `position: fixed`
           descendant, which would silently break QuickSizeMenu's own fixed-positioned panel (it'd
           anchor to this element instead of the viewport, landing off-screen). */}
-      <span className="absolute text-base text-white/45" style={{ left: 0, top: -8 }}>
+      <span className="absolute text-[17px] leading-6 font-semibold text-white/45" style={{ left: 0, top: -8 }}>
         {t('ALL SIZES')}
       </span>
       {icons.map((icon, i) => {
@@ -258,8 +263,8 @@ function UnifiedAllSizesHeader({
           <div key={icon.entry.id}>
             {segEnd > segStart && (
               <div
-                className="absolute h-px transition-colors"
-                style={{ left: segStart, top: -0.5, width: segEnd - segStart, background: hoveredIndex === i ? 'rgba(255,255,255,0.45)' : '#40404A' }}
+                className="absolute h-0.5 transition-[background-color,box-shadow]"
+                style={{ left: segStart, top: -1, width: segEnd - segStart, ...segmentStyle(hoveredIndex === i || hoveredIndex === i - 1) }}
               />
             )}
             <div className="pointer-events-auto absolute" style={{ left: icon.x - ADD_ICON_SIZE / 2, top: -ADD_ICON_SIZE / 2 }}>
@@ -276,7 +281,10 @@ function UnifiedAllSizesHeader({
           const segStart = last.x + ADD_ICON_SIZE / 2 + ADD_ICON_GAP;
           return (
             segStart < totalWidth && (
-              <div className="absolute h-px" style={{ left: segStart, top: -0.5, width: totalWidth - segStart, background: '#40404A' }} />
+              <div
+                className="absolute h-0.5 transition-[background-color,box-shadow]"
+                style={{ left: segStart, top: -1, width: totalWidth - segStart, ...segmentStyle(hoveredIndex === icons.length - 1) }}
+              />
             )
           );
         })()}
@@ -752,7 +760,7 @@ export function MultiPageCanvas() {
     const originY = sorted[0].pos.y;
     const maxPrimaryHeight = Math.max(...sorted.map((root) => root.layout.size.height));
     const headerY = maxPrimaryHeight + SECTION_GAP_TOP;
-    const sharedSiblingsY = headerY + SECTION_HEADER_HEIGHT + SECTION_GAP_BOTTOM;
+    const sharedSiblingsY = headerY + SECTION_GAP_BOTTOM;
 
     // Centered on each root's own primary width, not its footprint (which is `contentWidth` once
     // it's grown a sibling pack wider than the primary itself, see footprintWidthOf) — otherwise
@@ -769,7 +777,7 @@ export function MultiPageCanvas() {
       if (!groupId) continue;
       bundledGroupIds.add(groupId);
       const localLayout = relativeLayoutByGroupId.get(groupId)!.layout;
-      siblingsYDeltaByGroupId.set(groupId, sharedSiblingsY - (localLayout.headerY + SECTION_HEADER_HEIGHT + SECTION_GAP_BOTTOM));
+      siblingsYDeltaByGroupId.set(groupId, sharedSiblingsY - (localLayout.headerY + SECTION_GAP_BOTTOM));
     }
   }
 
@@ -1422,7 +1430,7 @@ export function MultiPageCanvas() {
               const dividerWidth = layout.dividerWidth * camera.zoom;
               return (
                 <div key={groupId} className="pointer-events-none absolute inset-0">
-                  <div className="absolute text-base text-white/45" style={{ left, top: labelTop }}>
+                  <div className="absolute text-[17px] leading-6 font-semibold text-white/45" style={{ left, top: labelTop }}>
                     {t('PRIMARY SIZE')}
                   </div>
                   {layout.siblings.length > 0 && (
@@ -1456,7 +1464,7 @@ export function MultiPageCanvas() {
             const headerTop = camera.y + (header.originY + header.headerY) * camera.zoom;
             return (
               <div key={i} className="pointer-events-none absolute inset-0">
-                <div className="absolute text-base text-white/45" style={{ left, top: labelTop }}>
+                <div className="absolute text-[17px] leading-6 font-semibold text-white/45" style={{ left, top: labelTop }}>
                   {t('PRIMARY SIZE')}
                 </div>
                 <UnifiedAllSizesHeader

@@ -11,7 +11,11 @@ export const PAGE_GAP = 240;
 // the group's own title row above, and the right/bottom "+" hotspot zones.
 export const GROUP_PAD = 24;
 export const GROUP_TITLE_RESERVE = 36; // group title row height + gap before the page's own title starts
-export const PRIMARY_LABEL_RESERVE = 120; // "Primary size" label row height + gap, above the primary's own title bar
+// The rendered gap from the label's own bottom edge to the primary's title bar ends up being
+// `PRIMARY_LABEL_RESERVE + TITLE_CLEARANCE_BUFFER - <label line height>` once MultiPageCanvas's
+// fixed-screen-px title clearance (below) is folded in — solved backwards from the desired 20px:
+// 28 + 16 - 24 = 20.
+export const PRIMARY_LABEL_RESERVE = 28;
 export const PAGE_TITLE_RESERVE = 28; // matches PageTitleBar's -top-7 offset above each frame
 export const HOTSPOT_RESERVE = 64; // matches the w-16/h-16 hotspot zone on the right/bottom edges
 export const GROUP_PAD_TOP = GROUP_PAD + GROUP_TITLE_RESERVE + PRIMARY_LABEL_RESERVE + PAGE_TITLE_RESERVE;
@@ -27,9 +31,11 @@ export const GROUP_PAD_LEFT = GROUP_PAD_RIGHT;
 // the current zoom) so the primary's and each sibling's title bar — a fixed -28px screen offset
 // that doesn't shrink along with zoom — never collides with the label/divider above it, at any
 // zoom level, not just the one these constants happen to look right at.
-export const SECTION_GAP_TOP = PAGE_GAP;
-export const SECTION_HEADER_HEIGHT = 40;
-export const SECTION_GAP_BOTTOM = 64;
+export const SECTION_GAP_TOP = 60; // primary's own bottom edge -> the "All sizes" divider line
+// Same fixed-screen-px title clearance folded in as PRIMARY_LABEL_RESERVE above, but without a
+// text line height to subtract (the divider is a 0-height line, not a text block): rendered gap =
+// SECTION_GAP_BOTTOM + TITLE_CLEARANCE_BUFFER, solved backwards from the desired 40px: 24 + 16 = 40.
+export const SECTION_GAP_BOTTOM = 24; // divider line -> each sibling's own title bar
 // Extra buffer (screen px) beyond PAGE_TITLE_RESERVE itself when converting that fixed clearance
 // into the current zoom's canvas-space units.
 export const TITLE_CLEARANCE_BUFFER = 16;

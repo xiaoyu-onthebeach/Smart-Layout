@@ -1,4 +1,4 @@
-import { PACK_GAP, PRIMARY_LABEL_RESERVE, SECTION_GAP_BOTTOM, SECTION_GAP_TOP, SECTION_HEADER_HEIGHT } from './canvas-layout';
+import { PACK_GAP, PRIMARY_LABEL_RESERVE, SECTION_GAP_BOTTOM, SECTION_GAP_TOP } from './canvas-layout';
 
 export type SizeBox = { id: string; width: number; height: number };
 export type PositionedBox = { id: string; x: number; y: number; width: number; height: number };
@@ -43,7 +43,7 @@ export function computeGroupLayout(primary: { width: number; height: number }, s
   const contentWidth = Math.max(primary.width, packed.width);
 
   const headerY = primary.height + SECTION_GAP_TOP;
-  const siblingsY = headerY + SECTION_HEADER_HEIGHT + SECTION_GAP_BOTTOM;
+  const siblingsY = headerY + SECTION_GAP_BOTTOM;
 
   return {
     // Purely the native-space visual gap — MultiPageCanvas adds further fixed-screen-pixel
