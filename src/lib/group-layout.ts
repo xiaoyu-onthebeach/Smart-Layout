@@ -1,4 +1,4 @@
-import { PACK_GAP, PRIMARY_LABEL_RESERVE, SECTION_GAP_BOTTOM, SECTION_GAP_TOP } from './canvas-layout';
+import { PACK_GAP, SECTION_GAP_TOP } from './canvas-layout';
 
 export type SizeBox = { id: string; width: number; height: number };
 export type PositionedBox = { id: string; x: number; y: number; width: number; height: number };
@@ -43,12 +43,18 @@ export function computeGroupLayout(primary: { width: number; height: number }, s
   const contentWidth = Math.max(primary.width, packed.width);
 
   const headerY = primary.height + SECTION_GAP_TOP;
-  const siblingsY = headerY + SECTION_GAP_BOTTOM;
+  // Sits right on the divider line itself (`headerY`) — the actual gap down to each sibling's own
+  // title bar (PRIMARY_LABEL_RESERVE's sibling-side counterpart, SECTION_GAP_BOTTOM) is entirely
+  // MultiPageCanvas's fixed-screen-pixel clearance (see its own `siblingClearance`), not a
+  // canvas-space offset here — a canvas-space (zoom-scaled) gap would otherwise visually shrink or
+  // grow relative to the fixed-size title bar/divider as the view zooms, instead of staying put.
+  const siblingsY = headerY;
 
   return {
-    // Purely the native-space visual gap — MultiPageCanvas adds further fixed-screen-pixel
-    // clearance on top of this for the primary's title bar, independent of zoom.
-    primaryLabelY: -PRIMARY_LABEL_RESERVE,
+    // Sits right at the primary's own top edge (y=0) — same reasoning as `siblingsY` above:
+    // MultiPageCanvas's fixed-screen-pixel clearance supplies the entire visual gap up to the
+    // primary's title bar, so this stays zoom-invariant instead of drifting with zoom.
+    primaryLabelY: 0,
     headerY,
     dividerWidth: contentWidth,
     contentWidth,

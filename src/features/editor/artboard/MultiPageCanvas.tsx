@@ -651,8 +651,13 @@ export function MultiPageCanvas() {
   // PageTitleBar sits a *fixed* -28 screen px above whatever frame it's attached to — that offset
   // doesn't shrink with zoom the way every other gap here does, so converting it into canvas-space
   // units has to divide by the current zoom, or low zoom (bigger groups, more auto-fit zoom-out)
-  // would let a sibling's title bar collide with the divider/label above it.
-  const titleClearance = (PAGE_TITLE_RESERVE + TITLE_CLEARANCE_BUFFER) / camera.zoom;
+  // would let a sibling's title bar collide with the divider/label above it. PRIMARY_LABEL_RESERVE/
+  // SECTION_GAP_BOTTOM (the actual "how far above/below" gaps, not just collision-avoidance room)
+  // are folded in here too, rather than added as their own canvas-space (zoom-scaled) offset — a
+  // zoom-scaled gap next to a fixed-size label/title-bar would visually grow or shrink relative to
+  // them as the view zooms, instead of staying a consistent gap at every zoom level.
+  const labelClearance = (PAGE_TITLE_RESERVE + TITLE_CLEARANCE_BUFFER + PRIMARY_LABEL_RESERVE) / camera.zoom;
+  const siblingClearance = (PAGE_TITLE_RESERVE + TITLE_CLEARANCE_BUFFER + SECTION_GAP_BOTTOM) / camera.zoom;
 
   // Pass 1: compute each real group's *relative* layout only (siblings' pack width/height) —
   // deliberately not touching any entry's `.pos` yet, since a group's own footprint (needed below
@@ -760,7 +765,7 @@ export function MultiPageCanvas() {
     const originY = sorted[0].pos.y;
     const maxPrimaryHeight = Math.max(...sorted.map((root) => root.layout.size.height));
     const headerY = maxPrimaryHeight + SECTION_GAP_TOP;
-    const sharedSiblingsY = headerY + SECTION_GAP_BOTTOM;
+    const sharedSiblingsY = headerY;
 
     // Centered on each root's own primary width, not its footprint (which is `contentWidth` once
     // it's grown a sibling pack wider than the primary itself, see footprintWidthOf) — otherwise
@@ -770,14 +775,14 @@ export function MultiPageCanvas() {
     const last = sorted[sorted.length - 1];
     const totalWidth = last.pos.x - originX + footprintWidthOf(last);
 
-    unifiedHeaders.push({ originX, originY, primaryLabelY: -PRIMARY_LABEL_RESERVE - titleClearance, headerY, totalWidth, icons });
+    unifiedHeaders.push({ originX, originY, primaryLabelY: -labelClearance, headerY, totalWidth, icons });
 
     for (const root of sorted) {
       const groupId = groupIdByPrimaryId.get(root.id);
       if (!groupId) continue;
       bundledGroupIds.add(groupId);
       const localLayout = relativeLayoutByGroupId.get(groupId)!.layout;
-      siblingsYDeltaByGroupId.set(groupId, sharedSiblingsY - (localLayout.headerY + SECTION_GAP_BOTTOM));
+      siblingsYDeltaByGroupId.set(groupId, sharedSiblingsY - localLayout.headerY);
     }
   }
 
@@ -796,7 +801,7 @@ export function MultiPageCanvas() {
       originY,
       layout: {
         ...layout,
-        primaryLabelY: layout.primaryLabelY - titleClearance,
+        primaryLabelY: layout.primaryLabelY - labelClearance,
       },
     });
     const yDelta = siblingsYDeltaByGroupId.get(groupId) ?? 0;
@@ -808,7 +813,7 @@ export function MultiPageCanvas() {
       if (target)
         target.pos = {
           x: originX + box.x,
-          y: originY + box.y + titleClearance + yDelta,
+          y: originY + box.y + siblingClearance + yDelta,
         };
     }
   }
@@ -1003,7 +1008,9 @@ export function MultiPageCanvas() {
     const startPos = entry.pos;
     const w = entry.layout.size.width;
     const h = entry.layout.size.height;
-    const titleClearance = (PAGE_TITLE_RESERVE + TITLE_CLEARANCE_BUFFER) / zoom;
+    // Matches the render-time `siblingClearance` above exactly, so this hit-test lines up with
+    // where the sibling boxes are actually drawn.
+    const siblingClearance = (PAGE_TITLE_RESERVE + TITLE_CLEARANCE_BUFFER + SECTION_GAP_BOTTOM) / zoom;
     let order = pageGroups[groupId]?.memberIds.slice(1) ?? [];
     // Below this, it's a click (selecting the scene, which already happened on mousedown) rather
     // than an actual drag — without this gate, the card would immediately lift and start hit-
@@ -1046,7 +1053,7 @@ export function MultiPageCanvas() {
       const targetBox = packed.siblings.find((box) => {
         if (box.id === entry.id) return false;
         const left = primaryPos.x + box.x;
-        const top = primaryPos.y + box.y + titleClearance;
+        const top = primaryPos.y + box.y + siblingClearance;
         return draggedCenterX >= left && draggedCenterX <= left + box.width && draggedCenterY >= top && draggedCenterY <= top + box.height;
       });
       if (!targetBox) return;
