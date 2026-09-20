@@ -42,6 +42,11 @@ export type UiSlice = {
   selectedSceneIds: string[];
   /** The text element currently in contentEditable edit mode (typing/caret), if any. */
   editingTextElementId: string | null;
+  /** The plain-text character range (start/end offsets into that element's own `content`) currently
+   * highlighted inside a text element's contentEditable while it's being edited — lets
+   * TextEditorPanel's Spacing/Stretch fields apply a change to just that substring. See
+   * setTextRangeSelection for when it's cleared. */
+  textRangeSelection: { layoutId: string; elementId: string; start: number; end: number } | null;
   activeTool: Tool;
   /** Which shape kind the armed 'shape' tool draws — set via the bottom toolbar's shape picker. */
   shapeToolKind: ShapeKind;
@@ -115,6 +120,8 @@ export type UiSlice = {
   selectScenes: (setIds: string[]) => void;
   /** Enters (id) or exits (null) contentEditable edit mode for a text element. */
   setEditingTextElement: (id: string | null) => void;
+  /** Updates (or clears, with `null`) the live in-progress text-range selection. */
+  setTextRangeSelection: (sel: { layoutId: string; elementId: string; start: number; end: number } | null) => void;
   setActiveTool: (tool: Tool) => void;
   setShapeToolKind: (kind: ShapeKind) => void;
   setViewAllActivePage: (setId: string | null) => void;

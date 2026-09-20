@@ -234,6 +234,8 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const t = useT();
   const language = useAppStore((s) => s.language);
   const updateElement = useAppStore((s) => s.updateElement);
+  const textRangeSelection = useAppStore((s) => s.textRangeSelection);
+  const setTextRangeSelection = useAppStore((s) => s.setTextRangeSelection);
   const primary = targets[0].element;
   const [contentDraft, setContentDraft] = useState(primary.content ?? '');
   const contentRef = useRef<HTMLTextAreaElement>(null);
@@ -260,6 +262,38 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
 
   function patchStyle(patch: Partial<LayoutElement['style']>) {
     for (const tgt of targets) updateElement(tgt.layoutId, tgt.element.id, { style: { ...tgt.element.style, ...patch } });
+  }
+
+  // A real (non-collapsed, non-whole-text) highlight left over from typing inside `primary` — only
+  // meaningful for a single selected layer, matching how `textRangeSelection` itself only ever
+  // tracks one element's own contentEditable at a time.
+  const content = primary.content ?? '';
+  const partialSelection =
+    targets.length === 1 &&
+    textRangeSelection &&
+    textRangeSelection.layoutId === targets[0].layoutId &&
+    textRangeSelection.elementId === primary.id &&
+    textRangeSelection.start !== textRangeSelection.end &&
+    !(textRangeSelection.start === 0 && textRangeSelection.end === content.length)
+      ? textRangeSelection
+      : null;
+
+  /** Spacing/Stretch's own commit: applies uniformly (clearing any previous range override) unless
+   * a substring is still highlighted from the last time this element was being edited, in which
+   * case it becomes that substring's own one-off value instead — see `letterSpacingRange`/
+   * `stretchRange`. Consumes (clears) the highlight afterward, so the next change without
+   * reselecting falls back to applying uniformly again. */
+  function patchRangeableStyle(rangeKey: 'letterSpacingRange' | 'stretchRange', flatKey: 'letterSpacing' | 'stretch', raw: string) {
+    // Blurring a "Mixed" field untouched must not silently zero it out — only a real typed number
+    // commits; the sentinel string itself is never a legitimate value.
+    if (raw === t('Mixed')) return;
+    const value = Number(raw) || 0;
+    if (partialSelection) {
+      patchStyle({ [rangeKey]: { start: partialSelection.start, end: partialSelection.end, value } });
+      setTextRangeSelection(null);
+    } else {
+      patchStyle({ [flatKey]: value, [rangeKey]: undefined });
+    }
   }
   function patchRotation(rotation: number) {
     for (const tgt of targets) updateElement(tgt.layoutId, tgt.element.id, { rotation });
@@ -403,19 +437,19 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
           <div className="flex flex-col gap-1">
             <span className="text-[11px] text-white/65">{t('Spacing')}</span>
             <IconNumberField
-              scrubbable
+              scrubbable={!primary.style.letterSpacingRange}
               icon="/icons/letter-spacing.svg"
-              value={String(primary.style.letterSpacing ?? 0)}
-              onCommit={(v) => patchStyle({ letterSpacing: Number(v) || 0 })}
+              value={primary.style.letterSpacingRange ? t('Mixed') : String(primary.style.letterSpacing ?? 0)}
+              onCommit={(v) => patchRangeableStyle('letterSpacingRange', 'letterSpacing', v)}
             />
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[11px] text-white/65">{t('Stretch')}</span>
             <IconNumberField
-              scrubbable
+              scrubbable={!primary.style.stretchRange}
               icon="/icons/letter-stretch.svg"
-              value={String(primary.style.stretch ?? 0)}
-              onCommit={(v) => patchStyle({ stretch: Number(v) || 0 })}
+              value={primary.style.stretchRange ? t('Mixed') : String(primary.style.stretch ?? 0)}
+              onCommit={(v) => patchRangeableStyle('stretchRange', 'stretch', v)}
             />
           </div>
           <div className="flex flex-col gap-1">

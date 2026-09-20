@@ -219,6 +219,7 @@ export const ja: Record<string, string> = {
   Spacing: '間隔',
   Stretch: '伸縮',
   'Line height': '行の高さ',
+  Mixed: '混在',
   Decoration: '装飾',
   'Expand to frame': 'フレームに合わせる',
   'Edit content': 'コンテンツを編集',

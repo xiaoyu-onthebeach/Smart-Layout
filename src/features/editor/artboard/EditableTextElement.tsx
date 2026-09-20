@@ -9,6 +9,20 @@ import { SelectionBoundingBox } from './SelectionBoundingBox';
 
 const MIN_FONT_SIZE = 6;
 
+/** Plain-text character offsets (against `container`'s own text content) of the current DOM
+ * selection, or `null` if there's no selection or it's outside `container` entirely. */
+function getSelectionOffsets(container: HTMLElement): { start: number; end: number } | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  if (!container.contains(range.commonAncestorContainer)) return null;
+  const preRange = document.createRange();
+  preRange.selectNodeContents(container);
+  preRange.setEnd(range.startContainer, range.startOffset);
+  const start = preRange.toString().length;
+  return { start, end: start + range.toString().length };
+}
+
 /**
  * A decorative (slot: null) text element. Single click selects it (bounding box + inspector,
  * draggable/resizable); double click enters contentEditable typing mode, committed when editing ends.
@@ -44,6 +58,7 @@ export function EditableTextElement({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const updateElement = useAppStore((s) => s.updateElement);
+  const setTextRangeSelection = useAppStore((s) => s.setTextRangeSelection);
   const { startDragOrDeferredSelect, startRotate } = useElementDrag(layoutId, element.id, scale);
 
   useEffect(() => {
@@ -56,6 +71,24 @@ export function EditableTextElement({
     selection?.removeAllRanges();
     selection?.addRange(range);
   }, [isEditing]);
+
+  // Tracks the live selection while typing/highlighting, for the Spacing/Stretch panel fields to
+  // read (see textRangeSelection). Global `selectionchange` rather than a React `onSelect` handler
+  // — the latter doesn't fire reliably for arbitrary contentEditable elements across browsers.
+  // Ignores any selection whose common ancestor has moved outside this element (e.g. the user
+  // clicked into a panel field to type a value) instead of clearing it, so the last real highlight
+  // survives that blur for the panel to still apply.
+  useEffect(() => {
+    if (!isEditing) return;
+    function handleSelectionChange() {
+      const el = ref.current;
+      if (!el) return;
+      const offsets = getSelectionOffsets(el);
+      if (offsets) setTextRangeSelection({ layoutId, elementId: element.id, start: offsets.start, end: offsets.end });
+    }
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, [isEditing, layoutId, element.id, setTextRangeSelection]);
 
   // Commit on the true→false transition itself, rather than waiting for a native `blur` event —
   // toggling `contentEditable` off while the node still holds focus doesn't reliably fire one

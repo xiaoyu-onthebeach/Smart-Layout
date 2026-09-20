@@ -81,6 +81,15 @@ export type LayoutElement = {
     letterSpacing?: number;
     /** Horizontal text scale, in percent offset from 100 (0 = normal, e.g. 20 = 120% width). */
     stretch?: number;
+    /**
+     * Text only — a one-off Spacing/Stretch value applied to just this plain-text character range
+     * of `content` (start/end offsets), set when the value is changed while a partial substring was
+     * highlighted rather than the whole layer. Lets the Spacing/Stretch panel fields detect and show
+     * a "Mixed" state once editing ends, without a full per-character rich-text model — the rest of
+     * `content` keeps using the plain `letterSpacing`/`stretch` above.
+     */
+    letterSpacingRange?: { start: number; end: number; value: number };
+    stretchRange?: { start: number; end: number; value: number };
     lineHeight?: number;
     textDecoration?: 'none' | 'underline' | 'line-through';
     /** Text only — the "Style" row's own Italic toggle in the decoration popover. */

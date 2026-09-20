@@ -6,6 +6,43 @@ import { isGradient } from '@/lib/gradient';
 import type { LayoutElement } from '@/types';
 
 /**
+ * Splits `content` into the plain-text runs implied by `letterSpacingRange`/`stretchRange` (see
+ * their doc comments in `types/index.ts`) — each run's own effective spacing/stretch, falling back
+ * to the element's flat `style.letterSpacing`/`style.stretch` outside either range. A run only ever
+ * gets a range's override when it sits fully inside that range, so a range can't leak onto text it
+ * wasn't drawn around even if the two ranges partially overlap. Single-run (the common case, no
+ * override set) collapses to one segment spanning the whole string.
+ */
+function textRunSegments(content: string, style: LayoutElement['style']) {
+  const { letterSpacingRange, stretchRange } = style;
+  if (!letterSpacingRange && !stretchRange) return [{ text: content, letterSpacing: style.letterSpacing, stretch: style.stretch }];
+  const clamp = (n: number) => Math.max(0, Math.min(content.length, n));
+  const breakpoints = new Set([0, content.length]);
+  if (letterSpacingRange) {
+    breakpoints.add(clamp(letterSpacingRange.start));
+    breakpoints.add(clamp(letterSpacingRange.end));
+  }
+  if (stretchRange) {
+    breakpoints.add(clamp(stretchRange.start));
+    breakpoints.add(clamp(stretchRange.end));
+  }
+  const points = [...breakpoints].sort((a, b) => a - b);
+  const segments: { text: string; letterSpacing: number | undefined; stretch: number | undefined }[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const start = points[i];
+    const end = points[i + 1];
+    if (start === end) continue;
+    const inRange = (r?: { start: number; end: number }) => !!r && start >= r.start && end <= r.end;
+    segments.push({
+      text: content.slice(start, end),
+      letterSpacing: inRange(letterSpacingRange) ? letterSpacingRange!.value : style.letterSpacing,
+      stretch: inRange(stretchRange) ? stretchRange!.value : style.stretch,
+    });
+  }
+  return segments;
+}
+
+/**
  * Renders one LayoutElement as an absolutely-positioned box using percentage
  * geometry against `layoutWidth`/`layoutHeight`. Text sizes use `cqw` units so
  * they scale with the nearest `container-type: inline-size` ancestor — no JS
@@ -113,6 +150,7 @@ export function ElementRenderer({
   // same one the "pill" background (`style.fill`) would otherwise use, so the two can't combine —
   // an acceptable trade-off since a gradient-filled pill behind gradient text isn't a real use case.
   const gradientText = isGradient(style.color);
+  const segments = textRunSegments(element.content ?? '', style);
   return (
     <div
       onMouseDown={onMouseDown}
@@ -137,7 +175,6 @@ export function ElementRenderer({
         fontSize: `${((style.fontSize ?? 16) / layoutWidth) * 100}cqw`,
         textAlign: (style.align as CSSProperties['textAlign']) ?? 'left',
         lineHeight: style.lineHeight ?? 1.2,
-        letterSpacing: style.letterSpacing ? `${style.letterSpacing}px` : undefined,
         textDecoration: style.textDecoration && style.textDecoration !== 'none' ? style.textDecoration : undefined,
         fontStyle: style.fontStyle,
         textTransform: style.textTransform && style.textTransform !== 'none' ? style.textTransform : undefined,
@@ -149,27 +186,32 @@ export function ElementRenderer({
         textOverflow: 'ellipsis',
       }}
     >
-      <span
-        style={{
-          // `vertical-align` has no effect here — this span is the flex container's own (sole)
-          // flex item, and vertical-align only ever applies to inline-level/table-cell boxes — so
-          // super/subscript is faked with a baseline-style shift + a proportionally smaller size
-          // instead, the same trick line-height-relative CSS superscripts have always used.
-          display: style.verticalAlign && style.verticalAlign !== 'baseline' ? 'inline-block' : undefined,
-          fontSize: style.verticalAlign && style.verticalAlign !== 'baseline' ? '0.7em' : undefined,
-          transform:
-            style.verticalAlign === 'super'
-              ? 'translateY(-0.3em)'
-              : style.verticalAlign === 'sub'
-                ? 'translateY(0.3em)'
-                : style.stretch
-                  ? `scaleX(${1 + style.stretch / 100})`
-                  : undefined,
-          transformOrigin: style.align === 'center' ? 'center' : style.align === 'right' ? 'right' : 'left',
-        }}
-      >
-        {element.content}
-      </span>
+      {segments.map((seg, i) => (
+        <span
+          key={i}
+          style={{
+            // `vertical-align` has no effect here — this span is the flex container's own (sole)
+            // flex item, and vertical-align only ever applies to inline-level/table-cell boxes — so
+            // super/subscript is faked with a baseline-style shift + a proportionally smaller size
+            // instead, the same trick line-height-relative CSS superscripts have always used. Both
+            // are element-wide (not something a run's own letterSpacing/stretch range can vary).
+            display: style.verticalAlign && style.verticalAlign !== 'baseline' ? 'inline-block' : undefined,
+            fontSize: style.verticalAlign && style.verticalAlign !== 'baseline' ? '0.7em' : undefined,
+            letterSpacing: seg.letterSpacing ? `${seg.letterSpacing}px` : undefined,
+            transform:
+              style.verticalAlign === 'super'
+                ? 'translateY(-0.3em)'
+                : style.verticalAlign === 'sub'
+                  ? 'translateY(0.3em)'
+                  : seg.stretch
+                    ? `scaleX(${1 + seg.stretch / 100})`
+                    : undefined,
+            transformOrigin: style.align === 'center' ? 'center' : style.align === 'right' ? 'right' : 'left',
+          }}
+        >
+          {seg.text}
+        </span>
+      ))}
     </div>
   );
 }
