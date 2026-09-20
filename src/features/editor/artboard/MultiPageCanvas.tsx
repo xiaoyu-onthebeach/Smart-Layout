@@ -245,7 +245,7 @@ function UnifiedAllSizesHeader({
   // after), not just the one before — so the whole gap around whichever "+" the user is pointing
   // at reads as highlighted, not just its left half.
   function segmentStyle(hovered: boolean): CSSProperties {
-    return { background: hovered ? '#4570FF' : '#40404A', boxShadow: hovered ? '0 0 0 2px rgba(69,112,255,0.3)' : 'none' };
+    return { background: hovered ? 'rgba(69,112,255,0.3)' : '#40404A' };
   }
   return (
     <div className="pointer-events-none absolute" style={{ left, top, width: totalWidth, height: 0 }}>
@@ -253,7 +253,7 @@ function UnifiedAllSizesHeader({
           — a `transform` on an ancestor becomes the containing block for any `position: fixed`
           descendant, which would silently break QuickSizeMenu's own fixed-positioned panel (it'd
           anchor to this element instead of the viewport, landing off-screen). */}
-      <span className="absolute text-[17px] leading-6 font-semibold text-white/45" style={{ left: 0, top: -8 }}>
+      <span className="absolute text-[15px] leading-6 font-semibold text-white/45" style={{ left: 0, top: -8 }}>
         {t('ALL SIZES')}
       </span>
       {icons.map((icon, i) => {
@@ -263,7 +263,7 @@ function UnifiedAllSizesHeader({
           <div key={icon.entry.id}>
             {segEnd > segStart && (
               <div
-                className="absolute h-0.5 transition-[background-color,box-shadow]"
+                className="absolute h-0.5 transition-colors"
                 style={{ left: segStart, top: -1, width: segEnd - segStart, ...segmentStyle(hoveredIndex === i || hoveredIndex === i - 1) }}
               />
             )}
@@ -282,7 +282,7 @@ function UnifiedAllSizesHeader({
           return (
             segStart < totalWidth && (
               <div
-                className="absolute h-0.5 transition-[background-color,box-shadow]"
+                className="absolute h-0.5 transition-colors"
                 style={{ left: segStart, top: -1, width: totalWidth - segStart, ...segmentStyle(hoveredIndex === icons.length - 1) }}
               />
             )
@@ -1430,7 +1430,7 @@ export function MultiPageCanvas() {
               const dividerWidth = layout.dividerWidth * camera.zoom;
               return (
                 <div key={groupId} className="pointer-events-none absolute inset-0">
-                  <div className="absolute text-[17px] leading-6 font-semibold text-white/45" style={{ left, top: labelTop }}>
+                  <div className="absolute text-[15px] leading-6 font-semibold text-white/45" style={{ left, top: labelTop }}>
                     {t('PRIMARY SIZE')}
                   </div>
                   {layout.siblings.length > 0 && (
@@ -1464,7 +1464,7 @@ export function MultiPageCanvas() {
             const headerTop = camera.y + (header.originY + header.headerY) * camera.zoom;
             return (
               <div key={i} className="pointer-events-none absolute inset-0">
-                <div className="absolute text-[17px] leading-6 font-semibold text-white/45" style={{ left, top: labelTop }}>
+                <div className="absolute text-[15px] leading-6 font-semibold text-white/45" style={{ left, top: labelTop }}>
                   {t('PRIMARY SIZE')}
                 </div>
                 <UnifiedAllSizesHeader
