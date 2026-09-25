@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { PopoverMenuItem } from './PanelKit';
 import { useT } from '@/lib/i18n';
 
-const ZOOM_PRESETS = [25, 50, 75, 100, 150, 200];
+const ZOOM_PRESETS = [1, 10, 25, 50, 75, 100];
 
 /** Bottom-right, sits just left of the view-all/editing switcher: zoom level, fit-to-screen, ruler toggle. */
 export function CanvasZoomBar({

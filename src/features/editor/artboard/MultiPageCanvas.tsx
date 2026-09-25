@@ -29,9 +29,12 @@ import { buildOverlayElements } from '@/lib/overlay-elements';
 import { computeGroupLayout } from '@/lib/group-layout';
 
 const PADDING = 96;
+// 100% is real size (1 native px = 1 screen px, see `PageCard`'s width/height = `size * camera.zoom`)
+// — MAX_ZOOM caps every zoom action there so nothing ever renders past its own true size, matching
+// MAX_FIT_ZOOM's existing cap on auto-fit specifically.
 const MAX_FIT_ZOOM = 1;
-const MIN_ZOOM = 0.1;
-const MAX_ZOOM = 3;
+const MIN_ZOOM = 0.01;
+const MAX_ZOOM = 1;
 const FOCUS_FILL_RATIO = 0.6;
 const DOT_SPACING = 50;
 const PAN_THRESHOLD = 4;
