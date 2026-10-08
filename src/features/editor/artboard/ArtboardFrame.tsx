@@ -14,6 +14,7 @@ import { ImageBox } from './ImageBox';
 import { LayerContextMenu } from './LayerContextMenu';
 import { MultiLayerContextMenu } from './MultiLayerContextMenu';
 import { RESIZE_HANDLES, type ResizeHandle } from './useElementDrag';
+import { boxContainsPoint, boxFromFrame, computeMeasureLines, resolvePillCollisions, rotatedBoundingBox, roundForDisplay, unionBoxes, type Box, type MeasureLine, type PillSpec } from '@/lib/measure';
 
 /** The focus-pick box always starts at this size (clamped to the frame itself, for a tiny scene),
  * centered — there's no more empty "draw it yourself" state to size it from scratch. */
@@ -211,6 +212,50 @@ function shapeDragFrame(kind: ShapeKind, start: { x: number; y: number }, curren
   return { x: Math.min(start.x, current.x), y: Math.min(start.y, current.y), w: dragW, h: dragH };
 }
 
+const MEASURE_COLOR = '#FD4E62';
+
+/** One measurement line — percentage-positioned (so it scales with the scene like everything else
+ * here) but with a fixed 1px border, so its weight stays constant on screen regardless of zoom. */
+function MeasureLineSegment({ line, nativeWidth, nativeHeight }: { line: MeasureLine; nativeWidth: number; nativeHeight: number }) {
+  const horizontal = line.y1 === line.y2;
+  const left = Math.min(line.x1, line.x2);
+  const top = Math.min(line.y1, line.y2);
+  const length = horizontal ? Math.abs(line.x2 - line.x1) : Math.abs(line.y2 - line.y1);
+  return (
+    <div
+      className="pointer-events-none absolute"
+      style={{
+        left: `${(left / nativeWidth) * 100}%`,
+        top: `${(top / nativeHeight) * 100}%`,
+        width: horizontal ? `${(length / nativeWidth) * 100}%` : 0,
+        height: horizontal ? 0 : `${(length / nativeHeight) * 100}%`,
+        borderTop: horizontal ? `1px ${line.dashed ? 'dashed' : 'solid'} ${MEASURE_COLOR}` : undefined,
+        borderLeft: !horizontal ? `1px ${line.dashed ? 'dashed' : 'solid'} ${MEASURE_COLOR}` : undefined,
+      }}
+    />
+  );
+}
+
+/** A measurement distance pill, centered on its line's midpoint — matches the Figma reference
+ * exactly (fill, text, padding, radius); font inherits the app's own Saans base font. */
+function MeasurePill({ x, y, nativeWidth, nativeHeight, value, background }: { x: number; y: number; nativeWidth: number; nativeHeight: number; value: string; background: string }) {
+  return (
+    <div
+      className="pointer-events-none absolute flex h-6 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-[10px] text-[13px] leading-6 font-semibold tracking-[-0.01em] text-white"
+      style={{
+        left: `${(x / nativeWidth) * 100}%`,
+        top: `${(y / nativeHeight) * 100}%`,
+        transform: 'translate(-50%, -50%)',
+        background,
+        border: `1px solid ${background}`,
+        boxShadow: '0px 1px 2px rgba(0,0,0,0.03), 0px 1px 6px -1px rgba(0,0,0,0.02), 0px 2px 4px rgba(0,0,0,0.02)',
+      }}
+    >
+      {value}
+    </div>
+  );
+}
+
 /**
  * The banner frame — shared by the single-page editor and the view-all canvas.
  * `active` frames are fully interactive (drag/resize image, place text/shape,
@@ -389,6 +434,115 @@ export function ArtboardFrame({
     | null
   >(null);
   const [insertImagePickerOpen, setInsertImagePickerOpen] = useState(false);
+
+  // --- Measurement overlay ("hold Option to measure", see measurement-overlay-spec.md) -----------
+  // Bare Option/Alt triggers nothing else anywhere in this app (checked: Shell's shortcuts, the
+  // shape toolbar, the zoom-wheel handler, and image-resize's expand modifier all require a
+  // different key or a drag already in progress) — switched from the spec's original Cmd/Ctrl
+  // binding per explicit feedback.
+  const [measureKeyDown, setMeasureKeyDown] = useState(false);
+  useEffect(() => {
+    if (!active) return;
+    function isTypingTarget(target: EventTarget | null) {
+      const el = target as HTMLElement | null;
+      return el?.isContentEditable || el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA';
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Alt' && !isTypingTarget(e.target)) setMeasureKeyDown(true);
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.key === 'Alt') setMeasureKeyDown(false);
+    }
+    function onBlur() {
+      setMeasureKeyDown(false);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [active]);
+
+  // Tracked continuously while active (not just while the ⌘ overlay is showing) so the position is
+  // already known the instant ⌘ goes down — entering should be instant, not wait for the next move.
+  const [measurePoint, setMeasurePoint] = useState<{ x: number; y: number } | null>(null);
+  const measureRafRef = useRef<number | null>(null);
+  const measureLastClientRef = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!active) {
+      setMeasurePoint(null);
+      return;
+    }
+    function onMove(e: globalThis.MouseEvent) {
+      measureLastClientRef.current = { x: e.clientX, y: e.clientY };
+      if (measureRafRef.current != null) return;
+      measureRafRef.current = requestAnimationFrame(() => {
+        measureRafRef.current = null;
+        const p = measureLastClientRef.current;
+        const rect = frameRef.current?.getBoundingClientRect();
+        if (!p || !rect) return;
+        setMeasurePoint({ x: (p.x - rect.left) / scale, y: (p.y - rect.top) / scale });
+      });
+    }
+    // Cursor leaving the browser window entirely (not just this frame) should clear the target per
+    // spec edge case 7 — `relatedTarget` is null exactly in that case, nowhere else.
+    function onDocumentMouseOut(e: globalThis.MouseEvent) {
+      if (!e.relatedTarget) setMeasurePoint(null);
+    }
+    window.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseout', onDocumentMouseOut);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseout', onDocumentMouseOut);
+      if (measureRafRef.current != null) cancelAnimationFrame(measureRafRef.current);
+    };
+  }, [active, scale]);
+
+  // Source = current selection's own (rotation-aware) union box, scoped to this scene only — a
+  // selection living in a sibling scene never measures against this one (spec edge case 10).
+  const measureSourceBox: Box | null = (() => {
+    if (!measureKeyDown) return null;
+    const boxes = selectedElements
+      .filter((r) => r.layoutId === layoutId)
+      .map((r) => layout.elements.find((el) => el.id === r.elementId))
+      .filter((el): el is LayoutElement => Boolean(el))
+      .map((el) => rotatedBoundingBox(el.frame, el.rotation ?? 0));
+    return boxes.length > 0 ? unionBoxes(boxes) : null;
+  })();
+
+  type MeasureTarget = { kind: 'source' } | { kind: 'box'; box: Box };
+  const measureTarget: MeasureTarget | null = (() => {
+    if (!measureSourceBox || !measurePoint) return null;
+    const sourceIds = new Set(selectedElements.filter((r) => r.layoutId === layoutId).map((r) => r.elementId));
+    // Topmost element wins (array order is back-to-front, so walk it in reverse), skipping hidden
+    // or locked layers — neither should ever be a hover target (spec edge case 4).
+    for (let i = layout.elements.length - 1; i >= 0; i--) {
+      const el = layout.elements[i];
+      if (!el.visible || el.locked) continue;
+      const box = rotatedBoundingBox(el.frame, el.rotation ?? 0);
+      if (boxContainsPoint(box, measurePoint.x, measurePoint.y)) {
+        return sourceIds.has(el.id) ? { kind: 'source' } : { kind: 'box', box };
+      }
+    }
+    // Nothing under the cursor (frame background, or outside the frame entirely) → frame bounds.
+    return { kind: 'box', box: boxFromFrame({ x: 0, y: 0, w: nativeWidth, h: nativeHeight }) };
+  })();
+  const measureLines: MeasureLine[] = measureSourceBox && measureTarget?.kind === 'box' ? computeMeasureLines(measureSourceBox, measureTarget.box) : [];
+
+  // Every pill the overlay shows this frame — one per gap/offset line — laid out once so collisions
+  // (spec: "offset them perpendicular to their lines") can be resolved across all of them together,
+  // not just pairwise ad hoc. Width is a rough estimate from the rendered text (13px font-semibold,
+  // ~7px/char, 20px of horizontal padding) — good enough for a collision check, not pixel-exact.
+  const measurePillTexts: { id: string; x: number; y: number; text: string; background: string }[] = measureSourceBox
+    ? measureLines
+        .filter((ln): ln is MeasureLine & { value: number } => ln.value !== null)
+        .map((ln) => ({ id: ln.id, x: (ln.x1 + ln.x2) / 2, y: (ln.y1 + ln.y2) / 2, text: `${roundForDisplay(ln.value)} px`, background: MEASURE_COLOR }))
+    : [];
+  const measurePillSpecs: PillSpec[] = measurePillTexts.map((p) => ({ id: p.id, x: p.x * scale, y: p.y * scale, width: (p.text.length * 7 + 20) / 1, height: 24 }));
+  const measurePillPositions = resolvePillCollisions(measurePillSpecs);
 
   const imageElement = layout.elements.find((el) => el.kind === 'image');
   const hasImage = Boolean(imageElement?.imageUrl);
@@ -1176,6 +1330,37 @@ export function ArtboardFrame({
             </>
           )}
         </>
+      )}
+
+      {/* Measurement overlay — rendered as a sibling of the clipped frame (same pattern as the
+          focus-rect hint above) so a measurement to an element that spills past the frame's own
+          bounds isn't clipped either (spec edge case 3). Purely visual: no pointer events, so it
+          never swallows a click/drag happening underneath it. */}
+      {measureSourceBox && (
+        <div className="pointer-events-none absolute inset-0 z-[60]">
+          {measureTarget?.kind === 'box' && (
+            <div
+              className="pointer-events-none absolute"
+              style={{
+                left: `${(measureTarget.box.left / nativeWidth) * 100}%`,
+                top: `${(measureTarget.box.top / nativeHeight) * 100}%`,
+                width: `${(measureTarget.box.width / nativeWidth) * 100}%`,
+                height: `${(measureTarget.box.height / nativeHeight) * 100}%`,
+                border: `1px solid ${MEASURE_COLOR}`,
+              }}
+            />
+          )}
+          {measureLines.map((ln) => (
+            <MeasureLineSegment key={ln.id} line={ln} nativeWidth={nativeWidth} nativeHeight={nativeHeight} />
+          ))}
+          {/* Positions come from `measurePillPositions` (screen-space, collision-resolved), not
+              straight off each line's own midpoint — so a pill that would overlap another gets
+              nudged clear of it instead of stacking illegibly. */}
+          {measurePillTexts.map((p) => {
+            const resolved = measurePillPositions.get(p.id)!;
+            return <MeasurePill key={p.id} x={resolved.x / scale} y={resolved.y / scale} nativeWidth={nativeWidth} nativeHeight={nativeHeight} value={p.text} background={p.background} />;
+          })}
+        </div>
       )}
 
       {layerContextMenu?.kind === 'single' && (
