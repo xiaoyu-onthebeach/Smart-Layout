@@ -194,7 +194,9 @@ export function EditableTextElement({
         width: 'max-content',
         height: 'max-content',
         transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
-        cursor: activeTool === 'select' && !isEditing ? (altKeyDown ? DUPLICATE_CURSOR : 'move') : undefined,
+        // Only hints "this drag will duplicate" over the layer that's actually selected — hovering
+        // some other, unselected layer with Option held still shows a plain move cursor.
+        cursor: activeTool === 'select' && !isEditing ? (altKeyDown && selected ? DUPLICATE_CURSOR : 'move') : undefined,
       }}
       onMouseDown={(e) => {
         // Let a placement tool (text/shape) click straight through to the frame beneath.

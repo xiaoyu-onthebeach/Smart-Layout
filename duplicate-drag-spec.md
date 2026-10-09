@@ -6,8 +6,8 @@ Add a Figma/Sketch-style duplicate gesture to the layout editor: hold Option/Alt
 
 ## Activation
 
-- **Hover hint:** Option/Alt held while hovering any draggable layer (in the `select` tool) swaps the cursor to a duplicate icon, signalling that starting a drag now will clone it rather than move it.
-- **Trigger:** mousedown with Option held, on any layer (text, shape, or image), followed by an actual drag. A plain Option+click with no movement just creates the clone in place — see "Edge cases," zero-offset suppression.
+- **Hover hint:** Option/Alt held while hovering the **currently selected** layer (in the `select` tool) swaps the cursor to a duplicate icon, signalling that starting a drag now will clone it rather than move it. Hovering some other, unselected layer with Option held shows the plain move cursor instead — the hint is scoped to "the layer you'd actually be dragging," not any layer under the cursor.
+- **Trigger:** mousedown with Option held, on any layer (text, shape, or image), followed by an actual drag — this part is not scoped to the selected layer the way the cursor hint is; dragging an unselected layer with Option held still duplicates it. A plain Option+click with no movement just creates the clone in place — see "Edge cases," zero-offset suppression.
 - No layer under the cursor → nothing happens; this is a per-layer gesture, not a canvas-wide mode.
 - Releasing Option mid-drag does **not** cancel the clone or revert to a normal move — once the duplicate exists, the drag continues targeting it regardless of the key's state afterward (matches Figma's own convention).
 
@@ -77,3 +77,4 @@ With the `select` tool active:
 3. Zero-offset suppression added — the initial "0 in every direction" state (right at mousedown) read as noise, not information.
 4. Rotated-target highlight: first built to trace the target's actual rotated edges, then corrected to the axis-aligned bounding box instead (matching a Figma reference screenshot) — the box the distance math uses, not the shape's own tilted outline.
 5. Same rotated-bounding-box highlight extended to the source side, gated to single-rotated-element selections only (see "Rendering").
+6. Cursor hint scoped to the selected layer only — originally showed on any hovered layer regardless of selection, which read as promising duplication for a layer the drag wouldn't actually target as cleanly as the already-selected one.

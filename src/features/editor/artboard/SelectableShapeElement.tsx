@@ -51,7 +51,9 @@ export function SelectableShapeElement({
         width: `${(frame.w / layoutWidth) * 100}%`,
         height: `${(frame.h / layoutHeight) * 100}%`,
         transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
-        cursor: activeTool === 'select' ? (altKeyDown ? DUPLICATE_CURSOR : 'move') : undefined,
+        // Only hints "this drag will duplicate" over the layer that's actually selected — hovering
+        // some other, unselected layer with Option held still shows a plain move cursor.
+        cursor: activeTool === 'select' ? (altKeyDown && selected ? DUPLICATE_CURSOR : 'move') : undefined,
       }}
       onMouseDown={(e) => {
         // Let a placement tool (text/shape) click straight through to the frame beneath.

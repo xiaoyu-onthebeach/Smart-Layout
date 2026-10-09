@@ -205,7 +205,9 @@ export function DraggableImageElement({
       element={element}
       layoutWidth={layoutWidth}
       layoutHeight={layoutHeight}
-      cursor={activeTool === 'select' ? (altKeyDown ? DUPLICATE_CURSOR : 'move') : undefined}
+      // Only hints "this drag will duplicate" over the layer that's actually selected — hovering
+      // some other, unselected layer with Option held still shows a plain move cursor.
+      cursor={activeTool === 'select' ? (altKeyDown && selected ? DUPLICATE_CURSOR : 'move') : undefined}
       scale={scale}
       expanding={expanding}
       selected={selected}
