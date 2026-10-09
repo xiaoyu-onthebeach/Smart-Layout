@@ -45,6 +45,7 @@ This matters because normal cursor-based target resolution wouldn't work here: d
 5. **Option released mid-drag** — does not cancel or revert anything; see "Activation."
 6. **Image layers** — use a hand-rolled move implementation (they don't share the text/shape drag hook), so the duplicate-drag logic is duplicated there rather than shared — same pattern the codebase already uses for every other image-specific drag behavior.
 7. **Hidden/locked layers** — never a duplicate-drag source, same as they're never a plain drag source; this gesture reuses each layer kind's own existing mousedown gate (`activeTool === 'select'` and the layer being interactive at all).
+8. **Clone dragged past the frame's own edge** — its selection box (and the measurement overlay's own highlight/lines) stays fully visible past the edge rather than clipping there, same as any other selected layer that spills past the frame (see `ArtboardFrame.tsx`'s `overflowElements`, originally image-only, generalized to every layer kind).
 
 ## Keyboard conflicts
 
@@ -78,3 +79,4 @@ With the `select` tool active:
 4. Rotated-target highlight: first built to trace the target's actual rotated edges, then corrected to the axis-aligned bounding box instead (matching a Figma reference screenshot) — the box the distance math uses, not the shape's own tilted outline.
 5. Same rotated-bounding-box highlight extended to the source side, gated to single-rotated-element selections only (see "Rendering").
 6. Cursor hint scoped to the selected layer only — originally showed on any hovered layer regardless of selection, which read as promising duplication for a layer the drag wouldn't actually target as cleanly as the already-selected one.
+7. Fixed a pre-existing clipping bug (not introduced by this feature, but surfaced by testing it): a selected layer's own bounding box used to clip at the frame's edge wherever the layer spilled past it, because `overflowElements` — the un-clipped "trace the rest of the outline" mechanism `ArtboardFrame.tsx` already had — was scoped to filled image layers only. Generalized to every layer kind.

@@ -612,20 +612,20 @@ export function ArtboardFrame({
   // See `backgroundElementId`'s own comment — this is the actual hide, applied per-element below.
   const isHiddenDuringFocusDrag = (elementId: string) => focusRectDragging && elementId !== backgroundElementId;
 
-  // Any selected image whose frame spills past the artboard's own bounds gets a dimmed preview of
-  // the overflowing part — hidden again the moment it's deselected. Gated on showsBoundsBox (not
-  // isSelected) so an auto-matched sibling image — selected for bulk-edit but not the literal
-  // clicked element — doesn't grow this preview either.
-  // A 1px tolerance keeps a genuinely full-bleed image (frame exactly matching the artboard, or
+  // Any selected layer — image, text, or shape — whose frame spills past the artboard's own bounds
+  // gets a preview of the overflowing part — hidden again the moment it's deselected. Gated on
+  // showsBoundsBox (not isSelected) so an auto-matched sibling image — selected for bulk-edit but
+  // not the literal clicked element — doesn't grow this preview either. Originally image-only
+  // (hence the name), generalized to every layer kind once the same clipping turned out to affect
+  // a dragged text/shape layer's own selection box identically.
+  // A 1px tolerance keeps a genuinely full-bleed element (frame exactly matching the artboard, or
   // off by a sub-pixel rounding artifact from a drag) from double-counting as "overflowing" here —
   // without it, this outline trace would render *on top of* SelectionBoundingBox's own clipped
-  // outline for any such image, showing as a doubled/thicker selection border for no real overflow.
+  // outline for any such element, showing as a doubled/thicker selection border for no real overflow.
   const OVERFLOW_TOLERANCE = 1;
   const overflowElements = [imageElement, ...extraElements].filter(
     (el): el is LayoutElement =>
       Boolean(el) &&
-      el.kind === 'image' &&
-      Boolean(el.imageUrl) &&
       showsBoundsBox(el.id) &&
       (el.frame.x < -OVERFLOW_TOLERANCE ||
         el.frame.y < -OVERFLOW_TOLERANCE ||
@@ -1003,10 +1003,12 @@ export function ArtboardFrame({
 
   return (
     <div className={cn('relative', className)} style={{ width, height, ...style }}>
-      {/* The selected image's own outline+handles (SelectionBoundingBox, rendered inside the
-          overflow-hidden frame below) get clipped wherever the frame exceeds the canvas — this
-          traces the rest of that same outline, unclipped, so the full extent of an overflowing,
-          zoomed-in image stays visible. */}
+      {/* A selected layer's own outline+handles (SelectionBoundingBox, rendered inside the
+          overflow-hidden frame below) get clipped wherever it spills past the frame's own bounds —
+          this traces the rest of that same outline, unclipped, so the full extent of an
+          overflowing layer (dragged past an edge, or just larger than the frame) stays visible.
+          Rotation is applied explicitly here (unlike the real selection box, which inherits it from
+          its own rotated parent wrapper) since this trace is a plain sibling, not nested inside it. */}
       {overflowElements.map((el) => (
         <div
           key={`overflow-outline-${el.id}`}
@@ -1016,6 +1018,7 @@ export function ArtboardFrame({
             top: `${(el.frame.y / nativeHeight) * 100}%`,
             width: `${(el.frame.w / nativeWidth) * 100}%`,
             height: `${(el.frame.h / nativeHeight) * 100}%`,
+            transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
           }}
         />
       ))}
