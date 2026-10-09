@@ -2,7 +2,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
 import { boxShadowCss } from '@/lib/shadow';
-import { useElementDrag } from './useElementDrag';
+import { useElementDrag, DUPLICATE_CURSOR } from './useElementDrag';
 import { SelectionBoundingBox } from './SelectionBoundingBox';
 
 /** A user-placed shape — selectable, draggable, and resizable via 8 handles, same as the image layer. */
@@ -14,9 +14,11 @@ export function SelectableShapeElement({
   scale,
   activeTool,
   selected,
+  altKeyDown,
   onSelect,
   onContextMenu,
   onEnterGroup,
+  onStartAltDuplicate,
 }: {
   element: LayoutElement;
   layoutId: string;
@@ -25,12 +27,17 @@ export function SelectableShapeElement({
   scale: number;
   activeTool: Tool;
   selected: boolean;
+  /** Option/Alt is currently held — swaps the hover cursor to the duplicate hint. */
+  altKeyDown: boolean;
   onSelect: (e: ReactMouseEvent) => void;
   onContextMenu?: (e: ReactMouseEvent) => void;
   /** Set only when this element belongs to a group that isn't currently "entered" — double-click enters it. */
   onEnterGroup?: (e: ReactMouseEvent) => void;
+  /** Option-drag-duplicate: clones this element, selects the clone, and returns its id plus a
+   * callback to fire once the drag ends — see ArtboardFrame's own `startAltDuplicate`. */
+  onStartAltDuplicate: (element: LayoutElement) => { newId: string; onDragEnd: () => void };
 }) {
-  const { startDragOrDeferredSelect, startResize, startRotate } = useElementDrag(layoutId, element.id, scale);
+  const { startDrag, startDragOrDeferredSelect, startResize, startRotate } = useElementDrag(layoutId, element.id, scale);
   const { frame, style } = element;
   const isLine = element.shape === 'line';
 
@@ -44,11 +51,16 @@ export function SelectableShapeElement({
         width: `${(frame.w / layoutWidth) * 100}%`,
         height: `${(frame.h / layoutHeight) * 100}%`,
         transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
-        cursor: activeTool === 'select' ? 'move' : undefined,
+        cursor: activeTool === 'select' ? (altKeyDown ? DUPLICATE_CURSOR : 'move') : undefined,
       }}
       onMouseDown={(e) => {
         // Let a placement tool (text/shape) click straight through to the frame beneath.
         if (activeTool !== 'select') return;
+        if (e.altKey) {
+          const { newId, onDragEnd } = onStartAltDuplicate(element);
+          startDrag(e, frame, { elementId: newId, onDragEnd });
+          return;
+        }
         startDragOrDeferredSelect(e, frame, onSelect);
       }}
       onContextMenu={onContextMenu}

@@ -12,6 +12,12 @@ export type ResizeHandle = (typeof RESIZE_HANDLES)[number];
 // just that one if the mouse never actually moves; a real drag moves the whole group instead.
 export const ELEMENT_PAN_THRESHOLD = 4;
 
+// Shown while Option/Alt is held over a draggable layer, hinting that starting a drag now
+// duplicates it instead of moving it (same `url(...) hotspotX hotspotY, fallback` shape as
+// SelectionBoundingBox's own ROTATE_CURSOR). The asset's filename has a literal space, which a raw
+// `url()` can't parse — percent-encoded here instead of renaming the file on disk.
+export const DUPLICATE_CURSOR = "url('/icons/duplicate%2024.svg') 12 12, copy";
+
 /** Every OTHER currently-selected element in this same layout, paired with its own starting frame
  * — a cross-scene match-select can put refs from other layouts into `selectedElements` too, which
  * have no business moving with a same-scene drag, so this filters to just this layout. */
@@ -45,24 +51,30 @@ export function applyElementSnap(layoutId: string, movingIds: string[], candidat
 export function useElementDrag(layoutId: string, elementId: string, scale: number) {
   const updateElement = useAppStore((s) => s.updateElement);
 
-  function startDrag(e: ReactMouseEvent, startFrame: LayoutElement['frame']) {
+  /** `options.elementId` redirects the drag onto a different element than the one this hook
+   * instance is bound to — used for Option-drag-duplicate, where the duplicate (not the original
+   * this mousedown actually landed on) is what ends up following the cursor. `options.onDragEnd`
+   * fires once, on mouseup, after the guides are cleared — the duplicate-drag caller uses it to
+   * stop suppressing the original's bounding box. */
+  function startDrag(e: ReactMouseEvent, startFrame: LayoutElement['frame'], options?: { elementId?: string; onDragEnd?: () => void }) {
     e.stopPropagation();
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
+    const targetId = options?.elementId ?? elementId;
 
     // If this element is part of a larger selection, every other selected element rides along at
     // the same delta, each starting from its own captured frame so the whole set translates
     // together without drifting apart.
-    const groupFrames = collectGroupFrames(layoutId, elementId);
-    const movingIds = [elementId, ...groupFrames.map((g) => g.elementId)];
+    const groupFrames = collectGroupFrames(layoutId, targetId);
+    const movingIds = [targetId, ...groupFrames.map((g) => g.elementId)];
 
     function onMove(ev: globalThis.MouseEvent) {
       let dx = (ev.clientX - startX) / scale;
       let dy = (ev.clientY - startY) / scale;
       const candidateFrame = { ...startFrame, x: startFrame.x + dx, y: startFrame.y + dy };
       ({ dx, dy } = applyElementSnap(layoutId, movingIds, candidateFrame, dx, dy));
-      updateElement(layoutId, elementId, { frame: { ...startFrame, x: startFrame.x + dx, y: startFrame.y + dy } });
+      updateElement(layoutId, targetId, { frame: { ...startFrame, x: startFrame.x + dx, y: startFrame.y + dy } });
       for (const g of groupFrames) {
         updateElement(layoutId, g.elementId, { frame: { ...g.frame, x: g.frame.x + dx, y: g.frame.y + dy } });
       }
@@ -71,6 +83,7 @@ export function useElementDrag(layoutId: string, elementId: string, scale: numbe
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       useAppStore.getState().setActiveGuides([]);
+      options?.onDragEnd?.();
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);

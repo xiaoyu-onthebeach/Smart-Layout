@@ -4,7 +4,7 @@ import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
 import { textShadowCss } from '@/lib/shadow';
 import { isGradient } from '@/lib/gradient';
-import { useElementDrag, MIN_SIZE, type ResizeHandle } from './useElementDrag';
+import { useElementDrag, DUPLICATE_CURSOR, MIN_SIZE, type ResizeHandle } from './useElementDrag';
 import { SelectionBoundingBox } from './SelectionBoundingBox';
 
 const MIN_FONT_SIZE = 6;
@@ -35,11 +35,13 @@ export function EditableTextElement({
   scale,
   activeTool,
   selected,
+  altKeyDown,
   isEditing,
   onSelect,
   onStartEditing,
   onContextMenu,
   onEnterGroup,
+  onStartAltDuplicate,
 }: {
   element: LayoutElement;
   layoutId: string;
@@ -48,6 +50,8 @@ export function EditableTextElement({
   scale: number;
   activeTool: Tool;
   selected: boolean;
+  /** Option/Alt is currently held — swaps the hover cursor to the duplicate hint. */
+  altKeyDown: boolean;
   isEditing: boolean;
   onSelect: (e: ReactMouseEvent) => void;
   onStartEditing: () => void;
@@ -55,11 +59,14 @@ export function EditableTextElement({
   /** Set only when this element belongs to a group that isn't currently "entered" — double-click
    * enters the group instead of starting text-edit mode. */
   onEnterGroup?: (e: ReactMouseEvent) => void;
+  /** Option-drag-duplicate: clones this element, selects the clone, and returns its id plus a
+   * callback to fire once the drag ends — see ArtboardFrame's own `startAltDuplicate`. */
+  onStartAltDuplicate: (element: LayoutElement) => { newId: string; onDragEnd: () => void };
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const updateElement = useAppStore((s) => s.updateElement);
   const setTextRangeSelection = useAppStore((s) => s.setTextRangeSelection);
-  const { startDragOrDeferredSelect, startRotate } = useElementDrag(layoutId, element.id, scale);
+  const { startDrag, startDragOrDeferredSelect, startRotate } = useElementDrag(layoutId, element.id, scale);
 
   useEffect(() => {
     if (!isEditing || !ref.current) return;
@@ -187,7 +194,7 @@ export function EditableTextElement({
         width: 'max-content',
         height: 'max-content',
         transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
-        cursor: activeTool === 'select' && !isEditing ? 'move' : undefined,
+        cursor: activeTool === 'select' && !isEditing ? (altKeyDown ? DUPLICATE_CURSOR : 'move') : undefined,
       }}
       onMouseDown={(e) => {
         // Let a placement tool (text/shape) click straight through to the frame beneath.
@@ -196,6 +203,11 @@ export function EditableTextElement({
           // Stop it from bubbling to the frame's own mousedown (which would deselect us), but
           // don't preventDefault — the browser still needs to place the caret natively.
           e.stopPropagation();
+          return;
+        }
+        if (e.altKey) {
+          const { newId, onDragEnd } = onStartAltDuplicate(element);
+          startDrag(e, frame, { elementId: newId, onDragEnd });
           return;
         }
         startDragOrDeferredSelect(e, frame, onSelect);

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent as Reac
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { nextId, layoutHasContent } from '@/lib/create-layout';
+import { nextId, layoutHasContent, isRealLayer } from '@/lib/create-layout';
 import { useApplyImage } from '@/hooks/useApplyImage';
 import type { Layout, LayoutElement, ShapeKind } from '@/types';
 import { ElementRenderer } from './ElementRenderer';
@@ -241,13 +241,12 @@ function MeasureLineSegment({ line, nativeWidth, nativeHeight }: { line: Measure
 function MeasurePill({ x, y, nativeWidth, nativeHeight, value, background }: { x: number; y: number; nativeWidth: number; nativeHeight: number; value: string; background: string }) {
   return (
     <div
-      className="pointer-events-none absolute flex h-6 shrink-0 items-center justify-center whitespace-nowrap rounded-full px-[10px] text-[13px] leading-6 font-semibold tracking-[-0.01em] text-white"
+      className="pointer-events-none absolute flex h-[21px] shrink-0 items-center justify-center whitespace-nowrap rounded-full px-2 text-[13px] leading-none font-semibold tracking-[-0.01em] text-white"
       style={{
         left: `${(x / nativeWidth) * 100}%`,
         top: `${(y / nativeHeight) * 100}%`,
         transform: 'translate(-50%, -50%)',
         background,
-        border: `1px solid ${background}`,
         boxShadow: '0px 1px 2px rgba(0,0,0,0.03), 0px 1px 6px -1px rgba(0,0,0,0.02), 0px 2px 4px rgba(0,0,0,0.02)',
       }}
     >
@@ -315,6 +314,7 @@ export function ArtboardFrame({
   const editingTextElementId = useAppStore((s) => s.editingTextElementId);
   const selectElement = useAppStore((s) => s.selectElement);
   const setSelectedElements = useAppStore((s) => s.setSelectedElements);
+  const duplicateElement = useAppStore((s) => s.duplicateElement);
   const isSelected = (elementId: string) => selectedElements.some((r) => r.layoutId === layoutId && r.elementId === elementId);
   // Cross-scene match-select adds matching layers in every sibling size to `selectedElements` (for
   // bulk-edit purposes) but only the literally-clicked BACKGROUND image should draw a visible
@@ -329,7 +329,12 @@ export function ArtboardFrame({
   // big one drawn around the whole group; selecting anything outside the group exits it again (see
   // the onSelect wrappers below, and handleFrameMouseDown's empty-click branch).
   const [enteredGroupId, setEnteredGroupId] = useState<string | null>(null);
+  // Set for the duration of an Option-drag-duplicate — the ORIGINAL element this mousedown landed
+  // on (not the new duplicate, which gets its own normal selection outline) stays selected-ish in
+  // spirit but shows no box while its clone is what's actually being dragged around.
+  const [altDuplicateOriginalId, setAltDuplicateOriginalId] = useState<string | null>(null);
   const showsBoundsBox = (elementId: string) => {
+    if (elementId === altDuplicateOriginalId) return false;
     if (!isSelected(elementId)) return false;
     // A grouped-but-not-entered element never shows its own box — the whole group draws one
     // shared box instead (see the group-bounds overlay near the end of this component).
@@ -338,6 +343,18 @@ export function ArtboardFrame({
     if (!isAutoMatched(elementId)) return true;
     return elementId !== backgroundElementId;
   };
+  // Option-drag-duplicate: clones `el` in place (undoing duplicateElement's own +16/+16 nudge,
+  // since this clone is meant to start exactly under the cursor, not offset from it), switches
+  // selection to the clone so it's what the drag below actually moves, and hides the original's own
+  // bounding box for the duration — restored by the returned `onDragEnd`, which each draggable
+  // component calls from its own mouseup once the drag completes.
+  function startAltDuplicate(el: LayoutElement): { newId: string; onDragEnd: () => void } {
+    const newId = duplicateElement(layoutId, el.id);
+    updateElement(layoutId, newId, { frame: el.frame });
+    setSelectedElements([{ layoutId, elementId: newId }]);
+    setAltDuplicateOriginalId(el.id);
+    return { newId, onDragEnd: () => setAltDuplicateOriginalId(null) };
+  }
   // Exits "entered" mode the moment selection moves to something outside the currently-entered
   // group — a plain click elsewhere, deselecting, or selecting a different group/element entirely.
   function exitEnteredGroupUnless(groupId: string | undefined) {
@@ -435,12 +452,14 @@ export function ArtboardFrame({
   >(null);
   const [insertImagePickerOpen, setInsertImagePickerOpen] = useState(false);
 
-  // --- Measurement overlay ("hold Option to measure", see measurement-overlay-spec.md) -----------
-  // Bare Option/Alt triggers nothing else anywhere in this app (checked: Shell's shortcuts, the
-  // shape toolbar, the zoom-wheel handler, and image-resize's expand modifier all require a
-  // different key or a drag already in progress) — switched from the spec's original Cmd/Ctrl
-  // binding per explicit feedback.
-  const [measureKeyDown, setMeasureKeyDown] = useState(false);
+  // --- Option/Alt held: gates both the measurement overlay ("hold Option to measure", see
+  // measurement-overlay-spec.md) and the Option-drag-duplicate cursor hint below. Bare Option/Alt
+  // triggers nothing else anywhere in this app (checked: Shell's shortcuts, the shape toolbar, the
+  // zoom-wheel handler, and image-resize's expand modifier all require a different key or a drag
+  // already in progress) — the measurement overlay was switched to this key from the spec's
+  // original Cmd/Ctrl binding per explicit feedback, and duplicate-drag reuses it for the same
+  // "free modifier" reason, matching the Figma/Sketch convention for both gestures.
+  const [altKeyDown, setAltKeyDown] = useState(false);
   useEffect(() => {
     if (!active) return;
     function isTypingTarget(target: EventTarget | null) {
@@ -448,13 +467,13 @@ export function ArtboardFrame({
       return el?.isContentEditable || el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA';
     }
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Alt' && !isTypingTarget(e.target)) setMeasureKeyDown(true);
+      if (e.key === 'Alt' && !isTypingTarget(e.target)) setAltKeyDown(true);
     }
     function onKeyUp(e: KeyboardEvent) {
-      if (e.key === 'Alt') setMeasureKeyDown(false);
+      if (e.key === 'Alt') setAltKeyDown(false);
     }
     function onBlur() {
-      setMeasureKeyDown(false);
+      setAltKeyDown(false);
     }
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
@@ -502,26 +521,56 @@ export function ArtboardFrame({
   }, [active, scale]);
 
   // Source = current selection's own (rotation-aware) union box, scoped to this scene only — a
-  // selection living in a sibling scene never measures against this one (spec edge case 10).
+  // selection living in a sibling scene never measures against this one (spec edge case 10). Also
+  // active for the duration of an Option-drag-duplicate even if Option itself has since been
+  // released mid-drag (Figma's own convention: releasing the key after the clone exists doesn't
+  // cancel the drag) — the clone being dragged is already the current selection either way.
+  const measureSourceElements: LayoutElement[] = selectedElements
+    .filter((r) => r.layoutId === layoutId)
+    .map((r) => layout.elements.find((el) => el.id === r.elementId))
+    .filter((el): el is LayoutElement => Boolean(el));
   const measureSourceBox: Box | null = (() => {
-    if (!measureKeyDown) return null;
-    const boxes = selectedElements
-      .filter((r) => r.layoutId === layoutId)
-      .map((r) => layout.elements.find((el) => el.id === r.elementId))
-      .filter((el): el is LayoutElement => Boolean(el))
-      .map((el) => rotatedBoundingBox(el.frame, el.rotation ?? 0));
+    if (!altKeyDown && !altDuplicateOriginalId) return null;
+    const boxes = measureSourceElements.map((el) => rotatedBoundingBox(el.frame, el.rotation ?? 0));
     return boxes.length > 0 ? unionBoxes(boxes) : null;
   })();
+  // A rotated-bounding-box highlight on the source itself only makes sense for a single rotated
+  // element — a multi-select union is already an axis-aligned box by construction (nothing to
+  // visually distinguish it with), and an unrotated source's own box already coincides exactly
+  // with its normal (blue) selection outline, so a second box there would just double up for
+  // nothing. Mirrors the target's own highlight below, same color, same purpose: show the actual
+  // box the distance math is using.
+  const sourceIsSingleRotatedElement = measureSourceElements.length === 1 && Boolean(measureSourceElements[0].rotation);
 
   type MeasureTarget = { kind: 'source' } | { kind: 'box'; box: Box };
   const measureTarget: MeasureTarget | null = (() => {
-    if (!measureSourceBox || !measurePoint) return null;
+    if (!measureSourceBox) return null;
+    // Mid Option-drag-duplicate, the cursor sits on the clone itself (you're holding a point on
+    // it), so cursor-based hit-testing below would just resolve to "source" the whole time — not
+    // useful. Force the target to the original instead: the one comparison that's actually
+    // meaningful while dragging a fresh duplicate around is "how far have I moved this from where
+    // it started."
+    if (altDuplicateOriginalId) {
+      const original = layout.elements.find((el) => el.id === altDuplicateOriginalId);
+      if (!original) return null;
+      const box = rotatedBoundingBox(original.frame, original.rotation ?? 0);
+      // Suppressed for as long as the duplicate hasn't actually moved from where it started (right
+      // at mousedown, before any real drag) — "0 in every direction" just restates the obvious.
+      // Both boxes are always the same size here (a plain move never resizes), so comparing one
+      // corner is enough to know the whole box still matches.
+      if (Math.round(box.left) === Math.round(measureSourceBox.left) && Math.round(box.top) === Math.round(measureSourceBox.top)) return null;
+      return { kind: 'box', box };
+    }
+    if (!measurePoint) return null;
     const sourceIds = new Set(selectedElements.filter((r) => r.layoutId === layoutId).map((r) => r.elementId));
     // Topmost element wins (array order is back-to-front, so walk it in reverse), skipping hidden
-    // or locked layers — neither should ever be a hover target (spec edge case 4).
+    // or locked layers — neither should ever be a hover target (spec edge case 4) — and skipping
+    // `emptySlotElements`' still-untouched starter stubs (the hero image slot, "Add headline" etc.)
+    // which have a real, hit-testable frame but nothing a user actually put there, and would
+    // otherwise surface as a mystery measurable "layer" with no visible trace on canvas.
     for (let i = layout.elements.length - 1; i >= 0; i--) {
       const el = layout.elements[i];
-      if (!el.visible || el.locked) continue;
+      if (!el.visible || el.locked || !isRealLayer(el)) continue;
       const box = rotatedBoundingBox(el.frame, el.rotation ?? 0);
       if (boxContainsPoint(box, measurePoint.x, measurePoint.y)) {
         return sourceIds.has(el.id) ? { kind: 'source' } : { kind: 'box', box };
@@ -535,13 +584,15 @@ export function ArtboardFrame({
   // Every pill the overlay shows this frame — one per gap/offset line — laid out once so collisions
   // (spec: "offset them perpendicular to their lines") can be resolved across all of them together,
   // not just pairwise ad hoc. Width is a rough estimate from the rendered text (13px font-semibold,
-  // ~7px/char, 20px of horizontal padding) — good enough for a collision check, not pixel-exact.
+  // ~7px/char, 16px of horizontal padding) — good enough for a collision check, not pixel-exact.
   const measurePillTexts: { id: string; x: number; y: number; text: string; background: string }[] = measureSourceBox
     ? measureLines
         .filter((ln): ln is MeasureLine & { value: number } => ln.value !== null)
-        .map((ln) => ({ id: ln.id, x: (ln.x1 + ln.x2) / 2, y: (ln.y1 + ln.y2) / 2, text: `${roundForDisplay(ln.value)} px`, background: MEASURE_COLOR }))
+        // Case 4's overlap offsets are the only lines that ever go negative (a real gap can't be);
+        // shown unsigned — the dashed styling already distinguishes "offset" from "gap" on its own.
+        .map((ln) => ({ id: ln.id, x: (ln.x1 + ln.x2) / 2, y: (ln.y1 + ln.y2) / 2, text: `${Math.abs(roundForDisplay(ln.value))}`, background: MEASURE_COLOR }))
     : [];
-  const measurePillSpecs: PillSpec[] = measurePillTexts.map((p) => ({ id: p.id, x: p.x * scale, y: p.y * scale, width: (p.text.length * 7 + 20) / 1, height: 24 }));
+  const measurePillSpecs: PillSpec[] = measurePillTexts.map((p) => ({ id: p.id, x: p.x * scale, y: p.y * scale, width: p.text.length * 7 + 16, height: 21 }));
   const measurePillPositions = resolvePillCollisions(measurePillSpecs);
 
   const imageElement = layout.elements.find((el) => el.kind === 'image');
@@ -1019,6 +1070,7 @@ export function ArtboardFrame({
                 scale={scale}
                 activeTool={activeTool}
                 selected={showsBoundsBox(imageElement.id)}
+                altKeyDown={altKeyDown}
                 expanding={expandingElementId === imageElement.id}
                 onExpandToFrameClick={handleExpandToFrameClick(imageElement)}
                 isBackgroundImage={imageElement.id === backgroundElementId}
@@ -1026,6 +1078,7 @@ export function ArtboardFrame({
                 onSelect={makeOnSelect(imageElement)}
                 onContextMenu={handleLayerContextMenu(imageElement.id)}
                 onEnterGroup={imageElement.groupId && imageElement.groupId !== enteredGroupId ? makeOnEnterGroup(imageElement) : undefined}
+                onStartAltDuplicate={startAltDuplicate}
               />
             ) : (
               // Mirrors DraggableImageElement's box exactly (frame-relative, not full-bleed) so the
@@ -1105,11 +1158,13 @@ export function ArtboardFrame({
                   scale={scale}
                   activeTool={activeTool}
                   selected={showsBoundsBox(el.id)}
+                  altKeyDown={altKeyDown}
                   isEditing={editingTextElementId === el.id}
                   onSelect={makeOnSelect(el)}
                   onStartEditing={() => setEditingTextElement(el.id)}
                   onContextMenu={handleLayerContextMenu(el.id)}
                   onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
+                  onStartAltDuplicate={startAltDuplicate}
                 />
               );
             }
@@ -1125,9 +1180,11 @@ export function ArtboardFrame({
                   scale={scale}
                   activeTool={activeTool}
                   selected={showsBoundsBox(el.id)}
+                  altKeyDown={altKeyDown}
                   onSelect={makeOnSelect(el)}
                   onContextMenu={handleLayerContextMenu(el.id)}
                   onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
+                  onStartAltDuplicate={startAltDuplicate}
                 />
               );
             }
@@ -1143,6 +1200,7 @@ export function ArtboardFrame({
                   scale={scale}
                   activeTool={activeTool}
                   selected={showsBoundsBox(el.id)}
+                  altKeyDown={altKeyDown}
                   expanding={expandingElementId === el.id}
                   onExpandToFrameClick={handleExpandToFrameClick(el)}
                   isBackgroundImage={el.id === backgroundElementId}
@@ -1150,6 +1208,7 @@ export function ArtboardFrame({
                   onSelect={makeOnSelect(el)}
                   onContextMenu={handleLayerContextMenu(el.id)}
                   onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
+                  onStartAltDuplicate={startAltDuplicate}
                 />
               );
             }
@@ -1338,7 +1397,23 @@ export function ArtboardFrame({
           never swallows a click/drag happening underneath it. */}
       {measureSourceBox && (
         <div className="pointer-events-none absolute inset-0 z-[60]">
+          {sourceIsSingleRotatedElement && (
+            <div
+              className="pointer-events-none absolute"
+              style={{
+                left: `${(measureSourceBox.left / nativeWidth) * 100}%`,
+                top: `${(measureSourceBox.top / nativeHeight) * 100}%`,
+                width: `${(measureSourceBox.width / nativeWidth) * 100}%`,
+                height: `${(measureSourceBox.height / nativeHeight) * 100}%`,
+                border: `1px solid ${MEASURE_COLOR}`,
+              }}
+            />
+          )}
           {measureTarget?.kind === 'box' && (
+            // Always axis-aligned, even when the target itself is rotated — this traces
+            // `measureTarget.box`, the same rotated *bounding* box the distance math itself uses
+            // (per spec: "use the visual bounding box... if rotation is supported"), touching the
+            // rotated shape's own extremes rather than tilting to match its edges.
             <div
               className="pointer-events-none absolute"
               style={{

@@ -25,7 +25,7 @@ Two inputs: the **source** (the current selection) and the **target** (whatever 
 - Multiple selection → the union bounding box of all selected layers.
 - Uses the rotation-aware visual bounding box, not the untransformed frame.
 
-**Target resolution**, by hit-test priority under the cursor (topmost layer first, skipping hidden/locked layers):
+**Target resolution**, by hit-test priority under the cursor (topmost layer first, skipping hidden/locked layers and any still-untouched starter placeholder — see edge case 4):
 1. A layer other than the source → measure to that layer.
 2. The frame background (no layer under cursor) → measure to the frame bounds.
 3. Canvas outside the frame → measure to the frame bounds (same as 2).
@@ -60,6 +60,7 @@ The axis **with** overlap has no true gap; the other axis gets the real measurem
   - The reference line runs through S's own center on the gap axis, from T's edge to S's edge.
   - **Suppressed entirely** whenever this value is zero or negative — target flush with or tucked inside source's edge has nothing worth calling out. No magnitude threshold; any positive value shows.
 - **Dashed connector:** one dashed line, running in the same direction as the real gap line, from target's near edge (on the gap axis) straight through the point where it crosses the reference line, continuing to **source's far edge** (the edge away from target). There is no second dashed segment along target's own edge — target's own solid border already reads as that reference, so drawing a dashed duplicate over it would be redundant.
+- **Gap-line projection:** the real gap line sits at source's own center, which can land outside target's own extent on the overlapping axis when the two only overlap by a sliver of source's own span — in which case the gap line reads as floating free of target. When that happens, add a second dashed line from target's **nearest edge** on the overlapping axis over to the gap line's own position, at the same point the gap line touches target — so it's visibly anchored to target's body rather than appearing disconnected. Not needed (and not drawn) when the gap line's anchor already falls within target's own extent.
 
 ### Case 3 — No overlap on either axis (diagonal)
 
@@ -78,13 +79,13 @@ There is no always-on "dimension pill" for the source's own width × height — 
 - Measure in **canvas units** (design pixels), not screen pixels. A measurement reads the same at every zoom level.
 - Round to the nearest integer for display. Keep full precision internally.
 - If a value rounds to 0 but isn't exactly 0, show `0` — don't show decimals.
-- Negative values (Case 4's offsets) display with a minus sign.
+- Case 4's offsets can compute negative (when the two boxes overlap on that edge) but always **display unsigned** — the dashed line styling is what signals "offset," not a minus sign.
 
 ## Rendering
 
 - **Lines:** 1px, `#FD4E62`. Solid for direct measurements/references, dashed for projections and connectors.
 - **Target highlight:** 1px outline in the same color, traced around whatever box is currently the target.
-- **Pills:** red (`#FD4E62`) background, white text, `h-6` / `rounded-full` / `px-[10px]` / `13px` semibold / `-0.01em` tracking, matching the Figma reference exactly. Always horizontal, never rotated. One pill per line that has a real value (`null`-valued dashed projection/connector lines get no pill).
+- **Pills:** red (`#FD4E62`) background, white text, `21px` tall / `rounded-full` / `px-2` (8px) horizontal padding / `13px` semibold / `leading-none` / `-0.01em` tracking, matching the Figma reference exactly. Number only — no `px` unit suffix. Always horizontal, never rotated. One pill per line that has a real value (`null`-valued dashed projection/connector lines get no pill).
 - **Screen-space sizing:** line weight, pill size, and text size stay constant regardless of zoom. Only positions scale.
 - **Z-order:** above everything else on the canvas (`z-60`, the highest in this app).
 - **Collision:** implemented as a best-effort, not an exhaustive solver — overlapping pills are nudged apart vertically in a few passes. Works well for this overlay's actual shapes (a handful of pills, mostly stacked by nearby text layers) but isn't guaranteed to resolve every configuration.
@@ -96,7 +97,7 @@ There is no always-on "dimension pill" for the source's own width × height — 
 1. **Target is the source** → nothing is drawn.
 2. **Nested layers** — measure to the hovered layer's own bounds, not its parent's.
 3. **Layer extends beyond the frame** — measurements still compute and draw outside the frame bounds (the overlay is rendered as a sibling of the frame's own clipped box, not inside it).
-4. **Hidden or locked layers** are skipped during hit-testing, never a hover target.
+4. **Hidden or locked layers** are skipped during hit-testing, never a hover target. So is any `emptySlotElements` starter placeholder (the auto-seeded hero image slot before it's been given an `imageUrl`, or an "Add headline"/"Add sub message"/"Add price"/"Add CTA" text stub before it's been typed into) — these have a real, hit-testable frame but nothing a user actually put there, and without this exclusion they'd surface as a measurable "layer" with no visible trace on canvas.
 5. **Zero distance** (edges flush) — show a `0` pill rather than nothing.
 6. **Multi-select** — union box; if the union equals a single layer's box, behaves as single automatically (no special-casing needed).
 7. **Cursor leaves the canvas** while Option is held → target clears (tracked via `document`'s `mouseout` with a null `relatedTarget`).
@@ -145,3 +146,7 @@ Changes made after the initial build, via direct visual feedback against the run
    - added the cross-axis reference line (with left-left/right-right or top-top/bottom-bottom chosen by which side actually diverges);
    - reference line suppressed whenever its value is ≤ 0 (first tried a fixed 24px magnitude threshold, then simplified to this sign-only rule per feedback);
    - the dashed connector went through two iterations: first a short stub from target's center to its own edge (rejected), then a two-segment bent path mirroring Case 3 (close, but had a redundant segment), now a single dashed line from target's near edge through source's far edge, since target's own border already reads as the reference on its own side.
+6. Case 2: added the gap-line projection (see "Measurement rules" above) for when source and target only overlap by a sliver, leaving the real gap line's anchor outside target's own extent and visually disconnected from it.
+7. Hit-testing now also excludes `emptySlotElements`' starter placeholders, not just hidden/locked layers — found via a real bug report: a brand-new banner's auto-seeded hero image slot and text stubs are deliberately excluded from the Layers panel and from normal on-canvas interaction, but the measurement overlay was hit-testing `layout.elements` directly and so could still measure against their real-but-invisible bounding boxes. Fixed by sharing one `isRealLayer()` check (`src/lib/create-layout.ts`) between the Layers panel's filter and this overlay's hit-test loop — which also fixed a latent bug where that filter only recognized English placeholder text, not Japanese.
+8. Pill restyled to a second, more compact Figma reference: dropped the `px` unit suffix (numbers only), shrunk from 24px to 21px tall, padding from 10px to 8px horizontal, line-height tightened to `leading-none`.
+9. Case 4's offset pills now display unsigned — the minus sign the original spec called for was dropped by request; the dashed line styling alone is enough to read as "offset" rather than "gap."

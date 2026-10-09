@@ -3,6 +3,7 @@ import { ChevronLeft, EyeOff, Image as ImageIcon, Lock } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { layerName } from '@/lib/layer-name';
+import { isRealLayer } from '@/lib/create-layout';
 import { useT } from '@/lib/i18n';
 import type { Layout, LayoutElement } from '@/types';
 
@@ -115,17 +116,6 @@ function LayerRow({
       </div>
     </div>
   );
-}
-
-// The default template pre-populates a blank image slot and a few "Add headline"-style text
-// stubs so there's somewhere to click/type from the start — but until they actually hold
-// something, they aren't real layers yet and shouldn't clutter this list.
-const PLACEHOLDER_TEXT = new Set(['Add headline', 'Add sub message', 'Add price', 'Add CTA']);
-
-function isRealLayer(element: LayoutElement): boolean {
-  if (element.kind === 'image') return Boolean(element.imageUrl);
-  if (element.kind === 'text') return Boolean(element.content) && !PLACEHOLDER_TEXT.has(element.content ?? '');
-  return true;
 }
 
 function SceneLayerRows({

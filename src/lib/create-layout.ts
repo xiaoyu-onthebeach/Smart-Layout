@@ -82,6 +82,22 @@ export function layoutHasContent(layout: Layout): boolean {
   return layout.elements.some((el) => el.kind === 'image' && Boolean(el.imageUrl)) || Boolean(layout.backgroundColor);
 }
 
+/** Every language's set of `emptySlotElements` placeholder strings — an element matching one of
+ * these hasn't actually been typed into yet, regardless of which language it was seeded in. */
+const ALL_PLACEHOLDER_TEXT = new Set(Object.values(PLACEHOLDER_TEXT).flatMap((ph) => Object.values(ph)));
+
+/** Whether an element is "real" — i.e. not one of `emptySlotElements`' starter stubs still sitting
+ * untouched. Those stubs exist so there's a hero image slot to upload into and text layers to
+ * click straight into typing, but until filled in they aren't content a user actually created, so
+ * they're excluded from the Layers list (`LayersTab.tsx`) and skipped entirely as hover/selection
+ * targets (`ArtboardFrame.tsx`'s measurement overlay) — otherwise they'd read as mystery "hidden
+ * layers" with a real, selectable bounding box and no visible trace on canvas. */
+export function isRealLayer(element: LayoutElement): boolean {
+  if (element.kind === 'image') return Boolean(element.imageUrl);
+  if (element.kind === 'text') return Boolean(element.content) && !ALL_PLACEHOLDER_TEXT.has(element.content ?? '');
+  return true;
+}
+
 /** Copies a source layout's elements into a fresh layout at a new size, scaled to fit. */
 export function createAdaptedLayout(
   source: Layout,

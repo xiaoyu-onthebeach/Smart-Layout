@@ -126,17 +126,28 @@ export function computeMeasureLines(source: Box, target: Box): MeasureLine[] {
       ? line('v-gap', sourceMidX, targetNearY, sourceMidX, source.top, vGapValue, false)
       : line('v-gap', sourceMidX, source.bottom, sourceMidX, targetNearY, vGapValue, false);
 
+    // The gap line sits at source's own center, which — since the two only overlap partially —
+    // can fall outside target's own width entirely (the overlap might cover only a sliver of
+    // source's own span). When that happens the gap line reads as floating free of target, so
+    // connect it with a dashed line from target's nearest edge over to where the gap line is.
+    const vLineProjection: MeasureLine[] =
+      sourceMidX < target.left
+        ? [line('v-gap-projection', target.left, targetNearY, sourceMidX, targetNearY, null, true)]
+        : sourceMidX > target.right
+          ? [line('v-gap-projection', target.right, targetNearY, sourceMidX, targetNearY, null, true)]
+          : [];
+
     // Source sitting right of target's own center reveals the gap between their LEFT edges
     // (target's left edge trails behind); source sitting left reveals the RIGHT edges instead.
     const useLeftLeft = sourceMidX >= targetMidX;
     const hRefValue = useLeftLeft ? source.left - target.left : target.right - source.right;
-    if (hRefValue <= 0) return [vLine];
+    if (hRefValue <= 0) return [vLine, ...vLineProjection];
 
     const refTargetX = useLeftLeft ? target.left : target.right;
     const refSourceX = useLeftLeft ? source.left : source.right;
     const hRef = line('h-ref', refTargetX, sourceMidY, refSourceX, sourceMidY, hRefValue, false);
     const projection = line('h-ref-projection', refTargetX, targetNearY, refTargetX, sourceFarY, null, true);
-    return [vLine, hRef, projection];
+    return [vLine, ...vLineProjection, hRef, projection];
   }
   if (vOverlap && !hOverlap) {
     const sourceMidX = (source.left + source.right) / 2;
@@ -150,17 +161,25 @@ export function computeMeasureLines(source: Box, target: Box): MeasureLine[] {
       ? line('h-gap', targetNearX, sourceMidY, source.left, sourceMidY, hGapValue, false)
       : line('h-gap', source.right, sourceMidY, targetNearX, sourceMidY, hGapValue, false);
 
-    // Mirror of the horizontal case: source below target's center reveals the TOP edges; source
-    // above reveals the BOTTOM edges.
+    // Mirror of the horizontal case: the gap line sits at source's own center, which can fall
+    // outside target's own height when the overlap only covers part of source's span.
+    const hLineProjection: MeasureLine[] =
+      sourceMidY < target.top
+        ? [line('h-gap-projection', targetNearX, target.top, targetNearX, sourceMidY, null, true)]
+        : sourceMidY > target.bottom
+          ? [line('h-gap-projection', targetNearX, target.bottom, targetNearX, sourceMidY, null, true)]
+          : [];
+
+    // Source below target's center reveals the TOP edges; source above reveals the BOTTOM edges.
     const useTopTop = sourceMidY >= targetMidY;
     const vRefValue = useTopTop ? source.top - target.top : target.bottom - source.bottom;
-    if (vRefValue <= 0) return [hLine];
+    if (vRefValue <= 0) return [hLine, ...hLineProjection];
 
     const refTargetY = useTopTop ? target.top : target.bottom;
     const refSourceY = useTopTop ? source.top : source.bottom;
     const vRef = line('v-ref', sourceMidX, refTargetY, sourceMidX, refSourceY, vRefValue, false);
     const projection = line('v-ref-projection', targetNearX, refTargetY, sourceFarX, refTargetY, null, true);
-    return [hLine, vRef, projection];
+    return [hLine, ...hLineProjection, vRef, projection];
   }
 
   // Case 3 — no overlap on either axis (diagonal): both gaps, anchored through the one corner of

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 
 import { useAppStore } from '@/store/useAppStore';
 import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
-import { useElementDrag, applyElementSnap, ELEMENT_PAN_THRESHOLD } from './useElementDrag';
+import { useElementDrag, applyElementSnap, DUPLICATE_CURSOR, ELEMENT_PAN_THRESHOLD } from './useElementDrag';
 import { SelectionBoundingBox } from './SelectionBoundingBox';
 import { ImageBox } from './ImageBox';
 
@@ -20,6 +20,7 @@ export function DraggableImageElement({
   scale,
   activeTool,
   selected,
+  altKeyDown,
   expanding,
   onExpandToFrameClick,
   isBackgroundImage,
@@ -27,6 +28,7 @@ export function DraggableImageElement({
   onSelect,
   onContextMenu,
   onEnterGroup,
+  onStartAltDuplicate,
 }: {
   element: LayoutElement;
   layoutId: string;
@@ -35,6 +37,8 @@ export function DraggableImageElement({
   scale: number;
   activeTool: Tool;
   selected: boolean;
+  /** Option/Alt is currently held — swaps the hover cursor to the duplicate hint. */
+  altKeyDown: boolean;
   expanding?: boolean;
   onExpandToFrameClick?: (e: ReactMouseEvent) => void;
   isBackgroundImage?: boolean;
@@ -43,6 +47,9 @@ export function DraggableImageElement({
   onContextMenu?: (e: ReactMouseEvent) => void;
   /** Set only when this element belongs to a group that isn't currently "entered" — double-click enters it. */
   onEnterGroup?: (e: ReactMouseEvent) => void;
+  /** Option-drag-duplicate: clones this element, selects the clone, and returns its id plus a
+   * callback to fire once the drag ends — see ArtboardFrame's own `startAltDuplicate`. */
+  onStartAltDuplicate: (element: LayoutElement) => { newId: string; onDragEnd: () => void };
 }) {
   const updateElement = useAppStore((s) => s.updateElement);
   const { startResize, startRotate } = useElementDrag(layoutId, element.id, scale);
@@ -103,6 +110,34 @@ export function DraggableImageElement({
       window.removeEventListener('mouseup', onUp);
       useAppStore.getState().setActiveGuides([]);
       endPositioning();
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  // Option-drag-duplicate: a plain move, like startMove above, but targeting the freshly-cloned
+  // element's own id (already selected and positioned at this element's frame by the caller) — the
+  // original this mousedown actually landed on stays put, so it never joins movingIds here.
+  function startAltDuplicateMove(e: ReactMouseEvent, newElementId: string, onDragEnd: () => void) {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startFrame = frame;
+    beginPositioning();
+    function onMove(ev: globalThis.MouseEvent) {
+      const dx = (ev.clientX - startX) / scale;
+      const dy = (ev.clientY - startY) / scale;
+      const candidateFrame = { ...startFrame, x: startFrame.x + dx, y: startFrame.y + dy };
+      const snapped = applyElementSnap(layoutId, [newElementId], candidateFrame, dx, dy);
+      updateElement(layoutId, newElementId, { frame: { ...startFrame, x: startFrame.x + snapped.dx, y: startFrame.y + snapped.dy } });
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      useAppStore.getState().setActiveGuides([]);
+      endPositioning();
+      onDragEnd();
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -170,7 +205,7 @@ export function DraggableImageElement({
       element={element}
       layoutWidth={layoutWidth}
       layoutHeight={layoutHeight}
-      cursor={activeTool === 'select' ? 'move' : undefined}
+      cursor={activeTool === 'select' ? (altKeyDown ? DUPLICATE_CURSOR : 'move') : undefined}
       scale={scale}
       expanding={expanding}
       selected={selected}
@@ -197,7 +232,13 @@ export function DraggableImageElement({
         // Only a left-click selects the layer (and starts a move drag) — a right-click leaves
         // selection alone, so its own context menu only opens the layer menu when this layer was
         // already selected beforehand; otherwise the right-click falls through to the scene menu.
-        if (e.button === 0) startMoveOrDeferredSelect(e);
+        if (e.button !== 0) return;
+        if (e.altKey) {
+          const { newId, onDragEnd } = onStartAltDuplicate(element);
+          startAltDuplicateMove(e, newId, onDragEnd);
+          return;
+        }
+        startMoveOrDeferredSelect(e);
       }}
     >
       {selected && (
