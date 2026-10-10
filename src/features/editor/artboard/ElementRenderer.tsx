@@ -3,6 +3,7 @@ import { ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { boxShadowCss, textShadowCss } from '@/lib/shadow';
 import { isGradient } from '@/lib/gradient';
+import { autoLayoutPaddingCss } from '@/lib/text-auto-layout';
 import type { LayoutElement } from '@/types';
 
 /**
@@ -143,7 +144,10 @@ export function ElementRenderer({
   }
 
   // text
-  const isPill = Boolean(style.fill);
+  // Only template slot text gets the pill's built-in side padding — a layer added on the canvas
+  // hugs its own glyphs there (see EditableTextElement), so padding it here too would squeeze it
+  // into an ellipsis; its own breathing room comes from Auto Layout padding instead.
+  const isPill = Boolean(style.fill) && element.slot !== null;
   // Gradient text is a CSS `background-clip: text` trick — it needs the gradient painted as this
   // box's own background-image, clipped to the glyphs, with the text's actual `color` made
   // transparent so the clipped gradient shows through instead. That background-image slot is the
@@ -151,13 +155,16 @@ export function ElementRenderer({
   // an acceptable trade-off since a gradient-filled pill behind gradient text isn't a real use case.
   const gradientText = isGradient(style.color);
   const segments = textRunSegments(element.content ?? '', style);
+  // Auto Layout swaps the centred single-line flex box for plain block flow, so the text sits at
+  // the top-left of its padding (matching the live canvas element) and can wrap at a fixed width.
+  const autoLayout = style.autoLayout;
   return (
     <div
       onMouseDown={onMouseDown}
       className={cn(selected && 'outline outline-[1.5px] outline-button-primary')}
       style={{
         ...pos,
-        display: 'flex',
+        display: autoLayout ? 'block' : 'flex',
         alignItems: 'center',
         // Vertical writing mode stacks the (single line of) content into one column — "start/end"
         // alignment stops meaning "left/right" once the text's own axis rotates, so just center
@@ -180,10 +187,18 @@ export function ElementRenderer({
         textTransform: style.textTransform && style.textTransform !== 'none' ? style.textTransform : undefined,
         WebkitTextStroke: style.strokeWidth ? `${style.strokeWidth}px ${style.strokeColor ?? '#000000'}` : undefined,
         textShadow: textShadowCss(style.dropShadow),
-        paddingInline: isPill ? '0.6em' : undefined,
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
+        ...(autoLayout
+          ? {
+              padding: autoLayoutPaddingCss(autoLayout, layoutWidth),
+              boxSizing: 'border-box',
+              whiteSpace: autoLayout.hugWidth ? 'pre' : 'pre-wrap',
+            }
+          : {
+              paddingInline: isPill ? '0.6em' : undefined,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }),
       }}
     >
       {segments.map((seg, i) => (

@@ -22,6 +22,7 @@ import { layerName } from '@/lib/layer-name';
 import { useT } from '@/lib/i18n';
 import {
   BORDER_STYLE_ICONS,
+  CornerRadiusRow,
   fieldHighlightStyle,
   IconNumberField,
   INLINE_VALUE_COL_WIDTH,
@@ -41,6 +42,7 @@ import {
   useFieldHighlight,
   type EditorTarget,
 } from './PanelKit';
+import { AutoLayoutSection } from './AutoLayoutSection';
 
 type BorderStyle = 'none' | 'solid' | 'dashed' | 'dotted';
 /** Purely a visual choice for text — CSS `text-stroke` has no dashed/dotted rendering mode, so
@@ -229,6 +231,43 @@ function DecorationPopover({
   );
 }
 
+/** One of the Size row's W/H pills — read-only (dimmed) while that axis hugs its text, and a real
+ * input once Auto Layout has it at a fixed size. */
+function SizeAxisField({ axis, value, editable, onCommit }: { axis: 'W' | 'H'; value: number; editable: boolean; onCommit: (value: number) => void }) {
+  const field = useFieldHighlight();
+  if (!editable) {
+    return (
+      <div className="flex h-8 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm opacity-50">
+        <span className="text-white/65">{axis}</span>
+        <span className="ml-auto text-white">{Math.round(value)}</span>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
+      onMouseEnter={() => field.setHovered(true)}
+      onMouseLeave={() => field.setHovered(false)}
+      style={fieldHighlightStyle(field.hovered, field.focused)}
+    >
+      <span className="text-white/65">{axis}</span>
+      <input
+        type="text"
+        defaultValue={String(Math.round(value))}
+        key={Math.round(value)}
+        onFocus={() => field.setFocused(true)}
+        onBlur={(e) => {
+          field.setFocused(false);
+          const next = Number(e.target.value);
+          if (next > 0) onCommit(next);
+        }}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        className="w-0 min-w-0 flex-1 bg-transparent text-right text-white outline-none"
+      />
+    </div>
+  );
+}
+
 /** Right-corner panel shown while one or more text elements are selected — edits broadcast to every target. */
 export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const t = useT();
@@ -298,6 +337,15 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
   function patchRotation(rotation: number) {
     for (const tgt of targets) updateElement(tgt.layoutId, tgt.element.id, { rotation });
   }
+  /** Only resizes targets whose own Auto Layout has that axis fixed — a hugging one would just
+   * snap straight back to its measured size anyway. */
+  function commitSize(axis: 'w' | 'h', value: number) {
+    for (const tgt of targets) {
+      const al = tgt.element.style.autoLayout;
+      if (!al || (axis === 'w' ? al.hugWidth : al.hugHeight)) continue;
+      updateElement(tgt.layoutId, tgt.element.id, { frame: { ...tgt.element.frame, [axis]: value } });
+    }
+  }
   function commitContent(content: string) {
     for (const tgt of targets) updateElement(tgt.layoutId, tgt.element.id, { content });
   }
@@ -324,6 +372,8 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const hasDecoration =
     (primary.style.fontWeight ?? 400) >= 700 || fontStyle === 'italic' || textDecoration === 'underline' || textTransform !== 'none' || verticalAlign !== 'baseline';
   const strokeStyle: SolidBorderStyle = primary.style.strokeStyle ?? 'solid';
+  const fixedW = Boolean(primary.style.autoLayout && !primary.style.autoLayout.hugWidth);
+  const fixedH = Boolean(primary.style.autoLayout && !primary.style.autoLayout.hugHeight);
   const title =
     targets.length === 1 ? t(layerName(primary)) : language === 'ja' ? `${targets.length} 個のテキストレイヤー` : `${targets.length} text layers`;
 
@@ -350,22 +400,17 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
       />
 
       {/* Appended to the same visual section as Position/Alignment above (no divider in between) —
-          Size stays locked (text always auto-fits its own box to content + font size, see
-          EditableTextElement's own measurement effect; there's nothing here to type into), while
-          Rotation is a real, editable mirror of dragging just outside a selected corner handle. */}
+          Size stays locked while the box auto-fits its own content + font size (see
+          EditableTextElement's own measurement effect), unlocking per axis once Auto Layout's
+          "Hug" is turned off for it, while Rotation is a real, editable mirror of dragging just
+          outside a selected corner handle. */}
       <div className="flex flex-col gap-3 px-4">
         <div className="flex flex-col gap-1.5">
           <span className="text-[11px] text-white/65">{t('Size')}</span>
           <div className="flex items-center gap-2">
-            <div className="flex h-8 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm opacity-50">
-              <span className="text-white/65">W</span>
-              <span className="ml-auto text-white">{Math.round(primary.frame.w)}</span>
-            </div>
-            <div className="flex h-8 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm opacity-50">
-              <span className="text-white/65">H</span>
-              <span className="ml-auto text-white">{Math.round(primary.frame.h)}</span>
-            </div>
-            <img src="/icons/edit_panel/lock%2012.svg" alt="" className="size-3.5 shrink-0 opacity-45" />
+            <SizeAxisField axis="W" value={primary.frame.w} editable={fixedW} onCommit={(v) => commitSize('w', v)} />
+            <SizeAxisField axis="H" value={primary.frame.h} editable={fixedH} onCommit={(v) => commitSize('h', v)} />
+            {!fixedW && !fixedH && <img src="/icons/edit_panel/lock%2012.svg" alt="" className="size-3.5 shrink-0 opacity-45" />}
           </div>
         </div>
 
@@ -395,6 +440,7 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
         </div>
       </div>
 
+
       <PanelDivider />
 
       <PanelSection label={t('Content')}>
@@ -408,6 +454,10 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
           className="w-full resize-none overflow-hidden rounded-lg bg-[#26262C] p-3 text-sm text-chrome-fg shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02)] outline-none placeholder:text-white/45"
         />
       </PanelSection>
+
+      <PanelDivider />
+
+      <AutoLayoutSection targets={targets} />
 
       <PanelDivider />
 
@@ -504,9 +554,48 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
       <PanelDivider />
 
       <PanelSection label={t('Styles')}>
-        <InlineRow label={t('Fill')}>
+        <InlineRow label={t('Text fill')}>
           <InlineColorField color={primary.style.color ?? '#ffffff'} onChange={(color) => patchStyle({ color })} />
         </InlineRow>
+        {/* The box's background, behind the glyphs (and inside any Auto Layout padding) — off by
+            default, so it gets the same add/remove toggle as Border rather than a color that would
+            misreport an unset fill as some real color. */}
+        <InlineRow label={t('Fill')}>
+          {primary.style.fill ? (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-label={t('Remove fill')}
+                onClick={() => patchStyle({ fill: undefined })}
+                className="flex size-6 shrink-0 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <Minus className="size-4" />
+              </button>
+              <InlineColorField color={primary.style.fill} onChange={(fill) => patchStyle({ fill })} />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => patchStyle({ fill: '#FFFFFF' })}
+              className="flex h-9 shrink-0 items-center gap-2 rounded-lg bg-[#26262C] px-2 text-[11px] text-white/65 transition-colors hover:bg-[#2F2F37] hover:text-white"
+              style={{ width: INLINE_VALUE_COL_WIDTH }}
+            >
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed border-white/30">
+                <Plus className="size-3.5" />
+              </span>
+              {t('Add fill')}
+            </button>
+          )}
+        </InlineRow>
+        {/* Rounds the background's corners — meaningless with no fill to round, so it only
+            appears alongside one. Same control and cap (half the shorter side) as the Shape panel. */}
+        {primary.style.fill && (
+          <CornerRadiusRow
+            value={primary.style.radius ?? 0}
+            onCommit={(radius) => patchStyle({ radius })}
+            max={Math.floor(Math.min(primary.frame.w, primary.frame.h) / 2)}
+          />
+        )}
       </PanelSection>
 
       <PanelDivider />

@@ -111,8 +111,18 @@ function elementBodySvg(element: LayoutElement, defs: string[]): string {
   // text
   const align = style.align === 'center' ? 'center' : style.align === 'right' ? 'right' : 'left';
   const textAnchor = align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
-  const x = align === 'center' ? frame.x + frame.w / 2 : align === 'right' ? frame.x + frame.w : frame.x;
-  const y = frame.y + frame.h / 2;
+  const autoLayout = style.autoLayout;
+  const padding = autoLayout?.padding ?? { top: 0, right: 0, bottom: 0, left: 0 };
+  const contentW = Math.max(0, frame.w - padding.left - padding.right);
+  const x = align === 'center' ? frame.x + padding.left + contentW / 2 : align === 'right' ? frame.x + frame.w - padding.right : frame.x + padding.left;
+  const fontSize = style.fontSize ?? 16;
+  const lineH = fontSize * (style.lineHeight ?? 1.2);
+  // Auto Layout text sits top-down from its top padding (one `<tspan>` per line, wrapped here
+  // when the width is fixed); plain text stays one line, centred vertically in its box.
+  const content = element.content ?? '';
+  const lines = autoLayout ? (autoLayout.hugWidth ? content.split('\n') : wrapTextLines(content, style, contentW)) : null;
+  const y = lines ? frame.y + padding.top + lineH / 2 : frame.y + frame.h / 2;
+  const body = lines ? lines.map((line, i) => `<tspan x="${x}" y="${y + i * lineH}">${escapeXml(line)}</tspan>`).join('') : escapeXml(content);
   const decoration = style.textDecoration && style.textDecoration !== 'none' ? ` text-decoration="${style.textDecoration}"` : '';
   const letterSpacing = style.letterSpacing ? ` letter-spacing="${style.letterSpacing}px"` : '';
   const writingMode = style.writingMode ? ` writing-mode="${style.writingMode}"` : '';
@@ -121,7 +131,39 @@ function elementBodySvg(element: LayoutElement, defs: string[]): string {
   const textFill = fillRef(style.color, '#18181b', defs);
   return `${pillFill}<text x="${x}" y="${y}" text-anchor="${textAnchor}" dominant-baseline="central" fill="${textFill}" font-weight="${style.fontWeight ?? 400}"${
     style.fontFamily ? ` font-family="${escapeXml(style.fontFamily)}"` : ''
-  } font-size="${style.fontSize ?? 16}"${letterSpacing}${decoration}${writingMode}${stretchTransform}>${escapeXml(element.content ?? '')}</text>`;
+  } font-size="${fontSize}"${letterSpacing}${decoration}${writingMode}${stretchTransform}>${body}</text>`;
+}
+
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+
+/** Greedy line breaking for a fixed-width Auto Layout text box — SVG `<text>` can't wrap on its
+ * own, so lines are broken here against the browser's real glyph widths (a scratch canvas). Words
+ * break at spaces; CJK characters, which have none, can break between any two of them, same as
+ * the editor's own CSS `pre-wrap`. */
+function wrapTextLines(text: string, style: LayoutElement['style'], maxWidth: number): string[] {
+  measureCtx ??= document.createElement('canvas').getContext('2d');
+  const ctx = measureCtx;
+  if (!ctx) return text.split('\n');
+  ctx.font = `${style.fontStyle ?? 'normal'} ${style.fontWeight ?? 400} ${style.fontSize ?? 16}px ${style.fontFamily ? `"${style.fontFamily}"` : 'sans-serif'}`;
+  ctx.letterSpacing = `${style.letterSpacing ?? 0}px`;
+  const stretch = 1 + (style.stretch ?? 0) / 100;
+  const fits = (line: string) => ctx.measureText(line).width * stretch <= maxWidth;
+  const lines: string[] = [];
+  for (const paragraph of text.split('\n')) {
+    const tokens = paragraph.match(/[\u3000-\u9fff\uff00-\uffef]|[^\s\u3000-\u9fff\uff00-\uffef]+\s*|\s+/g) ?? [''];
+    let line = '';
+    for (const token of tokens) {
+      const candidate = line + token;
+      if (line && !fits(candidate.trimEnd())) {
+        lines.push(line.trimEnd());
+        line = token.trimStart();
+      } else {
+        line = candidate;
+      }
+    }
+    lines.push(line.trimEnd());
+  }
+  return lines;
 }
 
 /** Builds a self-contained, pure-SVG rendering of `layout` (no `foreignObject` — browsers taint any

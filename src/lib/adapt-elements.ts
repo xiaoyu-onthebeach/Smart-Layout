@@ -30,6 +30,16 @@ export function adaptElementsToSize(
       ...el.style,
       fontSize: el.style.fontSize ? el.style.fontSize * scaleX : el.style.fontSize,
       radius: el.style.radius ? el.style.radius * scaleX : el.style.radius,
+      // Scales with the font, so a padded text box keeps the same proportions at every size.
+      autoLayout: el.style.autoLayout && {
+        ...el.style.autoLayout,
+        padding: {
+          top: el.style.autoLayout.padding.top * scaleX,
+          right: el.style.autoLayout.padding.right * scaleX,
+          bottom: el.style.autoLayout.padding.bottom * scaleX,
+          left: el.style.autoLayout.padding.left * scaleX,
+        },
+      },
     },
   }));
 }

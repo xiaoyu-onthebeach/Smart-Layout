@@ -233,6 +233,22 @@ export const ja: Record<string, string> = {
   Preview: 'プレビュー',
   Description: '説明文',
   'Button text': 'ボタンのテキスト',
+  'Auto Layout': 'オートレイアウト',
+  'Add auto layout': 'オートレイアウトを追加',
+  'Remove auto layout': 'オートレイアウトを削除',
+  Padding: 'パディング',
+  'Horizontal padding': '左右のパディング',
+  'Vertical padding': '上下のパディング',
+  'Left padding': '左のパディング',
+  'Top padding': '上のパディング',
+  'Right padding': '右のパディング',
+  'Bottom padding': '下のパディング',
+  'Individual padding': '個別のパディング',
+  'Hug width': '幅を内容に合わせる',
+  'Hug height': '高さを内容に合わせる',
+  'Text fill': 'テキストの塗り',
+  'Add fill': '塗りを追加',
+  'Remove fill': '塗りを削除',
 };
 
 export function translate(text: string, language: Language): string {

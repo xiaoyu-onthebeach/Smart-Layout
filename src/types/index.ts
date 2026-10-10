@@ -44,6 +44,17 @@ export type ShapeKind = 'rect' | 'ellipse' | 'line';
 
 export type ShadowStyle = { enabled: boolean; x: number; y: number; blur: number; color: string; opacity: number };
 
+/**
+ * Text only — padding (layout px) inside the text box, plus whether each axis still hugs its
+ * content. With a hug flag off, that axis is frozen at `frame.w`/`frame.h` instead of being
+ * re-measured, and a fixed width wraps the text onto new lines.
+ */
+export type TextAutoLayout = {
+  padding: { top: number; right: number; bottom: number; left: number };
+  hugWidth: boolean;
+  hugHeight: boolean;
+};
+
 export type LayoutElement = {
   id: string;
   kind: ElementKind;
@@ -105,6 +116,8 @@ export type LayoutElement = {
     dropShadow?: ShadowStyle;
     /** Image/shape only — CSS `inset` shadows have no text equivalent, so this is a no-op on text. */
     innerShadow?: ShadowStyle;
+    /** Text only — the panel's "Auto Layout" section; present means it's turned on. */
+    autoLayout?: TextAutoLayout;
   };
   visible: boolean;
   locked?: boolean;

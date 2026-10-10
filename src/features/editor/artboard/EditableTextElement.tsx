@@ -4,6 +4,7 @@ import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
 import { textShadowCss } from '@/lib/shadow';
 import { isGradient } from '@/lib/gradient';
+import { autoLayoutPaddingCss } from '@/lib/text-auto-layout';
 import { useElementDrag, DUPLICATE_CURSOR, MIN_SIZE, type ResizeHandle } from './useElementDrag';
 import { SelectionBoundingBox } from './SelectionBoundingBox';
 
@@ -112,24 +113,47 @@ export function EditableTextElement({
   }, [isEditing]);
 
   const { frame, style } = element;
+  // Auto Layout's per-axis "Hug" switches — an axis with hug off keeps whatever frame.w/h it was
+  // given instead of fitting the text, and a fixed width wraps the text onto new lines.
+  const autoLayout = style.autoLayout;
+  const fixedW = Boolean(autoLayout && !autoLayout.hugWidth);
+  const fixedH = Boolean(autoLayout && !autoLayout.hugHeight);
 
-  // The box hugs the rendered text exactly (no left/right padding) — frame.w/h isn't an
+  // The box hugs the rendered text exactly (plus any Auto Layout padding) — frame.w/h isn't an
   // independent setting for text, it's just a cache of this measurement so every other consumer
   // (thumbnails, export, the group-bounds box) sees the same tight size without re-measuring
   // themselves. Re-measures whenever anything that affects the rendered size changes; frame.w/h
   // itself is deliberately NOT a dependency — it only ever changes as a result of this effect, so
-  // depending on it would just be measuring in a circle.
+  // depending on it would just be measuring in a circle. The one exception is a fixed width, which
+  // this effect never writes but which decides where the text wraps, and so how tall it is.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const nativeW = rect.width / scale;
-    const nativeH = rect.height / scale;
+    const nativeW = fixedW ? frame.w : rect.width / scale;
+    const nativeH = fixedH ? frame.h : rect.height / scale;
     if (Math.abs(nativeW - frame.w) > 0.5 || Math.abs(nativeH - frame.h) > 0.5) {
       updateElement(layoutId, element.id, { frame: { ...frame, w: nativeW, h: nativeH } });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [element.content, style.fontSize, style.fontFamily, style.fontWeight, style.letterSpacing, style.stretch, style.writingMode, scale, layoutWidth]);
+  }, [
+    element.content,
+    style.fontSize,
+    style.fontFamily,
+    style.fontWeight,
+    style.letterSpacing,
+    style.stretch,
+    style.writingMode,
+    scale,
+    layoutWidth,
+    autoLayout?.padding.top,
+    autoLayout?.padding.right,
+    autoLayout?.padding.bottom,
+    autoLayout?.padding.left,
+    fixedW,
+    fixedH,
+    fixedW ? frame.w : undefined,
+  ]);
 
   // Corner/edge drag scales the font size instead of the box — the box has no independent size of
   // its own to resize (see the measurement effect above). Estimates the resulting box size as the
@@ -180,6 +204,42 @@ export function EditableTextElement({
     window.addEventListener('mouseup', onUp);
   }
 
+  // Once Auto Layout has either axis at a fixed size, dragging a handle resizes the box itself
+  // (like any shape's edge drag, no aspect lock) instead of scaling the font — and dragging along
+  // an axis that still hugs freezes it at the dragged size, the same way Figma's text boxes do.
+  function startBoxResize(e: ReactMouseEvent, handle: ResizeHandle) {
+    if (!autoLayout) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startFrame = frame;
+    const nextAutoLayout = {
+      ...autoLayout,
+      hugWidth: autoLayout.hugWidth && !(handle.includes('e') || handle.includes('w')),
+      hugHeight: autoLayout.hugHeight && !(handle.includes('n') || handle.includes('s')),
+    };
+
+    function onMove(ev: globalThis.MouseEvent) {
+      const dx = (ev.clientX - startX) / scale;
+      const dy = (ev.clientY - startY) / scale;
+      let { x, y, w, h } = startFrame;
+      if (handle.includes('e')) w = Math.max(MIN_SIZE, startFrame.w + dx);
+      if (handle.includes('w')) w = Math.max(MIN_SIZE, startFrame.w - dx);
+      if (handle.includes('s')) h = Math.max(MIN_SIZE, startFrame.h + dy);
+      if (handle.includes('n')) h = Math.max(MIN_SIZE, startFrame.h - dy);
+      if (handle.includes('w')) x = startFrame.x + (startFrame.w - w);
+      if (handle.includes('n')) y = startFrame.y + (startFrame.h - h);
+      updateElement(layoutId, element.id, { frame: { x, y, w, h }, style: { ...style, autoLayout: nextAutoLayout } });
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
   // See ElementRenderer's own text branch for why gradient text needs this background-clip trick
   // (and why it can't combine with the `style.fill` pill background).
   const gradientText = isGradient(style.color);
@@ -191,8 +251,8 @@ export function EditableTextElement({
       style={{
         left: `${(frame.x / layoutWidth) * 100}%`,
         top: `${(frame.y / layoutHeight) * 100}%`,
-        width: 'max-content',
-        height: 'max-content',
+        width: fixedW ? `${(frame.w / layoutWidth) * 100}%` : 'max-content',
+        height: fixedH ? `${(frame.h / layoutHeight) * 100}%` : 'max-content',
         transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
         // Only hints "this drag will duplicate" over the layer that's actually selected — hovering
         // some other, unselected layer with Option held still shows a plain move cursor.
@@ -242,7 +302,11 @@ export function EditableTextElement({
           fontFamily: style.fontFamily,
           fontSize: `${((style.fontSize ?? 16) / layoutWidth) * 100}cqw`,
           textAlign: style.writingMode === 'vertical-rl' ? 'center' : ((style.align as 'left' | 'center' | 'right') ?? 'center'),
-          whiteSpace: 'pre',
+          whiteSpace: fixedW ? 'pre-wrap' : 'pre',
+          padding: autoLayout ? autoLayoutPaddingCss(autoLayout, layoutWidth) : undefined,
+          boxSizing: 'border-box',
+          width: fixedW ? '100%' : undefined,
+          height: fixedH ? '100%' : undefined,
           outline: 'none',
           cursor: isEditing ? 'text' : undefined,
           textShadow: textShadowCss(style.dropShadow),
@@ -252,7 +316,7 @@ export function EditableTextElement({
       </div>
       {selected && (
         <SelectionBoundingBox
-          onResizeStart={(handle, e) => startFontResize(e, handle)}
+          onResizeStart={(handle, e) => (fixedW || fixedH ? startBoxResize(e, handle) : startFontResize(e, handle))}
           onRotateStart={(_handle, e) => {
             const boxEl = (e.target as HTMLElement).closest('[data-resize-box]') as HTMLElement | null;
             if (boxEl) startRotate(e, boxEl, element.rotation ?? 0);
