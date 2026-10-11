@@ -9,7 +9,7 @@ import { useT } from '@/lib/i18n';
 import { exportLayout, type ExportFileType, type ExportScale } from '@/lib/export-image';
 import { isGradient } from '@/lib/gradient';
 import { isValidHex } from '@/lib/color';
-import { ColorPickerPopover } from './ColorPickerPopover';
+import { ColorPickerPopover, NoFillSwatch } from './ColorPickerPopover';
 import type { Layout, LayoutElement, ShadowStyle } from '@/types';
 
 /** One selected element, paired with the scene (layout) it lives in — a multi-select can span scenes. */
@@ -559,13 +559,15 @@ function useOpacityDraft() {
 }
 
 /** Fill/Border's value control — swatch, hex, and opacity all inside one pill, divided by a
- * hairline, rather than a separate swatch button beside a field (the shared `ColorRow`'s layout). */
-export function InlineColorField({ color, onChange }: { color: string; onChange: (color: string) => void }) {
+ * hairline, rather than a separate swatch button beside a field (the shared `ColorRow`'s layout).
+ * Passing `onClear` makes the fill optional: `color` may then be undefined ("no fill"), and the
+ * picker gains a "no fill" preset to get back there. */
+export function InlineColorField({ color, onChange, onClear }: { color: string | undefined; onChange: (color: string) => void; onClear?: () => void }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  const hex = useHexDraft(color, onChange);
+  const hex = useHexDraft(color ?? '', onChange);
   const opacity = useOpacityDraft();
   const active = open || focused;
   return (
@@ -580,8 +582,15 @@ export function InlineColorField({ color, onChange }: { color: string; onChange:
       }}
     >
       <div className="flex min-w-0 items-center gap-2">
-        <ColorPickerPopover color={color} onChange={onChange} onOpenChange={setOpen}>
-          <button type="button" aria-label={t('Color')} className="size-6 shrink-0 rounded-full border border-black/20" style={{ background: color }} />
+        {/* Opens on white when there's no fill yet, so the first drag in the picker lands on a real color. */}
+        <ColorPickerPopover color={color ?? '#FFFFFF'} onChange={onChange} onClear={onClear} onOpenChange={setOpen}>
+          {color ? (
+            <button type="button" aria-label={t('Color')} className="size-6 shrink-0 rounded-full border border-black/20" style={{ background: color }} />
+          ) : (
+            <button type="button" aria-label={t('No fill')} className="shrink-0">
+              <NoFillSwatch className="size-6 rounded-full" />
+            </button>
+          )}
         </ColorPickerPopover>
         {hex.gradient ? (
           <span className="truncate text-[11px] text-white uppercase">{t('Linear')}</span>
@@ -595,11 +604,12 @@ export function InlineColorField({ color, onChange }: { color: string; onChange:
               hex.commit();
             }}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-            className="w-full min-w-0 bg-transparent text-[11px] text-white uppercase outline-none"
+            placeholder={t('No fill')}
+            className="w-full min-w-0 bg-transparent text-[11px] text-white uppercase outline-none placeholder:normal-case placeholder:text-white/45"
           />
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className={cn('flex shrink-0 items-center gap-2', !color && 'invisible')}>
         <div className="h-4 w-px shrink-0" style={{ background: '#40404A' }} />
         <div className="flex shrink-0 items-center">
           <input

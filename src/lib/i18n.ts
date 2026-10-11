@@ -247,8 +247,7 @@ export const ja: Record<string, string> = {
   'Hug width': '幅を内容に合わせる',
   'Hug height': '高さを内容に合わせる',
   'Text fill': 'テキストの塗り',
-  'Add fill': '塗りを追加',
-  'Remove fill': '塗りを削除',
+  'No fill': '塗りなし',
 };
 
 export function translate(text: string, language: Language): string {

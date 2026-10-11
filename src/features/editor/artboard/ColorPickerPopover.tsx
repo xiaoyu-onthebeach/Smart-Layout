@@ -165,6 +165,18 @@ function PresetSwatch({ style, onClick, label }: { style: React.CSSProperties; o
   return <button type="button" aria-label={label} onClick={onClick} className="size-8 shrink-0 rounded" style={style} />;
 }
 
+/** "No fill" glyph — an empty outlined swatch with a diagonal strike, shared by the picker's own
+ * first preset and by a Fill row's swatch while nothing is set. */
+export function NoFillSwatch({ className }: { className?: string }) {
+  return (
+    <span className={cn('relative block overflow-hidden border border-white/25', className)}>
+      <svg viewBox="0 0 10 10" preserveAspectRatio="none" className="absolute inset-0 size-full">
+        <line x1="0" y1="10" x2="10" y2="0" stroke="rgba(255,255,255,0.25)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+      </svg>
+    </span>
+  );
+}
+
 async function pickFromScreen(onPicked: (hex: string) => void) {
   const EyeDropperCtor = (window as unknown as { EyeDropper?: EyeDropperCtor }).EyeDropper;
   if (!EyeDropperCtor) return;
@@ -176,7 +188,8 @@ async function pickFromScreen(onPicked: (hex: string) => void) {
   }
 }
 
-function ColorTab({ hex, onChange }: { hex: string; onChange: (hex: string) => void }) {
+function ColorTab({ hex, onChange, onClear }: { hex: string; onChange: (hex: string) => void; onClear?: () => void }) {
+  const t = useT();
   const [h, s, v] = hexToHsv(hex);
 
   function setHsv(nh: number, ns: number, nv: number) {
@@ -186,6 +199,11 @@ function ColorTab({ hex, onChange }: { hex: string; onChange: (hex: string) => v
   return (
     <div className="flex w-full flex-col gap-4">
       <div className="flex w-full flex-wrap items-center gap-2">
+        {onClear && (
+          <button type="button" aria-label={t('No fill')} onClick={onClear} className="shrink-0">
+            <NoFillSwatch className="size-8 rounded" />
+          </button>
+        )}
         {PRESET_COLORS.map((c) => (
           <PresetSwatch key={c} style={{ background: c }} onClick={() => onChange(c)} label={c} />
         ))}
@@ -394,11 +412,15 @@ const POPOVER_WIDTH = 308;
 export function ColorPickerPopover({
   color,
   onChange,
+  onClear,
   onOpenChange,
   children,
 }: {
   color: string;
   onChange: (value: string) => void;
+  /** Opts into a "no fill" preset ahead of the color presets, for a fill that's allowed to be
+   * empty (e.g. a text layer's background) — left out wherever a color is always required. */
+  onClear?: () => void;
   /** Lets a caller (e.g. the Fill row) reflect this popover's open state in its own styling —
    * highlighting the row while its own color picker is the thing open. */
   onOpenChange?: (open: boolean) => void;
@@ -476,7 +498,7 @@ export function ColorPickerPopover({
             view below the fold, reading as "missing" next to Color's identical `pb-4`. */}
         <div className="max-h-[360px] overflow-y-auto px-4 pb-4">
           {tab === 'color' ? (
-            <ColorTab hex={isGradient(color) ? (parseGradient(color)?.stops[0]?.color ?? '#FFFFFF') : color} onChange={onChange} />
+            <ColorTab hex={isGradient(color) ? (parseGradient(color)?.stops[0]?.color ?? '#FFFFFF') : color} onChange={onChange} onClear={onClear} />
           ) : (
             <GradientTab value={color} onChange={onChange} />
           )}

@@ -558,34 +558,9 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
           <InlineColorField color={primary.style.color ?? '#ffffff'} onChange={(color) => patchStyle({ color })} />
         </InlineRow>
         {/* The box's background, behind the glyphs (and inside any Auto Layout padding) — off by
-            default, so it gets the same add/remove toggle as Border rather than a color that would
-            misreport an unset fill as some real color. */}
+            default; the picker's own "no fill" preset is how it's turned back off. */}
         <InlineRow label={t('Fill')}>
-          {primary.style.fill ? (
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                aria-label={t('Remove fill')}
-                onClick={() => patchStyle({ fill: undefined })}
-                className="flex size-6 shrink-0 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-              >
-                <Minus className="size-4" />
-              </button>
-              <InlineColorField color={primary.style.fill} onChange={(fill) => patchStyle({ fill })} />
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => patchStyle({ fill: '#FFFFFF' })}
-              className="flex h-9 shrink-0 items-center gap-2 rounded-lg bg-[#26262C] px-2 text-[11px] text-white/65 transition-colors hover:bg-[#2F2F37] hover:text-white"
-              style={{ width: INLINE_VALUE_COL_WIDTH }}
-            >
-              <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed border-white/30">
-                <Plus className="size-3.5" />
-              </span>
-              {t('Add fill')}
-            </button>
-          )}
+          <InlineColorField color={primary.style.fill} onChange={(fill) => patchStyle({ fill })} onClear={() => patchStyle({ fill: undefined })} />
         </InlineRow>
         {/* Rounds the background's corners — meaningless with no fill to round, so it only
             appears alongside one. Same control and cap (half the shorter side) as the Shape panel. */}
