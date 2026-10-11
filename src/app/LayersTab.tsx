@@ -1,5 +1,5 @@
-import type { MouseEvent as ReactMouseEvent } from 'react';
-import { ChevronLeft, EyeOff, Image as ImageIcon, Lock } from 'lucide-react';
+import { useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { ChevronDown, ChevronLeft, ChevronRight, EyeOff, Image as ImageIcon, Lock } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { layerName } from '@/lib/layer-name';
@@ -51,11 +51,16 @@ function LayerRow({
   element,
   layoutId,
   selected,
+  indented = false,
   onClick,
 }: {
   element: LayoutElement;
   layoutId: string;
-  selected: boolean;
+  /** 'soft' is a member of a selected group — tinted rather than solid, so the group's own header
+   * row reads as the thing that's selected. */
+  selected: boolean | 'soft';
+  /** Nested under a group header — shifted right so its thumbnail lines up with the header's label. */
+  indented?: boolean;
   onClick: (e: ReactMouseEvent) => void;
 }) {
   const t = useT();
@@ -75,9 +80,10 @@ function LayerRow({
         if (!locked && (e.key === 'Enter' || e.key === ' ')) onClick(e as unknown as ReactMouseEvent);
       }}
       className={cn(
-        'group/row flex h-10 w-full shrink-0 items-center gap-2 rounded-lg py-1 pr-4 pl-1 text-left transition-colors',
+        'group/row flex h-10 w-full shrink-0 items-center gap-2 rounded-lg py-1 pr-4 text-left transition-colors',
+        indented ? 'pl-8' : 'pl-1',
         locked ? 'cursor-not-allowed' : 'cursor-pointer',
-        selected ? 'bg-button-primary' : !locked && 'hover:bg-[#26262C]',
+        selected === 'soft' ? 'bg-button-primary/25' : selected ? 'bg-button-primary' : !locked && 'hover:bg-[#26262C]',
       )}
     >
       <div className={cn('flex min-w-0 flex-1 items-center gap-2', !visible && 'opacity-45')}>
@@ -118,6 +124,39 @@ function LayerRow({
   );
 }
 
+/** A layer group's own row in the list — a collapse chevron plus a "GROUP" label; clicking the
+ * label selects the whole group, the same as clicking any one of its members on the canvas. */
+function GroupHeaderRow({ selected, collapsed, onToggle, onClick }: { selected: boolean; collapsed: boolean; onToggle: () => void; onClick: (e: ReactMouseEvent) => void }) {
+  const t = useT();
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onClick(e as unknown as ReactMouseEvent);
+      }}
+      className={cn('flex h-8 w-full shrink-0 cursor-pointer items-center gap-1 rounded-lg pr-4 pl-1 transition-colors', selected ? 'bg-button-primary' : 'hover:bg-[#26262C]')}
+    >
+      <button
+        type="button"
+        aria-label={collapsed ? t('Expand group') : t('Collapse group')}
+        aria-expanded={!collapsed}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
+        className="flex size-6 shrink-0 items-center justify-center rounded text-white/70 transition-colors hover:text-white"
+      >
+        {collapsed ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+      </button>
+      <span className={cn('min-w-0 flex-1 truncate text-[11px] font-semibold tracking-[-0.01em] uppercase', selected ? 'text-white' : 'text-white/45')}>{t('Group')}</span>
+    </div>
+  );
+}
+
+type ListItem = { kind: 'layer'; element: LayoutElement } | { kind: 'group'; groupId: string; members: LayoutElement[] };
+
 function SceneLayerRows({
   layout,
   isSelected,
@@ -127,18 +166,64 @@ function SceneLayerRows({
   isSelected: (elementId: string) => boolean;
   onSelectElement: (elementId: string, e: ReactMouseEvent) => void;
 }) {
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set());
+
+  // Newest-added element first — `elements` itself stays oldest-to-newest (that order is also
+  // z-stacking order, back-to-front, for ElementRenderer), so only the list's own display order is
+  // reversed here, not the underlying data. A group shows up once, at its topmost member's spot,
+  // with every member listed beneath it (in that same top-to-bottom order).
+  const layers = layout.elements.filter(isRealLayer).slice().reverse();
+  const items: ListItem[] = [];
+  const placedGroupIds = new Set<string>();
+  for (const el of layers) {
+    if (!el.groupId) {
+      items.push({ kind: 'layer', element: el });
+    } else if (!placedGroupIds.has(el.groupId)) {
+      placedGroupIds.add(el.groupId);
+      items.push({ kind: 'group', groupId: el.groupId, members: layers.filter((m) => m.groupId === el.groupId) });
+    }
+  }
+
+  function toggleCollapsed(groupId: string) {
+    setCollapsedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  }
+
   return (
     <>
-      {/* Newest-added element first — `elements` itself stays oldest-to-newest (that order is
-          also z-stacking order, back-to-front, for ElementRenderer), so only the list's own
-          display order is reversed here, not the underlying data. */}
-      {layout.elements
-        .filter(isRealLayer)
-        .slice()
-        .reverse()
-        .map((el) => (
-          <LayerRow key={el.id} element={el} layoutId={layout.id} selected={isSelected(el.id)} onClick={(e) => onSelectElement(el.id, e)} />
-        ))}
+      {items.map((item) => {
+        if (item.kind === 'layer') {
+          const el = item.element;
+          return <LayerRow key={el.id} element={el} layoutId={layout.id} selected={isSelected(el.id)} onClick={(e) => onSelectElement(el.id, e)} />;
+        }
+        const groupSelected = item.members.every((m) => isSelected(m.id));
+        const collapsed = collapsedGroupIds.has(item.groupId);
+        return (
+          <div key={item.groupId} className="flex flex-col gap-0.5">
+            <GroupHeaderRow
+              selected={groupSelected}
+              collapsed={collapsed}
+              onToggle={() => toggleCollapsed(item.groupId)}
+              onClick={(e) => onSelectElement(item.members[0].id, e)}
+            />
+            {!collapsed &&
+              item.members.map((el) => (
+                <LayerRow
+                  key={el.id}
+                  element={el}
+                  layoutId={layout.id}
+                  indented
+                  selected={groupSelected ? 'soft' : isSelected(el.id)}
+                  onClick={(e) => onSelectElement(el.id, e)}
+                />
+              ))}
+          </div>
+        );
+      })}
     </>
   );
 }

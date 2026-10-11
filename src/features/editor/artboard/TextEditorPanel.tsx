@@ -42,7 +42,7 @@ import {
   useFieldHighlight,
   type EditorTarget,
 } from './PanelKit';
-import { AutoLayoutSection } from './AutoLayoutSection';
+import { AutoLayoutSection, GroupAutoLayoutSection, useSelectedWholeGroup } from './AutoLayoutSection';
 
 type BorderStyle = 'none' | 'solid' | 'dashed' | 'dotted';
 /** Purely a visual choice for text — CSS `text-stroke` has no dashed/dotted rendering mode, so
@@ -276,6 +276,9 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const textRangeSelection = useAppStore((s) => s.textRangeSelection);
   const setTextRangeSelection = useAppStore((s) => s.setTextRangeSelection);
   const primary = targets[0].element;
+  // A whole group selected gets the group's own Auto Layout (stacking its members) in place of
+  // each text layer's padding-only one.
+  const wholeGroup = useSelectedWholeGroup(targets);
   const [contentDraft, setContentDraft] = useState(primary.content ?? '');
   const contentRef = useRef<HTMLTextAreaElement>(null);
 
@@ -457,7 +460,7 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
 
       <PanelDivider />
 
-      <AutoLayoutSection targets={targets} />
+      {wholeGroup ? <GroupAutoLayoutSection layoutId={wholeGroup.layoutId} groupId={wholeGroup.groupId} /> : <AutoLayoutSection targets={targets} />}
 
       <PanelDivider />
 

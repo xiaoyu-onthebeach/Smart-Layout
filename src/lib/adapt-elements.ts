@@ -41,5 +41,19 @@ export function adaptElementsToSize(
         },
       },
     },
+    groupLayout: el.groupLayout && {
+      ...el.groupLayout,
+      x: el.groupLayout.x * scaleX,
+      y: el.groupLayout.y * scaleY,
+      gap: el.groupLayout.gap * scaleX,
+      width: el.groupLayout.width * scaleX,
+      height: el.groupLayout.height * scaleY,
+      padding: {
+        top: el.groupLayout.padding.top * scaleX,
+        right: el.groupLayout.padding.right * scaleX,
+        bottom: el.groupLayout.padding.bottom * scaleX,
+        left: el.groupLayout.padding.left * scaleX,
+      },
+    },
   }));
 }

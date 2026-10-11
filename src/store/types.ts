@@ -1,5 +1,5 @@
 import type { StateCreator } from 'zustand';
-import type { BannerSet, Layout, LayoutElement, Product, ShapeKind } from '@/types';
+import type { BannerSet, GroupAutoLayout, Layout, LayoutElement, Product, ShapeKind } from '@/types';
 import type { SnapGuide } from '@/lib/snap-guides';
 
 /** Top-level app step. Overlays (size-select, add-sizes, bulk-products, export) layer on top of a step. */
@@ -213,8 +213,10 @@ export type LayoutsSlice = {
   reorderElement: (layoutId: string, elementId: string, direction: 'front' | 'back') => void;
   /** Tags every one of `elementIds` (within `layoutId`) with a freshly-generated shared `groupId`, replacing whatever group (if any) they belonged to before. */
   groupElements: (layoutId: string, elementIds: string[]) => void;
-  /** Clears `groupId` from every element in `layoutId` that currently shares it. */
+  /** Clears `groupId` (and any group Auto Layout) from every element in `layoutId` that currently shares it. */
   ungroupElements: (layoutId: string, groupId: string) => void;
+  /** Sets (or, with `undefined`, turns off) a group's Auto Layout on every one of its members at once. */
+  setGroupLayout: (layoutId: string, groupId: string, groupLayout: GroupAutoLayout | undefined) => void;
   /** Patches the frame's own background/border, independent of any element on it. */
   updateLayoutStyle: (
     layoutId: string,

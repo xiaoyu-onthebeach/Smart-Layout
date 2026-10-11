@@ -55,6 +55,24 @@ export type TextAutoLayout = {
   hugHeight: boolean;
 };
 
+/**
+ * A layer group's Auto Layout — stacks its members in a row or column `gap` px apart, inside
+ * `padding`. Copied onto every member of the group (groups have no record of their own), so it
+ * travels with them through duplicate/copy/cascade like any other element field. `x`/`y` is the
+ * group box's top-left corner, and `width`/`height` its size while that axis's hug is off.
+ */
+export type GroupAutoLayout = {
+  x: number;
+  y: number;
+  direction: 'vertical' | 'horizontal';
+  gap: number;
+  padding: { top: number; right: number; bottom: number; left: number };
+  hugWidth: boolean;
+  hugHeight: boolean;
+  width: number;
+  height: number;
+};
+
 export type LayoutElement = {
   id: string;
   kind: ElementKind;
@@ -132,6 +150,8 @@ export type LayoutElement = {
    * flipping/reordering/deleting any one of them does the same to every other member. Set by the
    * "Group layers" layer-context-menu action, cleared by "Ungroup". */
   groupId?: string;
+  /** Set (identically) on every member of a group whose Auto Layout is on — see GroupAutoLayout. */
+  groupLayout?: GroupAutoLayout;
 };
 
 export type Layout = {

@@ -1,7 +1,8 @@
 import { Layers } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
-import { ColorRow, PanelCard, PanelHeader, PanelSection, type EditorTarget } from './PanelKit';
+import { ColorRow, PanelCard, PanelDivider, PanelHeader, PanelSection, type EditorTarget } from './PanelKit';
+import { GroupAutoLayoutSection, useSelectedWholeGroup } from './AutoLayoutSection';
 
 function fillColorOf(target: EditorTarget): string | undefined {
   if (target.element.kind === 'text') return target.element.style.color;
@@ -16,6 +17,7 @@ export function CombinedEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const updateElement = useAppStore((s) => s.updateElement);
   const colorTargets = targets.filter((target) => target.element.kind !== 'image');
   const primaryColorTarget = colorTargets[0];
+  const wholeGroup = useSelectedWholeGroup(targets);
 
   function setColor(color: string) {
     for (const target of colorTargets) {
@@ -34,6 +36,13 @@ export function CombinedEditorPanel({ targets }: { targets: EditorTarget[] }) {
         }
         title={language === 'ja' ? `${targets.length}個のレイヤー` : `${targets.length} layers`}
       />
+
+      {wholeGroup && (
+        <>
+          <GroupAutoLayoutSection layoutId={wholeGroup.layoutId} groupId={wholeGroup.groupId} />
+          <PanelDivider />
+        </>
+      )}
 
       {primaryColorTarget && (
         <PanelSection label={t('Fill')}>

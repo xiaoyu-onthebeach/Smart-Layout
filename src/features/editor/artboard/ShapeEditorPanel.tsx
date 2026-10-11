@@ -25,6 +25,7 @@ import {
   useFieldHighlight,
   type EditorTarget,
 } from './PanelKit';
+import { GroupAutoLayoutSection, useSelectedWholeGroup } from './AutoLayoutSection';
 
 type SolidBorderStyle = 'solid' | 'dashed' | 'dotted';
 const BORDER_STYLE_LABELS: Record<SolidBorderStyle, string> = { solid: 'Solid', dashed: 'Dashed', dotted: 'Dotted' };
@@ -42,6 +43,7 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const language = useAppStore((s) => s.language);
   const updateElement = useAppStore((s) => s.updateElement);
   const primary = targets[0].element;
+  const wholeGroup = useSelectedWholeGroup(targets);
   const [aspectLocked, setAspectLocked] = useState(false);
   const widthField = useFieldHighlight();
   const heightField = useFieldHighlight();
@@ -190,6 +192,13 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
           </div>
         </div>
       </div>
+
+      {wholeGroup && (
+        <>
+          <PanelDivider />
+          <GroupAutoLayoutSection layoutId={wholeGroup.layoutId} groupId={wholeGroup.groupId} />
+        </>
+      )}
 
       <PanelDivider />
 

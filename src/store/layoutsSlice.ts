@@ -162,15 +162,30 @@ export const createLayoutsSlice: Slice<LayoutsSlice> = (set, get) => ({
       if (!layout) return state;
       const groupId = nextId('group');
       const idSet = new Set(elementIds);
-      const elements = layout.elements.map((el) => (idSet.has(el.id) ? { ...el, groupId } : el));
+      // Auto Layout carries over only when every new member already shares the exact same one —
+      // i.e. a duplicated group being regrouped — never from a mix of old groups.
+      const layouts = layout.elements.filter((el) => idSet.has(el.id)).map((el) => JSON.stringify(el.groupLayout ?? null));
+      const keepLayout = layouts.length > 0 && layouts.every((l) => l === layouts[0]);
+      const elements = layout.elements.map((el) => (idSet.has(el.id) ? { ...el, groupId, groupLayout: keepLayout ? el.groupLayout : undefined } : el));
       return { layoutsById: { ...state.layoutsById, [layoutId]: { ...layout, elements } } };
     }),
   ungroupElements: (layoutId, groupId) =>
     set((state) => {
       const layout = state.layoutsById[layoutId];
       if (!layout) return state;
-      const elements = layout.elements.map((el) => (el.groupId === groupId ? { ...el, groupId: undefined } : el));
+      const elements = layout.elements.map((el) => (el.groupId === groupId ? { ...el, groupId: undefined, groupLayout: undefined } : el));
       return { layoutsById: { ...state.layoutsById, [layoutId]: { ...layout, elements } } };
+    }),
+  setGroupLayout: (layoutId, groupId, groupLayout) =>
+    set((state) => {
+      const layout = state.layoutsById[layoutId];
+      if (!layout) return state;
+      const elements = layout.elements.map((el) => (el.groupId === groupId ? { ...el, groupLayout } : el));
+      const pendingSetId = primarySetIdWithSiblings(state, layoutId);
+      return {
+        layoutsById: { ...state.layoutsById, [layoutId]: { ...layout, elements } },
+        pendingCascadeSetIds: pendingSetId ? { ...state.pendingCascadeSetIds, [pendingSetId]: true } : state.pendingCascadeSetIds,
+      };
     }),
   updateLayoutStyle: (layoutId, patch) =>
     set((state) => {

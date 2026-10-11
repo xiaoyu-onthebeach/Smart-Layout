@@ -248,6 +248,12 @@ export const ja: Record<string, string> = {
   'Hug height': '高さを内容に合わせる',
   'Text fill': 'テキストの塗り',
   'No fill': '塗りなし',
+  Vertical: '縦方向',
+  Horizontal: '横方向',
+  'Spacing between items': 'アイテム間のスペース',
+  Group: 'グループ',
+  'Expand group': 'グループを展開',
+  'Collapse group': 'グループを折りたたむ',
 };
 
 export function translate(text: string, language: Language): string {

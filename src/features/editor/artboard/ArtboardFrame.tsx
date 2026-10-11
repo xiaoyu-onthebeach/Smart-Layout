@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,7 @@ import { ImageBox } from './ImageBox';
 import { LayerContextMenu } from './LayerContextMenu';
 import { MultiLayerContextMenu } from './MultiLayerContextMenu';
 import { RESIZE_HANDLES, type ResizeHandle } from './useElementDrag';
+import { computeGroupAutoLayout, framesBounds, pendingGroupAutoLayoutChanges } from '@/lib/group-auto-layout';
 import { boxContainsPoint, boxFromFrame, computeMeasureLines, resolvePillCollisions, rotatedBoundingBox, roundForDisplay, unionBoxes, type Box, type MeasureLine, type PillSpec } from '@/lib/measure';
 
 /** The focus-pick box always starts at this size (clamped to the frame itself, for a tiny scene),
@@ -303,6 +304,7 @@ export function ArtboardFrame({
   const selectScene = useAppStore((s) => s.selectScene);
   const isSceneSelected = selectedSceneIds.includes(layout.setId);
   const updateElement = useAppStore((s) => s.updateElement);
+  const setGroupLayout = useAppStore((s) => s.setGroupLayout);
   const addElement = useAppStore((s) => s.addElement);
   const setEditingTextElement = useAppStore((s) => s.setEditingTextElement);
   const activeTool = useAppStore((s) => s.activeTool);
@@ -982,6 +984,16 @@ export function ArtboardFrame({
 
   const frameCursorClass = !active ? 'cursor-pointer' : activeTool === 'text' ? 'cursor-text' : activeTool === 'shape' ? 'cursor-crosshair' : '';
 
+  // Keeps every auto-layout group stacked after any change — a member resized (text re-measured,
+  // padding typed), dragged out of place, added or removed. Runs as a layout effect, after the
+  // members' own measurement effects and before paint, so a reflow never flashes on screen; a
+  // drag's per-member updates all land in one render first, so a whole-group move is seen as one.
+  useLayoutEffect(() => {
+    const { moves, relocated } = pendingGroupAutoLayoutChanges(layout.elements);
+    for (const r of relocated) setGroupLayout(layoutId, r.groupId, r.layout);
+    for (const m of moves) updateElement(layoutId, m.id, { frame: m.frame });
+  }, [layout.elements, layoutId, setGroupLayout, updateElement]);
+
   // One big box per selected-and-not-entered group, spanning every one of its members — drawn in
   // place of each member's own individual box (see showsBoundsBox). Every member of a group is
   // always selected together (selectElement expands to the whole group), so checking any one
@@ -993,11 +1005,9 @@ export function ArtboardFrame({
       if (!el.groupId || el.groupId === enteredGroupId || seenGroupIds.has(el.groupId) || !isSelected(el.id)) continue;
       seenGroupIds.add(el.groupId);
       const members = layout.elements.filter((m) => m.groupId === el.groupId);
-      const minX = Math.min(...members.map((m) => m.frame.x));
-      const minY = Math.min(...members.map((m) => m.frame.y));
-      const maxX = Math.max(...members.map((m) => m.frame.x + m.frame.w));
-      const maxY = Math.max(...members.map((m) => m.frame.y + m.frame.h));
-      groupBounds.push({ groupId: el.groupId, x: minX, y: minY, w: maxX - minX, h: maxY - minY });
+      // An auto-layout group's box includes its padding (or its fixed size), not just the members.
+      const box = el.groupLayout ? computeGroupAutoLayout(members, el.groupLayout).box : framesBounds(members.map((m) => m.frame));
+      groupBounds.push({ groupId: el.groupId, ...box });
     }
   }
 
