@@ -4,7 +4,7 @@ import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { nextId, layoutHasContent, isRealLayer } from '@/lib/create-layout';
 import { useApplyImage } from '@/hooks/useApplyImage';
-import type { Layout, LayoutElement, ShapeKind } from '@/types';
+import type { GroupAutoLayout, Layout, LayoutElement, ShapeKind } from '@/types';
 import { ElementRenderer } from './ElementRenderer';
 import { DraggableImageElement } from './DraggableImageElement';
 import { EditableTextElement } from './EditableTextElement';
@@ -14,6 +14,7 @@ import { ImageBox } from './ImageBox';
 import { LayerContextMenu } from './LayerContextMenu';
 import { MultiLayerContextMenu } from './MultiLayerContextMenu';
 import { RESIZE_HANDLES, type ResizeHandle } from './useElementDrag';
+import { PaddingHighlight } from './PaddingHighlight';
 import { computeGroupAutoLayout, framesBounds, pendingGroupAutoLayoutChanges } from '@/lib/group-auto-layout';
 import { boxContainsPoint, boxFromFrame, computeMeasureLines, resolvePillCollisions, rotatedBoundingBox, roundForDisplay, unionBoxes, type Box, type MeasureLine, type PillSpec } from '@/lib/measure';
 
@@ -998,7 +999,16 @@ export function ArtboardFrame({
   // place of each member's own individual box (see showsBoundsBox). Every member of a group is
   // always selected together (selectElement expands to the whole group), so checking any one
   // member's selection state is enough to know the whole group is currently selected.
-  const groupBounds: { groupId: string; x: number; y: number; w: number; h: number }[] = [];
+  const groupBounds: {
+    groupId: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    padding?: GroupAutoLayout['padding'];
+    /** Box-relative, for the spacing highlight. */
+    gaps?: { x: number; y: number; w: number; h: number }[];
+  }[] = [];
   if (active) {
     const seenGroupIds = new Set<string>();
     for (const el of layout.elements) {
@@ -1006,8 +1016,13 @@ export function ArtboardFrame({
       seenGroupIds.add(el.groupId);
       const members = layout.elements.filter((m) => m.groupId === el.groupId);
       // An auto-layout group's box includes its padding (or its fixed size), not just the members.
-      const box = el.groupLayout ? computeGroupAutoLayout(members, el.groupLayout).box : framesBounds(members.map((m) => m.frame));
-      groupBounds.push({ groupId: el.groupId, ...box });
+      if (el.groupLayout) {
+        const { box, gaps } = computeGroupAutoLayout(members, el.groupLayout);
+        const relativeGaps = gaps.map((g) => ({ ...g, x: g.x - box.x, y: g.y - box.y }));
+        groupBounds.push({ groupId: el.groupId, ...box, padding: el.groupLayout.padding, gaps: relativeGaps });
+      } else {
+        groupBounds.push({ groupId: el.groupId, ...framesBounds(members.map((m) => m.frame)) });
+      }
     }
   }
 
@@ -1251,7 +1266,9 @@ export function ArtboardFrame({
               width: `${(b.w / nativeWidth) * 100}%`,
               height: `${(b.h / nativeHeight) * 100}%`,
             }}
-          />
+          >
+            {b.padding && <PaddingHighlight padding={b.padding} gaps={b.gaps} layoutWidth={nativeWidth} />}
+          </div>
         ))}
 
         {active &&

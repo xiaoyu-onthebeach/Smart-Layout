@@ -7,6 +7,7 @@ import { isGradient } from '@/lib/gradient';
 import { autoLayoutPaddingCss } from '@/lib/text-auto-layout';
 import { useElementDrag, DUPLICATE_CURSOR, MIN_SIZE, type ResizeHandle } from './useElementDrag';
 import { SelectionBoundingBox } from './SelectionBoundingBox';
+import { PaddingHighlight } from './PaddingHighlight';
 
 const MIN_FONT_SIZE = 6;
 
@@ -314,6 +315,7 @@ export function EditableTextElement({
       >
         {element.content}
       </div>
+      {selected && autoLayout && <PaddingHighlight padding={autoLayout.padding} layoutWidth={layoutWidth} />}
       {selected && (
         <SelectionBoundingBox
           onResizeStart={(handle, e) => (fixedW || fixedH ? startBoxResize(e, handle) : startFontResize(e, handle))}

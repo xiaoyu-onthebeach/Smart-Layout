@@ -252,6 +252,7 @@ export const ja: Record<string, string> = {
   Horizontal: '横方向',
   'Spacing between items': 'アイテム間のスペース',
   Group: 'グループ',
+  'Layout group': 'レイアウトグループ',
   'Expand group': 'グループを展開',
   'Collapse group': 'グループを折りたたむ',
 };

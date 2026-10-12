@@ -124,9 +124,22 @@ function LayerRow({
   );
 }
 
-/** A layer group's own row in the list — a collapse chevron plus a "GROUP" label; clicking the
- * label selects the whole group, the same as clicking any one of its members on the canvas. */
-function GroupHeaderRow({ selected, collapsed, onToggle, onClick }: { selected: boolean; collapsed: boolean; onToggle: () => void; onClick: (e: ReactMouseEvent) => void }) {
+/** A layer group's own row in the list — a collapse chevron plus a "GROUP" label ("LAYOUT GROUP"
+ * once its Auto Layout is on); clicking the label selects the whole group, the same as clicking
+ * any one of its members on the canvas. */
+function GroupHeaderRow({
+  selected,
+  autoLayout,
+  collapsed,
+  onToggle,
+  onClick,
+}: {
+  selected: boolean;
+  autoLayout: boolean;
+  collapsed: boolean;
+  onToggle: () => void;
+  onClick: (e: ReactMouseEvent) => void;
+}) {
   const t = useT();
   return (
     <div
@@ -150,7 +163,7 @@ function GroupHeaderRow({ selected, collapsed, onToggle, onClick }: { selected: 
       >
         {collapsed ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
       </button>
-      <span className={cn('min-w-0 flex-1 truncate text-[11px] font-semibold tracking-[-0.01em] uppercase', selected ? 'text-white' : 'text-white/45')}>{t('Group')}</span>
+      <span className={cn('min-w-0 flex-1 truncate text-[11px] font-semibold tracking-[-0.01em] uppercase', selected ? 'text-white' : 'text-white/45')}>{autoLayout ? t('Layout group') : t('Group')}</span>
     </div>
   );
 }
@@ -206,6 +219,7 @@ function SceneLayerRows({
           <div key={item.groupId} className="flex flex-col gap-0.5">
             <GroupHeaderRow
               selected={groupSelected}
+              autoLayout={Boolean(item.members[0].groupLayout)}
               collapsed={collapsed}
               onToggle={() => toggleCollapsed(item.groupId)}
               onClick={(e) => onSelectElement(item.members[0].id, e)}

@@ -53,6 +53,7 @@
   --chrome-fg: #ffffff;
   --chrome-fg-muted: rgba(255, 255, 255, 0.65);
   --chrome-active: #4570ff;
+  --sunburn: #fd4e62;
 }
 
 .dark {
@@ -101,6 +102,7 @@
   --chrome-fg: #ffffff;
   --chrome-fg-muted: rgba(255, 255, 255, 0.65);
   --chrome-active: #4570ff;
+  --sunburn: #fd4e62;
 }
 
 @theme inline {
@@ -163,6 +165,7 @@
   --color-chrome-fg: var(--chrome-fg);
   --color-chrome-fg-muted: var(--chrome-fg-muted);
   --color-chrome-active: var(--chrome-active);
+  --color-sunburn: var(--sunburn);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

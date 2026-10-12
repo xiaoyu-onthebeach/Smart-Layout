@@ -30,10 +30,11 @@ export function inferGroupAutoLayout(members: LayoutElement[]): GroupAutoLayout 
 
 /**
  * Where every member of an auto-layout group belongs, plus the group's own box (anchored at its
- * stored top-left). Members are ordered by their current position along the stacking axis, so
+ * stored top-left) and the spacing between consecutive members (`gaps`, spanning the box's inside
+ * width or height). Members are ordered by their current position along the stacking axis, so
  * dragging one past another reorders the stack.
  */
-export function computeGroupAutoLayout(members: LayoutElement[], layout: GroupAutoLayout): { frames: Map<string, LayoutElement['frame']>; box: Box } {
+export function computeGroupAutoLayout(members: LayoutElement[], layout: GroupAutoLayout): { frames: Map<string, LayoutElement['frame']>; box: Box; gaps: Box[] } {
   const { padding, gap } = layout;
   const vertical = layout.direction === 'vertical';
   const originX = layout.x;
@@ -56,15 +57,25 @@ export function computeGroupAutoLayout(members: LayoutElement[], layout: GroupAu
   const crossSize = Math.max(...ordered.map((m) => (vertical ? m.frame.w : m.frame.h)));
   const contentW = vertical ? crossSize : mainSize;
   const contentH = vertical ? mainSize : crossSize;
-  return {
-    frames,
-    box: {
-      x: originX,
-      y: originY,
-      w: layout.hugWidth ? contentW + padding.left + padding.right : layout.width,
-      h: layout.hugHeight ? contentH + padding.top + padding.bottom : layout.height,
-    },
+  const box = {
+    x: originX,
+    y: originY,
+    w: layout.hugWidth ? contentW + padding.left + padding.right : layout.width,
+    h: layout.hugHeight ? contentH + padding.top + padding.bottom : layout.height,
   };
+
+  const gaps: Box[] = [];
+  if (gap > 0) {
+    for (const m of ordered.slice(0, -1)) {
+      const f = frames.get(m.id)!;
+      gaps.push(
+        vertical
+          ? { x: originX + padding.left, y: f.y + f.h, w: box.w - padding.left - padding.right, h: gap }
+          : { x: f.x + f.w, y: originY + padding.top, w: gap, h: box.h - padding.top - padding.bottom },
+      );
+    }
+  }
+  return { frames, box, gaps };
 }
 
 /**
