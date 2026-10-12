@@ -46,8 +46,6 @@ export function adaptElementsToSize(
       x: el.groupLayout.x * scaleX,
       y: el.groupLayout.y * scaleY,
       gap: el.groupLayout.gap * scaleX,
-      width: el.groupLayout.width * scaleX,
-      height: el.groupLayout.height * scaleY,
       padding: {
         top: el.groupLayout.padding.top * scaleX,
         right: el.groupLayout.padding.right * scaleX,

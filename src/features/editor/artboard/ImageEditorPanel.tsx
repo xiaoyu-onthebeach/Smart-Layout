@@ -30,7 +30,7 @@ import {
   useFieldHighlight,
   type EditorTarget,
 } from './PanelKit';
-import { GroupAutoLayoutSection, useSelectedWholeGroup } from './AutoLayoutSection';
+import { DimensionsLabel, LayoutShell } from './AutoLayoutSection';
 import { ImagePickerDialog } from './ImagePickerDialog';
 
 type SolidBorderStyle = 'solid' | 'dashed' | 'dotted';
@@ -157,7 +157,6 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const language = useAppStore((s) => s.language);
   const updateElement = useAppStore((s) => s.updateElement);
   const primary = targets[0].element;
-  const wholeGroup = useSelectedWholeGroup(targets);
   const [aspectLocked, setAspectLocked] = useState(false);
   const [replacingImage, setReplacingImage] = useState(false);
   const widthField = useFieldHighlight();
@@ -229,63 +228,8 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
         resetKey={primary.id}
       />
 
-      {/* Appended to the same visual section as Position/Alignment above (no divider in between) —
-          same Size/Rotation block as the shape panel's own, with a lock toggle to scale W/H together. */}
+      {/* Appended to the same visual section as Position/Alignment above (no divider in between). */}
       <div className="flex flex-col gap-3 px-4">
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[11px] text-white/65">{t('Size')}</span>
-          <div className="flex items-center gap-2">
-            <div
-              className="flex h-8 flex-1 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
-              onMouseEnter={() => widthField.setHovered(true)}
-              onMouseLeave={() => widthField.setHovered(false)}
-              style={fieldHighlightStyle(widthField.hovered, widthField.focused)}
-            >
-              <span className="shrink-0 text-white/65">W</span>
-              <input
-                type="text"
-                defaultValue={String(Math.round(primary.frame.w))}
-                key={`${primary.id}-w-${Math.round(primary.frame.w)}`}
-                onFocus={() => widthField.setFocused(true)}
-                onBlur={(e) => {
-                  widthField.setFocused(false);
-                  commitWidth(e.target.value);
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                className="w-0 min-w-0 flex-1 bg-transparent text-right text-white outline-none"
-              />
-            </div>
-            <div
-              className="flex h-8 flex-1 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
-              onMouseEnter={() => heightField.setHovered(true)}
-              onMouseLeave={() => heightField.setHovered(false)}
-              style={fieldHighlightStyle(heightField.hovered, heightField.focused)}
-            >
-              <span className="shrink-0 text-white/65">H</span>
-              <input
-                type="text"
-                defaultValue={String(Math.round(primary.frame.h))}
-                key={`${primary.id}-h-${Math.round(primary.frame.h)}`}
-                onFocus={() => heightField.setFocused(true)}
-                onBlur={(e) => {
-                  heightField.setFocused(false);
-                  commitHeight(e.target.value);
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                className="w-0 min-w-0 flex-1 bg-transparent text-right text-white outline-none"
-              />
-            </div>
-            <button
-              type="button"
-              aria-label={aspectLocked ? t('Unlock aspect ratio') : t('Lock aspect ratio')}
-              onClick={() => setAspectLocked((v) => !v)}
-              className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors', aspectLocked ? 'bg-white/15' : 'hover:bg-white/10')}
-            >
-              <img src={aspectLocked ? '/icons/edit_panel/lock%2012.svg' : '/icons/edit_panel/unlock%2012.svg'} alt="" className="size-3.5" />
-            </button>
-          </div>
-        </div>
-
         <div className="flex flex-col gap-1.5">
           <span className="text-[11px] text-white/65">{t('Rotation')}</span>
           <div
@@ -312,12 +256,65 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
         </div>
       </div>
 
-      {wholeGroup && (
-        <>
-          <PanelDivider />
-          <GroupAutoLayoutSection layoutId={wholeGroup.layoutId} groupId={wholeGroup.groupId} />
-        </>
-      )}
+      <PanelDivider />
+
+      {/* Unlike text (which fits its content), this box is the thing being sized directly, so W/H
+          stay real and editable here, with a lock toggle to scale them together. */}
+      <LayoutShell>
+        <div className="flex flex-col gap-1">
+          <DimensionsLabel />
+          <div className="flex items-center gap-2">
+            <div
+              className="flex h-8 flex-1 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
+              onMouseEnter={() => widthField.setHovered(true)}
+              onMouseLeave={() => widthField.setHovered(false)}
+              style={fieldHighlightStyle(widthField.hovered, widthField.focused)}
+            >
+              <span className="shrink-0 text-white/65">W</span>
+              <input
+                type="text"
+                defaultValue={String(Math.round(primary.frame.w))}
+                key={`${primary.id}-w-${Math.round(primary.frame.w)}`}
+                onFocus={() => widthField.setFocused(true)}
+                onBlur={(e) => {
+                  widthField.setFocused(false);
+                  commitWidth(e.target.value);
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
+              />
+            </div>
+            <div
+              className="flex h-8 flex-1 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
+              onMouseEnter={() => heightField.setHovered(true)}
+              onMouseLeave={() => heightField.setHovered(false)}
+              style={fieldHighlightStyle(heightField.hovered, heightField.focused)}
+            >
+              <span className="shrink-0 text-white/65">H</span>
+              <input
+                type="text"
+                defaultValue={String(Math.round(primary.frame.h))}
+                key={`${primary.id}-h-${Math.round(primary.frame.h)}`}
+                onFocus={() => heightField.setFocused(true)}
+                onBlur={(e) => {
+                  heightField.setFocused(false);
+                  commitHeight(e.target.value);
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
+              />
+            </div>
+            <button
+              type="button"
+              aria-label={aspectLocked ? t('Unlock aspect ratio') : t('Lock aspect ratio')}
+              onClick={() => setAspectLocked((v) => !v)}
+              className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors', aspectLocked ? 'bg-white/15' : 'hover:bg-white/10')}
+            >
+              <img src={aspectLocked ? '/icons/edit_panel/lock%2012.svg' : '/icons/edit_panel/unlock%2012.svg'} alt="" className="size-3.5" />
+            </button>
+          </div>
+        </div>
+      </LayoutShell>
 
       <PanelDivider />
 

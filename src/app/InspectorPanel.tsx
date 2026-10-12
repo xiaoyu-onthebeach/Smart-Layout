@@ -5,6 +5,8 @@ import { ShapeEditorPanel } from '@/features/editor/artboard/ShapeEditorPanel';
 import { ImageEditorPanel } from '@/features/editor/artboard/ImageEditorPanel';
 import { SceneEditorPanel } from '@/features/editor/artboard/SceneEditorPanel';
 import { CombinedEditorPanel } from '@/features/editor/artboard/CombinedEditorPanel';
+import { GroupEditorPanel } from '@/features/editor/artboard/GroupEditorPanel';
+import { useSelectedWholeGroup } from '@/features/editor/artboard/AutoLayoutSection';
 import { MultiSceneContentPanel } from './MultiSceneContentPanel';
 import type { EditorTarget } from '@/features/editor/artboard/PanelKit';
 import { RULER_SIZE } from '@/features/editor/artboard/RulerOverlay';
@@ -33,10 +35,14 @@ export function InspectorPanel() {
       return element ? { element, layoutId: ref.layoutId } : null;
     })
     .filter((t): t is EditorTarget => t !== null);
+  // A whole layer group gets its own panel (position + layout only), whatever kinds it holds.
+  const wholeGroup = useSelectedWholeGroup(targets);
 
   let content: ReactNode = null;
 
-  if (targets.length > 0) {
+  if (wholeGroup) {
+    content = <GroupEditorPanel layoutId={wholeGroup.layoutId} groupId={wholeGroup.groupId} />;
+  } else if (targets.length > 0) {
     const kinds = new Set(targets.map((t) => t.element.kind));
     if (kinds.size > 1) {
       content = <CombinedEditorPanel targets={targets} />;

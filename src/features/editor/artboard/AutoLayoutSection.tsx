@@ -1,11 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Minus, Plus } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 import { DEFAULT_TEXT_AUTO_LAYOUT } from '@/lib/text-auto-layout';
-import { computeGroupAutoLayout, inferGroupAutoLayout } from '@/lib/group-auto-layout';
-import type { GroupAutoLayout, LayoutElement, TextAutoLayout } from '@/types';
+import { computeGroupAutoLayout, inferGroupAutoLayout, paddingOnlyGroupLayout } from '@/lib/group-auto-layout';
+import type { LayoutElement, TextAutoLayout } from '@/types';
 import { NumberField, type EditorTarget } from './PanelKit';
 
 type Padding = TextAutoLayout['padding'];
@@ -25,39 +24,86 @@ function PaddingField({ icon, iconStyle, label, value, onCommit }: { icon: strin
   );
 }
 
-function HugCheckbox({ checked, onChange, children }: { checked: boolean; onChange: (checked: boolean) => void; children: ReactNode }) {
+/** One of the Dimensions row's W/H pills — read-only: a box's size follows its content (and
+ * padding), and is changed by resizing it on the canvas rather than typed here. `onReset` (given
+ * once that side has been resized by hand) adds a small "Reset" that makes it fit its content again. */
+export function DimensionField({ axis, value, onReset }: { axis: 'W' | 'H'; value: number; onReset?: () => void }) {
+  const t = useT();
   return (
-    <button type="button" role="checkbox" aria-checked={checked} onClick={() => onChange(!checked)} className="group flex h-[22px] items-center gap-2">
-      <span
-        className={cn(
-          'flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors',
-          checked ? 'border-[#4570FF] bg-[#4570FF]' : 'border-chrome-border bg-chrome-border-subtle group-hover:border-[#4570FF]',
-        )}
-      >
-        {checked && <img src="/icons/edit_panel/check%2016.svg" alt="" className="size-4" />}
-      </span>
-      <span className="text-[13px] tracking-[-0.01em] text-white/65">{children}</span>
-    </button>
+    <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm tracking-[-0.01em]">
+      <span className="text-white/65">{axis}</span>
+      <span className="min-w-0 flex-1 truncate text-white/25">{Math.round(value)}</span>
+      {onReset && (
+        <button
+          type="button"
+          onClick={onReset}
+          title={axis === 'W' ? t('Fit width to content') : t('Fit height to content')}
+          className="shrink-0 text-[11px] text-white/65 transition-colors hover:text-white"
+        >
+          {t('Reset')}
+        </button>
+      )}
+    </div>
   );
 }
 
-/** Section title plus its +/− on/off button — shared by the text and group variants. */
-function AutoLayoutShell({ on, onToggle, children }: { on: boolean; onToggle: () => void; children: ReactNode }) {
+type AutoLayoutMode = 'off' | 'vertical' | 'horizontal';
+
+const MODES: { value: AutoLayoutMode; label: string; icon: string }[] = [
+  { value: 'off', label: 'No auto layout', icon: '/icons/edit_panel/auto-layout-off%2016.svg' },
+  { value: 'vertical', label: 'Vertical', icon: '/icons/edit_panel/auto-layout-vertical%2016.svg' },
+  { value: 'horizontal', label: 'Horizontal', icon: '/icons/edit_panel/auto-layout-horizontal%2016.svg' },
+];
+
+/** The "Layout" section's frame — title, then (for a group only, the one place stacking layers
+ * means anything) the Off / Vertical / Horizontal Auto Layout switch. */
+export function LayoutShell({ mode, onModeChange, children }: { mode?: AutoLayoutMode; onModeChange?: (mode: AutoLayoutMode) => void; children: ReactNode }) {
   const t = useT();
   return (
     <div className="flex flex-col gap-3 px-4">
-      <div className="flex items-center justify-between">
-        <span className="text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Auto Layout')}</span>
-        <button
-          type="button"
-          aria-label={on ? t('Remove auto layout') : t('Add auto layout')}
-          onClick={onToggle}
-          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-white/70 transition-colors hover:bg-chrome-border-subtle hover:text-white"
-        >
-          {on ? <Minus className="size-4" /> : <Plus className="size-4" />}
-        </button>
+      <div className="flex h-8 items-center">
+        <span className="text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Layout')}</span>
       </div>
-      {on && children}
+      {mode && onModeChange && (
+        <div className="flex h-8 items-center overflow-hidden rounded-lg border border-chrome-border-subtle">
+          {MODES.map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              title={t(m.label)}
+              aria-label={t(m.label)}
+              aria-pressed={mode === m.value}
+              onClick={() => mode !== m.value && onModeChange(m.value)}
+              className={cn(
+                'flex h-full flex-1 items-center justify-center rounded-[7px] transition-colors',
+                mode === m.value ? 'bg-[#26262C] shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)]' : 'hover:bg-white/5',
+              )}
+            >
+              <img src={m.icon} alt="" className="size-4" />
+            </button>
+          ))}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/** The "Dimensions" caption every layer type's W/H row sits under. */
+export function DimensionsLabel() {
+  const t = useT();
+  return <span className="flex h-[22px] items-center text-[11px] tracking-[-0.01em] text-white/65">{t('Dimensions')}</span>;
+}
+
+/** "Dimensions" label over the read-only W/H pills. */
+function DimensionsBlock({ w, h, onResetW, onResetH }: { w: number; h: number; onResetW?: () => void; onResetH?: () => void }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <DimensionsLabel />
+      <div className="flex items-center gap-2">
+        <DimensionField axis="W" value={w} onReset={onResetW} />
+        <DimensionField axis="H" value={h} onReset={onResetH} />
+      </div>
     </div>
   );
 }
@@ -124,54 +170,45 @@ function PaddingControls({ padding, resetKey, onCommit }: { padding: Padding; re
   );
 }
 
-function HugRow({ hugWidth, hugHeight, onChange }: { hugWidth: boolean; hugHeight: boolean; onChange: (patch: { hugWidth?: boolean; hugHeight?: boolean }) => void }) {
-  const t = useT();
-  return (
-    <div className="flex items-center gap-4 py-1">
-      <HugCheckbox checked={hugWidth} onChange={(v) => onChange({ hugWidth: v })}>
-        {t('Hug width')}
-      </HugCheckbox>
-      <HugCheckbox checked={hugHeight} onChange={(v) => onChange({ hugHeight: v })}>
-        {t('Hug height')}
-      </HugCheckbox>
-    </div>
-  );
-}
-
 /**
- * Text panel's "Auto Layout" section — padding inside the text box, plus per-axis Hug switches.
- * Closed (just a "+") until turned on; on/off lives on the element itself (`style.autoLayout`), so
- * unlike the Border section there's no separate expanded flag to keep in sync.
+ * Text panel's "Layout" section — the box's dimensions (read-only: it fits its content unless it's
+ * been resized from its frame on the canvas) and the padding inside it, always available. Padding
+ * lives on the element itself (`style.autoLayout`), created the first time it's set.
  */
 export function AutoLayoutSection({ targets }: { targets: EditorTarget[] }) {
   const updateElement = useAppStore((s) => s.updateElement);
   const primary = targets[0].element;
-  const autoLayout = primary.style.autoLayout;
+  const padding = primary.style.autoLayout?.padding ?? DEFAULT_TEXT_AUTO_LAYOUT.padding;
 
-  /** Merges into each target's own settings rather than copying the primary's wholesale, so an
-   * edit to one field never overwrites another selected layer's other padding or hug values. */
-  function patchAutoLayout(patch: (current: TextAutoLayout) => Partial<TextAutoLayout>) {
+  /** Merges into each target's own padding rather than copying the primary's wholesale, so an edit
+   * to one side never overwrites another selected layer's other sides (or its frame-resized size). */
+  function patchPadding(patch: Partial<Padding>) {
     for (const tgt of targets) {
       const current = tgt.element.style.autoLayout ?? DEFAULT_TEXT_AUTO_LAYOUT;
-      updateElement(tgt.layoutId, tgt.element.id, { style: { ...tgt.element.style, autoLayout: { ...current, ...patch(current) } } });
+      updateElement(tgt.layoutId, tgt.element.id, { style: { ...tgt.element.style, autoLayout: { ...current, padding: { ...current.padding, ...patch } } } });
     }
   }
 
-  function toggle() {
+  /** Back to fitting its content on that side — the measurement effect re-sizes it right away. */
+  function resetSize(axis: 'w' | 'h') {
     for (const tgt of targets) {
-      updateElement(tgt.layoutId, tgt.element.id, { style: { ...tgt.element.style, autoLayout: autoLayout ? undefined : DEFAULT_TEXT_AUTO_LAYOUT } });
+      const current = tgt.element.style.autoLayout;
+      if (!current) continue;
+      updateElement(tgt.layoutId, tgt.element.id, { style: { ...tgt.element.style, autoLayout: { ...current, ...(axis === 'w' ? { hugWidth: true } : { hugHeight: true }) } } });
     }
   }
 
+  const autoLayout = primary.style.autoLayout;
   return (
-    <AutoLayoutShell on={Boolean(autoLayout)} onToggle={toggle}>
-      {autoLayout && (
-        <>
-          <PaddingControls padding={autoLayout.padding} resetKey={primary.id} onCommit={(p) => patchAutoLayout((current) => ({ padding: { ...current.padding, ...p } }))} />
-          <HugRow hugWidth={autoLayout.hugWidth} hugHeight={autoLayout.hugHeight} onChange={(patch) => patchAutoLayout(() => patch)} />
-        </>
-      )}
-    </AutoLayoutShell>
+    <LayoutShell>
+      <DimensionsBlock
+        w={primary.frame.w}
+        h={primary.frame.h}
+        onResetW={autoLayout && !autoLayout.hugWidth ? () => resetSize('w') : undefined}
+        onResetH={autoLayout && !autoLayout.hugHeight ? () => resetSize('h') : undefined}
+      />
+      <PaddingControls padding={padding} resetKey={primary.id} onCommit={patchPadding} />
+    </LayoutShell>
   );
 }
 
@@ -190,15 +227,16 @@ export function useSelectedWholeGroup(targets: EditorTarget[]) {
   return selectedWholeGroup(targets, elements);
 }
 
-const DIRECTIONS = [
-  { value: 'vertical', label: 'Vertical', icon: '/icons/edit_panel/auto-layout-vertical%2016.svg' },
-  { value: 'horizontal', label: 'Horizontal', icon: '/icons/edit_panel/auto-layout-horizontal%2016.svg' },
-] as const;
+const NO_PADDING = { top: 0, right: 0, bottom: 0, left: 0 };
+const hasPadding = (p: Padding) => p.top > 0 || p.right > 0 || p.bottom > 0 || p.left > 0;
 
 /**
- * A layer group's "Auto Layout" section — stacks the members in a column or a row with a set
- * spacing, inside padding, like a Figma auto-layout frame. Shown in place of the per-layer section
- * whenever a whole group is selected; the layout itself is kept up to date by ArtboardFrame.
+ * A layer group's "Layout" section — read-only dimensions and the padding around its members
+ * (always available, Auto Layout or not), under an Off / Vertical / Horizontal switch. Either
+ * direction stacks the members in a column or a row, `gap` apart, like a Figma auto-layout frame
+ * (switching on from Off infers a starting gap from how they're already spread). Only the group's
+ * own setting is touched — a member's own text padding stays as it is. The stacking itself is kept
+ * up to date by ArtboardFrame.
  */
 export function GroupAutoLayoutSection({ layoutId, groupId }: { layoutId: string; groupId: string }) {
   const t = useT();
@@ -206,55 +244,52 @@ export function GroupAutoLayoutSection({ layoutId, groupId }: { layoutId: string
   const elements = useAppStore((s) => s.layoutsById[layoutId]?.elements);
   const members = (elements ?? []).filter((el) => el.groupId === groupId);
   const groupLayout = members[0]?.groupLayout;
+  const padding = groupLayout?.padding ?? NO_PADDING;
+  const stacked = groupLayout && groupLayout.direction !== 'none' ? groupLayout : null;
+  const mode: AutoLayoutMode = !groupLayout || groupLayout.direction === 'none' ? 'off' : groupLayout.direction;
 
-  function patch(next: Partial<GroupAutoLayout>) {
-    if (groupLayout) setGroupLayout(layoutId, groupId, { ...groupLayout, ...next });
+  function setMode(next: AutoLayoutMode) {
+    if (next === 'off') {
+      // Padding stays — it isn't part of Auto Layout. Nothing left to keep → no layout at all.
+      setGroupLayout(layoutId, groupId, hasPadding(padding) ? paddingOnlyGroupLayout(padding) : undefined);
+    } else if (stacked) {
+      setGroupLayout(layoutId, groupId, { ...stacked, direction: next });
+    } else {
+      setGroupLayout(layoutId, groupId, { ...inferGroupAutoLayout(members, padding), direction: next });
+    }
   }
 
-  // Unchecking a Hug freezes that axis at the box's current size, the same as a text box's does.
-  function patchHug(next: { hugWidth?: boolean; hugHeight?: boolean }) {
-    if (!groupLayout) return;
-    const { box } = computeGroupAutoLayout(members, groupLayout);
-    patch({ ...next, ...(next.hugWidth === false && { width: box.w }), ...(next.hugHeight === false && { height: box.h }) });
+  function commitPadding(patch: Partial<Padding>) {
+    const next = { ...padding, ...patch };
+    if (stacked) {
+      setGroupLayout(layoutId, groupId, { ...stacked, padding: next });
+    } else {
+      setGroupLayout(layoutId, groupId, hasPadding(next) ? paddingOnlyGroupLayout(next) : undefined);
+    }
   }
+
+  if (members.length === 0) return null;
+  const { box } = computeGroupAutoLayout(members, groupLayout ?? paddingOnlyGroupLayout(NO_PADDING));
 
   return (
-    <AutoLayoutShell on={Boolean(groupLayout)} onToggle={() => setGroupLayout(layoutId, groupId, groupLayout ? undefined : inferGroupAutoLayout(members))}>
-      {groupLayout && (
-        <>
-          <div className="flex items-center gap-4">
-            <div className="flex h-8 flex-1 items-center overflow-hidden rounded-[6px]">
-              {DIRECTIONS.map((d) => (
-                <button
-                  key={d.value}
-                  type="button"
-                  title={t(d.label)}
-                  aria-pressed={groupLayout.direction === d.value}
-                  onClick={() => patch({ direction: d.value })}
-                  className={cn(
-                    'flex h-8 flex-1 items-center justify-center rounded-lg transition-colors',
-                    groupLayout.direction === d.value ? 'bg-[#26262C] shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)]' : 'hover:bg-white/5',
-                  )}
-                >
-                  <img src={d.icon} alt="" className="size-4" />
-                </button>
-              ))}
-            </div>
-            <div className="flex w-[91.5px] shrink-0">
-              {/* The gap glyph is drawn for a column; turned a quarter for a row. */}
-              <PaddingField
-                icon="/icons/edit_panel/gap-horizontal%2016.svg"
-                iconStyle={groupLayout.direction === 'horizontal' ? { transform: 'rotate(90deg)' } : undefined}
-                label={t('Spacing between items')}
-                value={formatPadding(groupLayout.gap)}
-                onCommit={(v) => patch({ gap: Math.max(0, Number(v) || 0) })}
-              />
-            </div>
+    <LayoutShell mode={mode} onModeChange={setMode}>
+      <DimensionsBlock w={box.w} h={box.h} />
+      <PaddingControls padding={padding} resetKey={groupId} onCommit={commitPadding} />
+      {stacked && (
+        <div className="flex flex-col gap-2">
+          <span className="text-[11px] tracking-[-0.01em] text-white/65">{t('Gap')}</span>
+          <div className="flex w-[91.5px]">
+            {/* The gap glyph is drawn for a column; turned a quarter for a row. */}
+            <PaddingField
+              icon="/icons/edit_panel/gap-horizontal%2016.svg"
+              iconStyle={stacked.direction === 'horizontal' ? { transform: 'rotate(90deg)' } : undefined}
+              label={t('Spacing between items')}
+              value={formatPadding(stacked.gap)}
+              onCommit={(v) => setGroupLayout(layoutId, groupId, { ...stacked, gap: Math.max(0, Number(v) || 0) })}
+            />
           </div>
-          <PaddingControls padding={groupLayout.padding} resetKey={groupId} onCommit={(p) => patch({ padding: { ...groupLayout.padding, ...p } })} />
-          <HugRow hugWidth={groupLayout.hugWidth} hugHeight={groupLayout.hugHeight} onChange={patchHug} />
-        </>
+        </div>
       )}
-    </AutoLayoutShell>
+    </LayoutShell>
   );
 }

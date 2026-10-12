@@ -4,7 +4,7 @@ import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
 import { textShadowCss } from '@/lib/shadow';
 import { isGradient } from '@/lib/gradient';
-import { autoLayoutPaddingCss } from '@/lib/text-auto-layout';
+import { autoLayoutPaddingCss, DEFAULT_TEXT_AUTO_LAYOUT } from '@/lib/text-auto-layout';
 import { useElementDrag, DUPLICATE_CURSOR, MIN_SIZE, type ResizeHandle } from './useElementDrag';
 import { SelectionBoundingBox } from './SelectionBoundingBox';
 import { PaddingHighlight } from './PaddingHighlight';
@@ -195,7 +195,12 @@ export function EditableTextElement({
       let y = frame.y;
       if (handle.includes('w')) x = frame.x + (startW - estW);
       if (handle.includes('n')) y = frame.y + (startH - estH);
-      updateElement(layoutId, element.id, { frame: { ...frame, x, y }, style: { ...style, fontSize: newFontSize } });
+      // w/h come from the live element, not the drag's starting `frame` — the measurement effect
+      // keeps those up to date as the font grows, and it only re-runs when the font size actually
+      // changes, so restoring the starting w/h here would leave them stale whenever the last few
+      // mouse moves round to the same font size.
+      const live = useAppStore.getState().layoutsById[layoutId]?.elements.find((el) => el.id === element.id)?.frame ?? frame;
+      updateElement(layoutId, element.id, { frame: { ...live, x, y }, style: { ...style, fontSize: newFontSize } });
     }
     function onUp() {
       window.removeEventListener('mousemove', onMove);
@@ -205,20 +210,20 @@ export function EditableTextElement({
     window.addEventListener('mouseup', onUp);
   }
 
-  // Once Auto Layout has either axis at a fixed size, dragging a handle resizes the box itself
-  // (like any shape's edge drag, no aspect lock) instead of scaling the font — and dragging along
-  // an axis that still hugs freezes it at the dragged size, the same way Figma's text boxes do.
+  // Resizing the box from its frame (like any shape's edge drag, no aspect lock) instead of scaling
+  // the font: dragging along an axis that still fits its content freezes it at the dragged size,
+  // the same way Figma's text boxes do — a fixed width then wraps the text.
   function startBoxResize(e: ReactMouseEvent, handle: ResizeHandle) {
-    if (!autoLayout) return;
     e.stopPropagation();
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
     const startFrame = frame;
+    const base = autoLayout ?? DEFAULT_TEXT_AUTO_LAYOUT;
     const nextAutoLayout = {
-      ...autoLayout,
-      hugWidth: autoLayout.hugWidth && !(handle.includes('e') || handle.includes('w')),
-      hugHeight: autoLayout.hugHeight && !(handle.includes('n') || handle.includes('s')),
+      ...base,
+      hugWidth: base.hugWidth && !(handle.includes('e') || handle.includes('w')),
+      hugHeight: base.hugHeight && !(handle.includes('n') || handle.includes('s')),
     };
 
     function onMove(ev: globalThis.MouseEvent) {
@@ -318,7 +323,9 @@ export function EditableTextElement({
       {selected && autoLayout && <PaddingHighlight padding={autoLayout.padding} layoutWidth={layoutWidth} />}
       {selected && (
         <SelectionBoundingBox
-          onResizeStart={(handle, e) => (fixedW || fixedH ? startBoxResize(e, handle) : startFontResize(e, handle))}
+          // A side handle resizes the box itself (fixing that side's size, so the text wraps to a
+          // set width); a corner scales the font, until either side has been fixed that way.
+          onResizeStart={(handle, e) => (handle.length === 1 || fixedW || fixedH ? startBoxResize(e, handle) : startFontResize(e, handle))}
           onRotateStart={(_handle, e) => {
             const boxEl = (e.target as HTMLElement).closest('[data-resize-box]') as HTMLElement | null;
             if (boxEl) startRotate(e, boxEl, element.rotation ?? 0);

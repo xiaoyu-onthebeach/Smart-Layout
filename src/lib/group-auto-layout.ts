@@ -11,12 +11,15 @@ export function framesBounds(frames: LayoutElement['frame'][]): Box {
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
+const NO_PADDING = { top: 0, right: 0, bottom: 0, left: 0 };
+
 /**
- * What turning a group's Auto Layout on starts from — picks the direction and spacing the members
+ * What switching a group's Auto Layout on starts from — picks the direction and spacing the members
  * already roughly have (like Figma does), so switching it on tidies the group up rather than
- * collapsing everything into a pile.
+ * collapsing everything into a pile. Keeps any `padding` the group already has, with the box placed
+ * so the members don't move.
  */
-export function inferGroupAutoLayout(members: LayoutElement[]): GroupAutoLayout {
+export function inferGroupAutoLayout(members: LayoutElement[], padding = NO_PADDING): GroupAutoLayout {
   const bounds = framesBounds(members.map((m) => m.frame));
   const sumW = members.reduce((sum, m) => sum + m.frame.w, 0);
   const sumH = members.reduce((sum, m) => sum + m.frame.h, 0);
@@ -25,17 +28,32 @@ export function inferGroupAutoLayout(members: LayoutElement[]): GroupAutoLayout 
   const direction = bounds.h - sumH > bounds.w - sumW ? 'vertical' : 'horizontal';
   const free = direction === 'vertical' ? bounds.h - sumH : bounds.w - sumW;
   const gap = members.length > 1 ? Math.max(0, Math.round(free / (members.length - 1))) : 0;
-  return { x: bounds.x, y: bounds.y, direction, gap, padding: { top: 0, right: 0, bottom: 0, left: 0 }, hugWidth: true, hugHeight: true, width: bounds.w, height: bounds.h };
+  return { x: bounds.x - padding.left, y: bounds.y - padding.top, direction, gap, padding };
+}
+
+/** Padding only, no stacking — what a group's layout becomes when its padding is set while Auto
+ * Layout is off (x/y aren't used: the box follows the members). */
+export function paddingOnlyGroupLayout(padding: GroupAutoLayout['padding']): GroupAutoLayout {
+  return { x: 0, y: 0, direction: 'none', gap: 0, padding };
 }
 
 /**
- * Where every member of an auto-layout group belongs, plus the group's own box (anchored at its
- * stored top-left) and the spacing between consecutive members (`gaps`, spanning the box's inside
- * width or height). Members are ordered by their current position along the stacking axis, so
- * dragging one past another reorders the stack.
+ * Where every member of a group belongs, plus the group's own box and the spacing between
+ * consecutive members (`gaps`, spanning the box's inside width or height). With direction 'none'
+ * members stay wherever they are and the box is just their bounds plus padding. Otherwise they're
+ * stacked from the box's stored top-left, ordered by their current position along the stacking
+ * axis (so dragging one past another reorders the stack), and the box hugs them.
  */
 export function computeGroupAutoLayout(members: LayoutElement[], layout: GroupAutoLayout): { frames: Map<string, LayoutElement['frame']>; box: Box; gaps: Box[] } {
   const { padding, gap } = layout;
+  if (layout.direction === 'none') {
+    const bounds = framesBounds(members.map((m) => m.frame));
+    return {
+      frames: new Map(members.map((m) => [m.id, m.frame])),
+      box: { x: bounds.x - padding.left, y: bounds.y - padding.top, w: bounds.w + padding.left + padding.right, h: bounds.h + padding.top + padding.bottom },
+      gaps: [],
+    };
+  }
   const vertical = layout.direction === 'vertical';
   const originX = layout.x;
   const originY = layout.y;
@@ -55,13 +73,11 @@ export function computeGroupAutoLayout(members: LayoutElement[], layout: GroupAu
 
   const mainSize = ordered.reduce((sum, m) => sum + (vertical ? m.frame.h : m.frame.w), 0) + gap * Math.max(0, ordered.length - 1);
   const crossSize = Math.max(...ordered.map((m) => (vertical ? m.frame.w : m.frame.h)));
-  const contentW = vertical ? crossSize : mainSize;
-  const contentH = vertical ? mainSize : crossSize;
   const box = {
     x: originX,
     y: originY,
-    w: layout.hugWidth ? contentW + padding.left + padding.right : layout.width,
-    h: layout.hugHeight ? contentH + padding.top + padding.bottom : layout.height,
+    w: (vertical ? crossSize : mainSize) + padding.left + padding.right,
+    h: (vertical ? mainSize : crossSize) + padding.top + padding.bottom,
   };
 
   const gaps: Box[] = [];
@@ -92,7 +108,8 @@ export function pendingGroupAutoLayoutChanges(elements: LayoutElement[]): {
   const relocated: { groupId: string; layout: GroupAutoLayout }[] = [];
   const seen = new Set<string>();
   for (const el of elements) {
-    if (!el.groupId || !el.groupLayout || seen.has(el.groupId)) continue;
+    // A padding-only group has nothing to keep in place — its members move freely.
+    if (!el.groupId || !el.groupLayout || el.groupLayout.direction === 'none' || seen.has(el.groupId)) continue;
     seen.add(el.groupId);
     const members = elements.filter((m) => m.groupId === el.groupId);
     const { frames } = computeGroupAutoLayout(members, el.groupLayout);

@@ -56,21 +56,18 @@ export type TextAutoLayout = {
 };
 
 /**
- * A layer group's Auto Layout — stacks its members in a row or column `gap` px apart, inside
- * `padding`. Copied onto every member of the group (groups have no record of their own), so it
- * travels with them through duplicate/copy/cascade like any other element field. `x`/`y` is the
- * group box's top-left corner, and `width`/`height` its size while that axis's hug is off.
+ * A layer group's layout — `padding` around its members, plus (with a `direction` other than
+ * 'none') Auto Layout stacking them in a column or row `gap` px apart. Copied onto every member of
+ * the group (groups have no record of their own), so it travels with them through duplicate/copy/
+ * cascade like any other element field. `x`/`y` is a stacked group's box top-left corner; with
+ * 'none' the members move freely and the box just follows them.
  */
 export type GroupAutoLayout = {
   x: number;
   y: number;
-  direction: 'vertical' | 'horizontal';
+  direction: 'none' | 'vertical' | 'horizontal';
   gap: number;
   padding: { top: number; right: number; bottom: number; left: number };
-  hugWidth: boolean;
-  hugHeight: boolean;
-  width: number;
-  height: number;
 };
 
 export type LayoutElement = {

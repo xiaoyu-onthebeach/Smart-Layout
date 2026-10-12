@@ -219,7 +219,7 @@ function SceneLayerRows({
           <div key={item.groupId} className="flex flex-col gap-0.5">
             <GroupHeaderRow
               selected={groupSelected}
-              autoLayout={Boolean(item.members[0].groupLayout)}
+              autoLayout={Boolean(item.members[0].groupLayout && item.members[0].groupLayout.direction !== 'none')}
               collapsed={collapsed}
               onToggle={() => toggleCollapsed(item.groupId)}
               onClick={(e) => onSelectElement(item.members[0].id, e)}
