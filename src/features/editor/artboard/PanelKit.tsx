@@ -1,15 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
-import { ChevronDown, RefreshCw } from 'lucide-react';
+import { ChevronDown, Minus, Plus, RefreshCw } from 'lucide-react';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
-import { layoutHasSiblingSizes } from '@/lib/match-select';
+import { groupSizeCount, layoutHasSiblingSizes } from '@/lib/match-select';
 import { useT } from '@/lib/i18n';
 import { exportLayout, type ExportFileType, type ExportScale } from '@/lib/export-image';
 import { isGradient } from '@/lib/gradient';
 import { isValidHex } from '@/lib/color';
-import { ColorPickerPopover, NoFillSwatch } from './ColorPickerPopover';
+import { ColorPickerPopover } from './ColorPickerPopover';
 import type { Layout, LayoutElement, ShadowStyle } from '@/types';
 
 /** One selected element, paired with the scene (layout) it lives in — a multi-select can span scenes. */
@@ -46,15 +46,13 @@ export function PanelHeaderIcon({ src, style }: { src: string; style?: CSSProper
   return <img src={src} alt="" className="-ml-1 size-8 shrink-0" style={style} />;
 }
 
-/**
- * Sits at the right edge of the text/shape/image panels' own header row — while on (the default),
- * selecting this layer in its own scene also selects its matching layer in every other size of
- * the group; this icon toggles it off (dropping every cross-scene match, keeping just the current
- * scene's own selection) or back on (re-expanding immediately). Hidden entirely until at least one
- * other size exists to match against.
- */
-export function MatchSelectButton({ targets }: { targets: EditorTarget[] }) {
-  const t = useT();
+/** Shared toggle state/logic behind both `MatchSelectButton` (the compact header icon) and
+ * `MatchSelectRow` (the Text panel's own labeled row) — while on (the default), selecting a layer
+ * in its own scene also selects its matching layer in every other size of the group; toggling off
+ * drops every cross-scene match, keeping just the current scene's own selection. `visible` is
+ * false until at least one other size exists to match against, at which point both renderers
+ * should show nothing at all. */
+function useMatchSelectToggle(targets: EditorTarget[]) {
   const matchSelectEnabled = useAppStore((s) => s.matchSelectEnabled);
   const enableMatchSelect = useAppStore((s) => s.enableMatchSelect);
   const disableMatchSelect = useAppStore((s) => s.disableMatchSelect);
@@ -65,7 +63,17 @@ export function MatchSelectButton({ targets }: { targets: EditorTarget[] }) {
 
   const primary = targets[0];
   const groupState = { setsById, layoutsById, pageGroupIdByPage, pageGroups };
-  if (!primary || !layoutHasSiblingSizes(groupState, primary.layoutId)) return null;
+  const visible = Boolean(primary && layoutHasSiblingSizes(groupState, primary.layoutId));
+  const sizeCount = primary ? groupSizeCount(groupState, primary.layoutId) : 0;
+  return { visible, matchSelectEnabled, sizeCount, toggle: () => (matchSelectEnabled ? disableMatchSelect() : enableMatchSelect()) };
+}
+
+/** Sits at the right edge of the shape/image panels' own header row (see `MatchSelectRow` for the
+ * Text panel's own labeled version of the same toggle). */
+export function MatchSelectButton({ targets }: { targets: EditorTarget[] }) {
+  const t = useT();
+  const { visible, matchSelectEnabled, toggle } = useMatchSelectToggle(targets);
+  if (!visible) return null;
 
   return (
     <Tooltip>
@@ -73,7 +81,7 @@ export function MatchSelectButton({ targets }: { targets: EditorTarget[] }) {
         <button
           type="button"
           aria-label={matchSelectEnabled ? t('Stop select in all sizes') : t('Select in all sizes')}
-          onClick={() => (matchSelectEnabled ? disableMatchSelect() : enableMatchSelect())}
+          onClick={toggle}
           className={cn('flex size-6 shrink-0 items-center justify-center rounded-md transition-colors', matchSelectEnabled ? 'bg-button-primary' : 'bg-[#40404A] hover:bg-white/20')}
         >
           <img src="/icons/apply-change.svg" alt="" className="size-5" />
@@ -87,12 +95,47 @@ export function MatchSelectButton({ targets }: { targets: EditorTarget[] }) {
   );
 }
 
-const ALIGN_H_OPTIONS = [
+/** The Text panel's own "layer selection" row — a labeled, always-visible counterpart to
+ * `MatchSelectButton`'s compact header icon (which doesn't have room for a label of its own).
+ * Label left, icon button right; off by default ("Select matching layers"), switching to a count
+ * of the group's own size once turned on ("Selected in N sizes"). `TextEditorPanel` also calls
+ * `useMatchSelectVisible` once of its own to decide whether to render the dividers around this row
+ * at all — this component already hides itself the same way, but the dividers aren't its to own. */
+export function MatchSelectRow({ targets }: { targets: EditorTarget[] }) {
+  const t = useT();
+  const { visible, matchSelectEnabled, sizeCount, toggle } = useMatchSelectToggle(targets);
+  if (!visible) return null;
+  const label = matchSelectEnabled ? t('Selected in {{count}} sizes').replace('{{count}}', String(sizeCount)) : t('Select matching layers');
+
+  return (
+    <div className="flex shrink-0 items-center justify-between gap-1.5 px-4 py-2">
+      <span className="text-[13px] leading-7 font-semibold tracking-[-0.01em] text-white">{label}</span>
+      <button
+        type="button"
+        aria-label={label}
+        aria-pressed={matchSelectEnabled}
+        onClick={toggle}
+        className={cn('flex size-7 shrink-0 items-center justify-center rounded-md transition-colors', matchSelectEnabled ? 'bg-button-primary' : 'bg-[#2F2F37] hover:bg-white/20')}
+      >
+        <img src="/icons/apply-change.svg" alt="" className="size-6" />
+      </button>
+    </div>
+  );
+}
+
+/** Whether `MatchSelectRow` would render anything — exported so a caller that wraps the row in its
+ * own dividers (`TextEditorPanel`) can skip those too when there's nothing between them. */
+export function useMatchSelectVisible(targets: EditorTarget[]) {
+  return useMatchSelectToggle(targets).visible;
+}
+
+/** One combined 6-up row (not two separate 3-up groups) sharing a single pill background — matches
+ * the "Alignment" row's own spec: one `#26262C` strip, items flush against each other (no inner
+ * gap), left/center/right followed directly by top/middle/bottom. */
+const ALIGN_OPTIONS_ALL = [
   { value: 'left', icon: '/icons/edit_panel/layers-align-left.svg' },
   { value: 'center', icon: '/icons/edit_panel/layers-align-center.svg' },
   { value: 'right', icon: '/icons/edit_panel/layers-align-right.svg' },
-] as const;
-const ALIGN_V_OPTIONS = [
   { value: 'top', icon: '/icons/edit_panel/layers-align-top.svg' },
   { value: 'middle', icon: '/icons/edit_panel/layers-align-middle.svg' },
   { value: 'bottom', icon: '/icons/edit_panel/layers-align-bottom.svg' },
@@ -107,11 +150,11 @@ const AXIS_LABELS: Record<string, string> = {
   bottom: 'Bottom',
 };
 
-function AlignIconGroup({ options }: { options: readonly { value: string; icon: string }[] }) {
+function AlignIconRow() {
   const t = useT();
   return (
-    <div className="flex flex-1 items-center gap-0.5">
-      {options.map((opt) => (
+    <div className="flex min-w-0 flex-1 items-center rounded-md p-0.5" style={{ background: '#26262C' }}>
+      {ALIGN_OPTIONS_ALL.map((opt) => (
         <button
           key={opt.value}
           type="button"
@@ -288,6 +331,7 @@ export function PositionSection({
   rotation = 0,
   showPositionMode = true,
   resetKey,
+  extra,
 }: {
   /** The frame's own unrotated top-left corner and size — `w`/`h` are only needed alongside
    * `rotation` to derive the rotated bounding box's origin shown below; omit both (or leave
@@ -302,6 +346,10 @@ export function PositionSection({
    * selected element's own id so switching selection resets the preview instead of carrying over
    * whatever mode a previously-selected element was left in. */
   resetKey?: string;
+  /** Extra rows (e.g. Rotation) rendered inside this same padded block, after everything else —
+   * keeps a caller's own per-element row visually part of this one section (no divider, shared
+   * top/bottom padding) instead of it being a separate sibling the parent has to pad itself. */
+  extra?: ReactNode;
 }) {
   const displayOrigin = rotation ? rotatedBoundingOrigin({ x, y, w, h }, rotation) : { x, y };
   const t = useT();
@@ -357,26 +405,34 @@ export function PositionSection({
   }, [showPreview]);
 
   return (
-    <div ref={rootRef} className="flex flex-col gap-3 px-4">
+    <div ref={rootRef} className="flex flex-col gap-2 px-4 pt-2 pb-4">
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Position')}</span>
+        <IconSlot />
+      </div>
+
       <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] text-white/65">{t('Alignment')}</span>
-        <div className="flex items-center gap-1.5">
-          <AlignIconGroup options={ALIGN_H_OPTIONS} />
-          <AlignIconGroup options={ALIGN_V_OPTIONS} />
+        <span className="text-[9px] leading-4 text-white/45">{t('Alignment')}</span>
+        <div className="flex items-center gap-2">
+          <AlignIconRow />
+          <IconSlot />
         </div>
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] text-white/65">{t('Position')}</span>
+        <span className="text-[9px] leading-4 text-white/65">{t('Position')}</span>
         <div className="flex items-center gap-2">
-          <div className="flex h-8 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm">
-            <span className="text-white/65">X</span>
-            <span className="ml-auto text-white">{Math.round(displayOrigin.x)}</span>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="flex h-7 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-[11px]">
+              <span className="text-white/65">X</span>
+              <span className="text-white">{Math.round(displayOrigin.x)}</span>
+            </div>
+            <div className="flex h-7 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-[11px]">
+              <span className="text-white/65">Y</span>
+              <span className="text-white">{Math.round(displayOrigin.y)}</span>
+            </div>
           </div>
-          <div className="flex h-8 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm">
-            <span className="text-white/65">Y</span>
-            <span className="ml-auto text-white">{Math.round(displayOrigin.y)}</span>
-          </div>
+          <IconSlot />
         </div>
       </div>
 
@@ -385,7 +441,7 @@ export function PositionSection({
       {showPositionMode && (
         <div className="flex flex-col gap-3" onMouseEnter={() => mode === 'anchored' && setShowPreview(true)}>
           <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] text-white/65">{t('Position mode')}</span>
+            <span className="text-[9px] leading-4 text-white/65">{t('Position mode')}</span>
             <SelectField
               value={mode}
               onChange={(v) => setMode(v as PositionMode)}
@@ -448,17 +504,42 @@ export function PositionSection({
           <AnchorPreviewFrame shape={PREVIEW_SHAPES[previewShapeIndex]} vertical={vertical} horizontal={horizontal} />
         </div>
       )}
+
+      {extra}
     </div>
   );
 }
 
-export function PanelSection({ label, icon, children, style }: { label: string; icon?: ReactNode; children: ReactNode; style?: CSSProperties }) {
+/** A fixed-width slot at a row's trailing edge — rendered (and taking up its space) whether or not
+ * `children` is given, so a row's main content stays the same width all the way down a section
+ * regardless of which particular rows happen to have a real icon there. */
+export function IconSlot({ children }: { children?: ReactNode }) {
+  return <div className="flex size-7 shrink-0 items-center justify-center">{children}</div>;
+}
+
+export function PanelSection({
+  label,
+  icon,
+  trailing,
+  children,
+  style,
+}: {
+  label: string;
+  icon?: ReactNode;
+  /** Rendered in the header's own always-reserved trailing `IconSlot` — e.g. Border's +/- toggle. */
+  trailing?: ReactNode;
+  children: ReactNode;
+  style?: CSSProperties;
+}) {
   return (
-    <div data-panel-section className="flex flex-col gap-2 px-4" style={style}>
-      <span className="flex items-center gap-1.5 text-[13px] font-semibold tracking-[-0.01em] text-white">
-        {icon}
-        {label}
-      </span>
+    <div data-panel-section className="flex flex-col gap-2 px-4 pt-2 pb-4" style={style}>
+      <div className="flex items-center justify-between gap-1">
+        <span className="flex items-center gap-1.5 text-[13px] font-semibold tracking-[-0.01em] text-white">
+          {icon}
+          {label}
+        </span>
+        <IconSlot>{trailing}</IconSlot>
+      </div>
       {children}
     </div>
   );
@@ -507,7 +588,7 @@ export function ImageHoverReplace({ onReplace, children }: { onReplace: () => vo
 }
 
 export function PanelDivider() {
-  return <div className="h-px w-full shrink-0" style={{ background: '#40404A' }} />;
+  return <div className="h-px w-full shrink-0" style={{ background: '#26262C' }} />;
 }
 
 /** Every Fill/Border/Style/Radius/Weight control in a panel using `InlineRow` shares this width so
@@ -524,7 +605,7 @@ export const INLINE_VALUE_COL_WIDTH = 151;
 export function InlineRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="shrink-0 text-[11px] text-white/65">{label}</span>
+      <span className="shrink-0 text-[9px] leading-4 text-white/65">{label}</span>
       {children}
     </div>
   );
@@ -562,33 +643,80 @@ function useOpacityDraft() {
  * hairline, rather than a separate swatch button beside a field (the shared `ColorRow`'s layout).
  * Passing `onClear` makes the fill optional: `color` may then be undefined ("no fill"), and the
  * picker gains a "no fill" preset to get back there. */
-export function InlineColorField({ color, onChange, onClear }: { color: string | undefined; onChange: (color: string) => void; onClear?: () => void }) {
+export function InlineColorField({
+  color,
+  onChange,
+  onClear,
+  width = INLINE_VALUE_COL_WIDTH,
+  compact,
+  opacity: opacityValue,
+  onOpacityCommit,
+}: {
+  color: string | undefined;
+  onChange: (color: string) => void;
+  onClear?: () => void;
+  /** Overrides the shared `INLINE_VALUE_COL_WIDTH` pill width — e.g. the Text panel's own Text
+   * fill/Shape fill rows, which split their row into two columns instead. Pass `'flex-1'` (instead
+   * of a pixel number) to grow and fill whatever space is left in a flex row alongside a sibling —
+   * a literal `width: '100%'` style doesn't account for that sibling at all and overflows past it,
+   * since percentage sizing on a flex item is resolved against the row's own full width, not
+   * "100% of what's left over" the way `flex-grow` is. */
+  width?: number | 'flex-1';
+  /** Squeezes the internal padding/gaps and tightens the hex text's own letter-spacing — needed at
+   * any width under ~140px or the hex + opacity text won't fit. Defaults to on for `width:
+   * 'flex-1'`, but can also be forced on for a fixed pixel width that's just as tight (the Border
+   * section's own 100.5px columns, say) — pass `false` to opt back out at a width narrow enough
+   * that it would otherwise default to on. */
+  compact?: boolean;
+  /** A real, persisted opacity (and its commit handler) — e.g. the Shadow section's own
+   * `shadow.opacity`. Pass both together to wire the pill's opacity field up for real; omit both
+   * (the common case — Text/Shape fill, Border color — none of which have a real per-fill alpha in
+   * the data model yet) and the opacity shown stays a decorative, un-wired draft, same as
+   * `PositionSection`'s own anchor picker elsewhere in this file. */
+  opacity?: number;
+  onOpacityCommit?: (value: string) => void;
+}) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const hex = useHexDraft(color ?? '', onChange);
-  const opacity = useOpacityDraft();
+  const decorativeOpacity = useOpacityDraft();
+  const wired = opacityValue !== undefined && onOpacityCommit !== undefined;
+  const [realOpacityDraft, setRealOpacityDraft] = useState(String(opacityValue ?? 100));
+  useEffect(() => setRealOpacityDraft(String(opacityValue ?? 100)), [opacityValue]);
+  const opacity = wired
+    ? { draft: realOpacityDraft, setDraft: setRealOpacityDraft, commit: () => onOpacityCommit!(realOpacityDraft) }
+    : decorativeOpacity;
   const active = open || focused;
+  const isCompact = compact ?? width === 'flex-1';
   return (
     <div
-      className="flex h-9 shrink-0 items-center justify-between rounded-lg border px-2 transition-colors"
+      className={cn(
+        'flex h-7 items-center justify-between rounded-lg border transition-colors',
+        isCompact ? 'min-w-0 gap-0.5 px-0.5' : 'px-3',
+        // flex-1 (flex-basis: 0%) only makes sense when this field is meant to grow along a row's
+        // horizontal main axis (width === 'flex-1'). Applying it unconditionally broke fixed-width
+        // compact fields (Border/Shadow Color) nested in a flex-col wrapper, where flex-basis hijacks
+        // *vertical* sizing and collapses the pill below its explicit h-7 height.
+        width === 'flex-1' ? 'flex-1' : 'shrink-0',
+      )}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        width: INLINE_VALUE_COL_WIDTH,
+        width: width === 'flex-1' ? undefined : width,
         background: active || hovered ? FIELD_HOVER_BG : '#26262C',
         borderColor: active ? FIELD_ACTIVE_BORDER : 'transparent',
       }}
     >
-      <div className="flex min-w-0 items-center gap-2">
+      <div className={cn('flex min-w-0 items-center', isCompact ? 'gap-0.5' : 'gap-2')}>
         {/* Opens on white when there's no fill yet, so the first drag in the picker lands on a real color. */}
         <ColorPickerPopover color={color ?? '#FFFFFF'} onChange={onChange} onClear={onClear} onOpenChange={setOpen}>
           {color ? (
-            <button type="button" aria-label={t('Color')} className="size-6 shrink-0 rounded-full border border-black/20" style={{ background: color }} />
+            <button type="button" aria-label={t('Color')} className="size-4 shrink-0 rounded-full border border-black/20" style={{ background: color }} />
           ) : (
             <button type="button" aria-label={t('No fill')} className="shrink-0">
-              <NoFillSwatch className="size-6 rounded-full" />
+              <img src="/icons/no-fill%2016.svg" alt="" className="size-4" />
             </button>
           )}
         </ColorPickerPopover>
@@ -605,11 +733,14 @@ export function InlineColorField({ color, onChange, onClear }: { color: string |
             }}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             placeholder={t('No fill')}
-            className="w-full min-w-0 bg-transparent text-[11px] text-white uppercase outline-none placeholder:normal-case placeholder:text-white/45"
+            className={cn(
+              'w-full min-w-0 bg-transparent text-[11px] text-white uppercase outline-none placeholder:normal-case placeholder:text-white/45',
+              isCompact && 'tracking-tighter',
+            )}
           />
         )}
       </div>
-      <div className={cn('flex shrink-0 items-center gap-2', !color && 'invisible')}>
+      <div className={cn('flex shrink-0 items-center', isCompact ? 'gap-0.5' : 'gap-2', !color && 'invisible')}>
         <div className="h-4 w-px shrink-0" style={{ background: '#40404A' }} />
         <div className="flex shrink-0 items-center">
           <input
@@ -621,7 +752,7 @@ export function InlineColorField({ color, onChange, onClear }: { color: string |
               opacity.commit();
             }}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-            className="w-5 bg-transparent text-right text-[11px] text-white/65 outline-none"
+            className={cn('bg-transparent text-right text-[11px] text-white/65 outline-none', isCompact ? 'w-4 tracking-tighter' : 'w-5')}
           />
           <span className="text-[11px] text-white/65">%</span>
         </div>
@@ -690,31 +821,25 @@ export function ColorRow({ color, onChange }: { color: string; onChange: (color:
 
 const DEFAULT_SHADOW: ShadowStyle = { enabled: true, x: 0, y: 4, blur: 4, color: '#000000', opacity: 100 };
 
-/** Compact on/off pill matching the shadow rows' own spec — a bespoke button rather than the
- * shared `Switch` (components/ui/switch.tsx), whose fixed size/color variants don't hit this
- * spec's exact 28x16 track + 12x12 thumb + #2D88FF/25%-white track colors. */
-function ShadowSwitch({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label: string }) {
+/** Enable/disable control for a shadow row — a +/- icon button matching the Border section's own
+ * add/remove convention, rather than the on/off switch this used to be. */
+function ShadowToggle({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label: string }) {
   return (
     <button
       type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
+      aria-label={checked ? `Remove ${label}` : `Add ${label}`}
+      aria-pressed={checked}
       onClick={() => onChange(!checked)}
-      className="relative h-4 w-7 shrink-0 rounded-full p-0.5 transition-colors"
-      style={{ background: checked ? '#2D88FF' : 'rgba(255,255,255,0.25)' }}
+      className="flex size-7 shrink-0 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white"
     >
-      <span
-        className="block size-3 rounded-full transition-transform"
-        style={{ background: '#26262C', filter: 'drop-shadow(0px 2px 4px rgba(0,35,11,0.2))', transform: checked ? 'translateX(12px)' : 'translateX(0)' }}
-      />
+      {checked ? <Minus className="size-4" /> : <Plus className="size-4" />}
     </button>
   );
 }
 
-/** A 51px number field with a small caption ("x"/"y") to its left, bottom-aligned — the shadow
- * panel's own "Number input - Advanced" shape, distinct from the plain centered `NumberField`. Both
- * of its callers (shadow X and Y) want drag-to-scrub, so unlike `NumberField` it's always on here. */
+/** An editable "X"/"Y" pill matching the read-only Position section's own X/Y fields elsewhere in
+ * these panels (label at 65% opacity, 11px value, same `#26262C` pill) — this one just has a real
+ * `<input>` instead of a static span, with the same drag-to-scrub every other number field here has. */
 function LabeledNumberInput({ label, value, onCommit }: { label: string; value: string; onCommit: (value: string) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const scrub = useScrubDrag(Number(value) || 0, onCommit);
@@ -723,13 +848,13 @@ function LabeledNumberInput({ label, value, onCommit }: { label: string; value: 
   const highlighted = active || scrub.hovered;
   return (
     <div
-      className="flex h-8 w-[51px] shrink-0 items-end gap-2 rounded-md border px-2 pb-1 transition-colors"
+      className="flex h-7 w-full items-center gap-2 rounded-md border px-3 text-[11px] transition-colors"
       onMouseDown={(e) => scrub.handleMouseDown(e, inputRef.current)}
       onMouseEnter={() => scrub.setHovered(true)}
       onMouseLeave={() => scrub.setHovered(false)}
-      style={{ background: highlighted ? FIELD_HOVER_BG : '#26262C', borderColor: active ? FIELD_ACTIVE_BORDER : '#40404A', cursor: highlighted ? SCRUB_CURSOR : undefined }}
+      style={{ background: highlighted ? FIELD_HOVER_BG : '#26262C', borderColor: active ? FIELD_ACTIVE_BORDER : 'transparent', cursor: highlighted ? SCRUB_CURSOR : undefined }}
     >
-      <span className="text-xs text-white/45">{label}</span>
+      <span className="shrink-0 text-white/65">{label}</span>
       <input
         ref={inputRef}
         defaultValue={value}
@@ -740,77 +865,93 @@ function LabeledNumberInput({ label, value, onCommit }: { label: string; value: 
           onCommit(e.target.value);
         }}
         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-        className="w-0 min-w-0 flex-1 bg-transparent text-right text-base font-bold text-white outline-none"
+        className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
       />
     </div>
   );
 }
 
-/** The shadow row's own opacity field — styled like the plain-text opacity shown next to a color
- * fill elsewhere (`InlineColorField`/`ColorRow`) rather than `NumberField`'s own bordered box, per
- * that shared look; still scrubbable like every other number field in this section. */
-function ShadowOpacityField({ value, onCommit }: { value: number; onCommit: (value: string) => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const scrub = useScrubDrag(value, onCommit);
-  const [focused, setFocused] = useState(false);
-  const active = focused || scrub.dragging;
-  const highlighted = active || scrub.hovered;
-  return (
-    <div
-      className="flex h-8 shrink-0 items-center rounded-md border px-1 transition-colors"
-      onMouseDown={(e) => scrub.handleMouseDown(e, inputRef.current)}
-      onMouseEnter={() => scrub.setHovered(true)}
-      onMouseLeave={() => scrub.setHovered(false)}
-      style={{ background: highlighted ? FIELD_HOVER_BG : undefined, borderColor: active ? FIELD_ACTIVE_BORDER : 'transparent', cursor: highlighted ? SCRUB_CURSOR : undefined }}
-    >
-      <input
-        ref={inputRef}
-        defaultValue={String(value)}
-        key={value}
-        onFocus={() => setFocused(true)}
-        onBlur={(e) => {
-          setFocused(false);
-          onCommit(e.target.value);
-        }}
-        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-        className="w-6 bg-transparent text-right text-[11px] text-white/65 outline-none"
-      />
-      <span className="text-[11px] text-white/65">%</span>
-    </div>
-  );
-}
-
-/** The shadow row's own "Color" field — a 24px swatch + chevron (opens the shared color picker)
- * beside an opacity field, distinct from `ColorRow`'s wider pill layout elsewhere. */
-function ShadowColorField({
-  color,
-  opacity,
-  onColorChange,
-  onOpacityCommit,
+/** The Shadow section's own row shape — a fixed ~101.5px label column and ~101.5px value column
+ * (matching the Border section's own equal-column rows), plus the same reserved trailing `IconSlot`
+ * every row in these panels gets: 101.5 + 8 (gap) + 101.5 + 8 (gap) + 28 (icon) = 247px, exactly
+ * this panel's own standard content width — so this row needs that full width, same as every other
+ * row, with nothing else (like a left indent) eating into it first. `children` can be one field
+ * (Blur, Color) or a small vertical stack of them (Position's X then Y), which is why the value
+ * column is its own flex-col rather than assuming a single child. `align="start"` top-aligns the
+ * label with the first value field instead of centering it against the whole stack — Position's own
+ * "X" row, specifically, rather than sitting centered between X and Y. */
+/** The shared 101.5px/101.5px two-column row — a label and its field(s), plus the panel's usual
+ * trailing 28px reserved slot. Used by Shadow (Position/Blur/Color), the Shape/Image Border section,
+ * and the Radius row below; `trailing` fills that slot with a real control (e.g. Radius's
+ * all/per-corner toggle) instead of leaving it empty. */
+export function GridFieldRow({
+  label,
+  children,
+  align = 'center',
+  trailing,
 }: {
-  color: string;
-  opacity: number;
-  onColorChange: (color: string) => void;
-  onOpacityCommit: (value: string) => void;
+  label: string;
+  children: ReactNode;
+  align?: 'start' | 'center';
+  trailing?: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const highlighted = open || hovered;
   return (
-    <div className="flex items-center gap-1">
-      <ColorPickerPopover color={color} onChange={onColorChange} onOpenChange={setOpen}>
-        <button
-          type="button"
-          className="flex h-8 w-[60px] shrink-0 items-center gap-2 rounded-md border py-0 pr-2 pl-1 transition-colors"
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          style={{ background: highlighted ? FIELD_HOVER_BG : '#26262C', borderColor: open ? FIELD_ACTIVE_BORDER : '#40404A' }}
+    <div className={cn('flex gap-2', align === 'start' ? 'items-start' : 'items-center')}>
+      <div className={cn('grid min-w-0 flex-1 grid-cols-[101.5px_101.5px] gap-2', align === 'start' ? 'items-start' : 'items-center')}>
+        <span className="text-[9px] leading-4 text-white/65">{label}</span>
+        <div className="flex flex-col gap-2">{children}</div>
+      </div>
+      <IconSlot>{trailing}</IconSlot>
+    </div>
+  );
+}
+
+/** A self-contained Rotation row — matches dragging just outside a selected element's corner handle.
+ * Shared by Text/Shape/Image (via `PositionSection`'s `extra` slot) so all three stay pixel-identical. */
+export function RotationRow({ rotation, onCommit }: { rotation: number; onCommit: (value: number) => void }) {
+  const t = useT();
+  const rotationField = useFieldHighlight();
+  const rotationRounded = Math.round(rotation ?? 0);
+  const [rotationDraft, setRotationDraft] = useState(String(rotationRounded));
+  useEffect(() => setRotationDraft(String(rotationRounded)), [rotationRounded]);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[9px] leading-4 text-white/65">{t('Rotation')}</span>
+      <div className="flex items-center gap-2">
+        <div
+          className="flex h-7 shrink-0 items-center gap-2 rounded-lg border px-3 text-[11px] transition-colors"
+          onMouseEnter={() => rotationField.setHovered(true)}
+          onMouseLeave={() => rotationField.setHovered(false)}
+          style={{ width: 105, ...fieldHighlightStyle(rotationField.hovered, rotationField.focused) }}
         >
-          <span className="size-6 shrink-0 rounded" style={{ background: color }} />
-          <ChevronDown className="size-3.5 shrink-0 text-white" />
-        </button>
-      </ColorPickerPopover>
-      <ShadowOpacityField value={opacity} onCommit={onOpacityCommit} />
+          <img src="/icons/angle.svg" alt="" className="size-4 shrink-0" />
+          {/* The number and ° are nested in their own gap-less flex group — the parent's own
+              `gap-2` (meant for the icon-to-value spacing) was landing between them too when
+              they were plain siblings of it. */}
+          <div className="flex shrink-0 items-center">
+            {/* Exact-width auto-sizing via an invisible mirror span that sets the wrapper's own
+                size through normal text flow, with the input absolutely positioned over it so it
+                never contributes its own (much wider) intrinsic size to that calculation. */}
+            <span className="relative inline-block shrink-0">
+              <span className="invisible whitespace-pre">{rotationDraft || '0'}</span>
+              <input
+                type="text"
+                value={rotationDraft}
+                onChange={(e) => setRotationDraft(e.target.value)}
+                onFocus={() => rotationField.setFocused(true)}
+                onBlur={(e) => {
+                  rotationField.setFocused(false);
+                  onCommit(Number(e.target.value) || 0);
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                className="absolute inset-0 w-full bg-transparent text-white outline-none"
+              />
+            </span>
+            <span className="shrink-0 text-white">°</span>
+          </div>
+        </div>
+        <IconSlot />
+      </div>
     </div>
   );
 }
@@ -838,34 +979,42 @@ function ShadowRow({
     <div className="flex flex-col">
       <div className="flex h-10 shrink-0 items-center gap-2">
         <img src={icon} alt="" className="size-4 shrink-0" />
-        <span className={cn('flex-1 truncate text-[13px] tracking-[-0.01em]', enabled ? 'text-white' : 'text-white/65')}>{label}</span>
-        <ShadowSwitch checked={enabled} onChange={(next) => onChange({ ...current, enabled: next })} label={label} />
+        <span className={cn('flex-1 truncate text-[11px] tracking-[-0.01em]', enabled ? 'text-white' : 'text-white/65')}>{label}</span>
+        <ShadowToggle checked={enabled} onChange={(next) => onChange({ ...current, enabled: next })} label={label} />
       </div>
+      {/* No left indent — unlike before this redesign, each row now needs the full standard
+          247px content width (101.5 + 8 + 101.5 + 8 + 28), the same every other row in this panel
+          gets; an indent here would eat into that budget and leave the reserved icon slot short of
+          its own proper 16px clearance from the panel's own right edge. */}
       {enabled && (
-        <div className="flex flex-col gap-1 pb-1 pl-5">
-          <div className="flex h-10 shrink-0 items-center gap-1">
-            <span className="flex-1 text-[13px] text-white/65">{t('Position')}</span>
-            <LabeledNumberInput label="x" value={String(current.x)} onCommit={(v) => patch({ x: Math.round(Number(v) || 0) })} />
-            <LabeledNumberInput label="y" value={String(current.y)} onCommit={(v) => patch({ y: Math.round(Number(v) || 0) })} />
-          </div>
-          <div className="flex h-10 shrink-0 items-center gap-1">
-            <span className="flex-1 text-[13px] text-white/65">{t('Blur')}</span>
-            <NumberField
+        <div className="flex flex-col gap-2 pb-1">
+          <GridFieldRow label={t('Position')} align="start">
+            <LabeledNumberInput label="X" value={String(current.x)} onCommit={(v) => patch({ x: Math.round(Number(v) || 0) })} />
+            <LabeledNumberInput label="Y" value={String(current.y)} onCommit={(v) => patch({ y: Math.round(Number(v) || 0) })} />
+          </GridFieldRow>
+
+          <GridFieldRow label={t('Blur')}>
+            <IconNumberField
               scrubbable
-              className="w-[51px] shrink-0"
+              icon="/icons/blur%2016.svg"
+              className="w-full"
               value={String(current.blur)}
               onCommit={(v) => patch({ blur: Math.max(0, Math.round(Number(v) || 0)) })}
             />
-          </div>
-          <div className="flex h-10 shrink-0 items-center gap-1">
-            <span className="flex-1 text-[13px] text-white/65">{t('Color')}</span>
-            <ShadowColorField
+          </GridFieldRow>
+
+          {/* Same color field style as Border/Styles — swatch + hex + opacity in one pill, not the
+              separate swatch-button + opacity-box this used to be. */}
+          <GridFieldRow label={t('Color')}>
+            <InlineColorField
               color={current.color}
+              onChange={(color) => patch({ color })}
               opacity={current.opacity}
-              onColorChange={(color) => patch({ color })}
               onOpacityCommit={(v) => patch({ opacity: Math.min(100, Math.max(0, Math.round(Number(v) || 0))) })}
+              width={101.5}
+              compact
             />
-          </div>
+          </GridFieldRow>
         </div>
       )}
     </div>
@@ -886,8 +1035,8 @@ export function ShadowSection({
 }) {
   const t = useT();
   return (
-    <div className="flex flex-col gap-1 px-4">
-      <span className="text-xs font-semibold text-white">{t('Shadow')}</span>
+    <div className="flex flex-col gap-1 px-4 pt-2 pb-4">
+      <span className="text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Shadow')}</span>
       <div className="flex flex-col gap-1">
         <ShadowRow icon="/icons/shadow-outer.svg" label={t('Drop shadow')} shadow={dropShadow} onChange={(next) => onPatch({ dropShadow: next })} />
         <ShadowRow icon="/icons/shadow-inner.svg" label={t('Inner shadow')} shadow={innerShadow} onChange={(next) => onPatch({ innerShadow: next })} />
@@ -1085,16 +1234,18 @@ function ScrubbableNumberField({
   );
 }
 
-/** "Radius" row shared by the banner/shape/image panels — clicking "per-corner" reveals a second
- * row of four corner fields below it, each its own rounded box within the panel's own padding (not
- * a joined pill, so nothing can overflow the panel edge the way an unbroken 4-way pill at this
- * width would). The four fields are still decorative (no per-corner radius concept exists in the
- * layout engine yet) — dragging the uniform field above just overwrites all four's own local state
- * to match, the same way it always overwrites the one real `value` this row is wired to. */
+/** "Radius" row shared by the text/shape/image panels — the trailing toggle (one static icon,
+ * same in both states, per spec) flips between a single uniform field and four per-corner fields
+ * below it, each its own 101.5px pill in a 2-column grid (same track widths as every other field
+ * row in this panel). The four fields are still decorative (no per-corner radius concept exists in
+ * the layout engine yet) — dragging/typing the uniform field above overwrites all four's own local
+ * state to match, the same way it always overwrites the one real `value` this row is wired to;
+ * typing the same value into every corner likewise folds back into that one real value. */
 export function CornerRadiusRow({ value, onCommit, max }: { value: number; onCommit: (value: number) => void; max: number }) {
   const t = useT();
-  const [mode, setMode] = useState<'uniform' | 'corners'>('uniform');
+  const [individual, setIndividual] = useState(false);
   const [corners, setCorners] = useState<number[]>([value, value, value, value]);
+  const isMixed = individual && corners.some((v) => v !== corners[0]);
 
   function commitUniform(next: number) {
     onCommit(next);
@@ -1102,65 +1253,61 @@ export function CornerRadiusRow({ value, onCommit, max }: { value: number; onCom
   }
 
   function commitCorner(index: number, next: number) {
-    setCorners((prev) => prev.map((v, i) => (i === index ? next : v)));
+    setCorners((prev) => {
+      const nextCorners = prev.map((v, i) => (i === index ? next : v));
+      if (nextCorners.every((v) => v === nextCorners[0])) onCommit(nextCorners[0]);
+      return nextCorners;
+    });
   }
 
   return (
     <div className="flex flex-col gap-2">
-      <InlineRow label={t('Radius')}>
-        <div className="flex items-center justify-between" style={{ width: INLINE_VALUE_COL_WIDTH }}>
-          <ScrubbableNumberField
-            value={value}
-            max={max}
-            onCommit={commitUniform}
-            wrapperClassName="flex h-8 w-[68px] items-center justify-center rounded-md bg-[#26262C] transition-colors"
-            inputClassName="w-full min-w-0 bg-transparent text-center text-base font-bold text-white outline-none"
-          />
-          <div className="flex items-center gap-1 rounded-md p-0.5" style={{ background: '#26262C' }}>
-            <button
-              type="button"
-              aria-label={t('Uniform radius')}
-              onClick={() => setMode('uniform')}
-              className="flex size-7 items-center justify-center rounded-[5.6px]"
-              style={{ background: mode === 'uniform' ? '#131316' : 'transparent' }}
-            >
-              <img src="/icons/edit_panel/radius_all.svg" alt="" className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              aria-label={t('Per-corner radius')}
-              onClick={() => setMode('corners')}
-              className="flex size-7 items-center justify-center rounded-[5.6px]"
-              style={{ background: mode === 'corners' ? '#131316' : 'transparent' }}
-            >
-              <img src="/icons/radius_4.svg" alt="" className="size-3.5" />
-            </button>
+      <GridFieldRow
+        label={t('Radius')}
+        trailing={
+          <button
+            type="button"
+            aria-label={individual ? t('Uniform radius') : t('Per-corner radius')}
+            aria-pressed={individual}
+            onClick={() => setIndividual((v) => !v)}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-white transition-colors hover:bg-white/10"
+          >
+            <img src="/icons/radius_4.svg" alt="" className="size-4" />
+          </button>
+        }
+      >
+        {isMixed ? (
+          <div className="flex h-7 w-full items-center gap-2 rounded-md bg-[#26262C] px-3 text-[11px] text-white transition-colors">
+            <img src="/icons/radius-all%2016.svg" alt="" className="size-4 shrink-0" style={{ opacity: 0.45 }} />
+            <span className="min-w-0 flex-1 truncate">{t('Mixed')}</span>
           </div>
-        </div>
-      </InlineRow>
-      {/* Right-aligned 2x2 grid (not left-aligned like every other row's control) — matches the
-          spec exactly: each pill is a fixed 97px, in two rows of two, the whole grid pinned to
-          the panel's right edge rather than starting from the shared value-column's left edge. */}
-      {mode === 'corners' && (
-        <div className="flex flex-col items-end gap-3 px-0">
-          {[CORNER_ROTATIONS.slice(0, 2), CORNER_ROTATIONS.slice(2, 4)].map((row, rowIdx) => (
-            <div key={rowIdx} className="flex items-center justify-end gap-3">
-              {row.map((deg, i) => {
-                const idx = rowIdx * 2 + i;
-                return (
-                  <ScrubbableNumberField
-                    key={idx}
-                    value={corners[idx]}
-                    max={max}
-                    onCommit={(next) => commitCorner(idx, next)}
-                    icon={<img src="/icons/edit_panel/radius-each%20corner.svg" alt="" className="size-3.5 shrink-0" style={{ transform: `rotate(${deg}deg)` }} />}
-                    wrapperClassName="flex h-8 w-[97px] shrink-0 items-center gap-2 rounded-md bg-[#26262C] pl-3 transition-colors"
-                    inputClassName="w-0 min-w-0 flex-1 bg-transparent text-center text-base font-bold text-white outline-none"
-                  />
-                );
-              })}
-            </div>
-          ))}
+        ) : (
+          <IconNumberField
+            scrubbable
+            icon="/icons/radius-all%2016.svg"
+            iconStyle={{ opacity: 0.45 }}
+            className="w-full"
+            value={String(value)}
+            onCommit={(raw) => commitUniform(Math.max(0, Math.min(max, Math.round(Number(raw) || 0))))}
+          />
+        )}
+      </GridFieldRow>
+      {individual && (
+        <div className="flex items-center gap-2">
+          <div className="grid min-w-0 flex-1 grid-cols-[101.5px_101.5px] gap-2">
+            {CORNER_ROTATIONS.map((deg, idx) => (
+              <ScrubbableNumberField
+                key={idx}
+                value={corners[idx]}
+                max={max}
+                onCommit={(next) => commitCorner(idx, next)}
+                icon={<img src="/icons/edit_panel/radius-each%20corner.svg" alt="" className="size-3.5 shrink-0" style={{ transform: `rotate(${deg}deg)` }} />}
+                wrapperClassName="flex h-7 items-center justify-center gap-2 rounded-md bg-[#26262C] px-3 transition-colors"
+                inputClassName="w-0 min-w-0 flex-1 bg-transparent text-center text-[11px] font-normal text-white outline-none"
+              />
+            ))}
+          </div>
+          <IconSlot />
         </div>
       )}
     </div>
@@ -1227,11 +1374,11 @@ export function NumberField({
       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
       style={{
         background: highlighted ? FIELD_HOVER_BG : undefined,
-        borderColor: active ? FIELD_ACTIVE_BORDER : undefined,
+        borderColor: active ? FIELD_ACTIVE_BORDER : 'transparent',
         cursor: scrubbable && scrub.hovered ? SCRUB_CURSOR : undefined,
       }}
       className={cn(
-        'flex h-8 items-center rounded-md border border-chrome-border bg-chrome-border-subtle px-2 text-center text-base font-bold text-chrome-fg outline-none transition-colors',
+        'flex h-7 items-center rounded-md border bg-chrome-border-subtle px-3 text-center text-base font-bold text-chrome-fg outline-none transition-colors',
         className,
       )}
     />
@@ -1248,6 +1395,8 @@ export function SegmentedControl<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
+    // 2px padding on all 4 sides + 24px buttons = 28px total — was 2px padding + 28px buttons
+    // (32px total), taller than every other 28px field in these panels.
     <div className="flex items-center gap-0.5 rounded-lg bg-chrome-border-subtle p-0.5">
       {options.map((opt) => (
         <button
@@ -1256,8 +1405,8 @@ export function SegmentedControl<T extends string>({
           title={opt.label}
           onClick={() => onChange(opt.value)}
           className={cn(
-            'flex h-8 flex-1 items-center justify-center rounded-md text-white/70 transition-colors',
-            opt.value === value ? 'bg-[#41414A] text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02)]' : 'hover:bg-white/5',
+            'flex h-6 flex-1 items-center justify-center rounded-md text-white/70 transition-colors',
+            opt.value === value ? 'bg-[#131316] text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02)]' : 'hover:bg-white/5',
           )}
         >
           {opt.icon}
@@ -1267,25 +1416,63 @@ export function SegmentedControl<T extends string>({
   );
 }
 
-/** `icon` is usually an asset path, rendered as an `<img>` — but a couple of fields (e.g. rotation)
+/** A single pill (icon + value sharing one background/border, not a bare icon beside a separately
+ * boxed `NumberField`) — matches every other icon-leading field in this panel (Rotation, Padding).
+ * `icon` is usually an asset path, rendered as an `<img>` — but a couple of fields (e.g. rotation)
  * have no matching 16px asset yet, so a `ReactNode` (a lucide icon) is accepted directly too. */
 export function IconNumberField({
   icon,
+  iconStyle,
   value,
   onCommit,
   scrubbable = false,
   scrubStep = 1,
+  unit,
+  title,
+  className,
 }: {
   icon: string | ReactNode;
+  /** Only meaningful when `icon` is an asset path — e.g. rotating a reused glyph 90° for a
+   * vertical variant (the group panel's own gap field). */
+  iconStyle?: CSSProperties;
   value: string;
   onCommit: (value: string) => void;
   scrubbable?: boolean;
   scrubStep?: number;
+  /** A fixed, non-editable suffix shown after the value (e.g. "px") — purely a display label, never
+   * part of the editable text or the committed value itself. */
+  unit?: string;
+  title?: string;
+  className?: string;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const scrub = useScrubDrag(Number(value) || 0, onCommit, scrubStep);
+  const [focused, setFocused] = useState(false);
+  const active = focused || scrub.dragging;
+  const highlighted = active || scrub.hovered;
   return (
-    <div className="flex items-center gap-1.5">
-      {typeof icon === 'string' ? <img src={icon} alt="" className="size-4 shrink-0 opacity-70" /> : <span className="flex size-4 shrink-0 items-center justify-center text-white/70">{icon}</span>}
-      <NumberField className="w-full" value={value} onCommit={onCommit} scrubbable={scrubbable} scrubStep={scrubStep} />
+    <div
+      title={title}
+      className={cn('flex h-7 items-center gap-2 rounded-md border px-3 text-[11px] text-white transition-colors', className)}
+      onMouseDown={scrubbable ? (e) => scrub.handleMouseDown(e, inputRef.current) : undefined}
+      onMouseEnter={() => scrub.setHovered(true)}
+      onMouseLeave={() => scrub.setHovered(false)}
+      style={{ background: highlighted ? FIELD_HOVER_BG : '#26262C', borderColor: active ? FIELD_ACTIVE_BORDER : 'transparent', cursor: scrubbable && scrub.hovered ? SCRUB_CURSOR : undefined }}
+    >
+      {typeof icon === 'string' ? <img src={icon} alt="" className="size-4 shrink-0" style={iconStyle} /> : <span className="flex size-4 shrink-0 items-center justify-center text-white/70">{icon}</span>}
+      <input
+        ref={inputRef}
+        defaultValue={value}
+        key={value}
+        onFocus={() => setFocused(true)}
+        onBlur={(e) => {
+          setFocused(false);
+          onCommit(e.target.value);
+        }}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
+      />
+      {unit && <span className="shrink-0 text-white/45">{unit}</span>}
     </div>
   );
 }
@@ -1329,7 +1516,7 @@ export function SelectField({
         <button
           type="button"
           className={cn(
-            'flex h-8 flex-1 items-center gap-2 rounded-lg border border-chrome-border bg-chrome-border-subtle px-3 text-sm text-chrome-fg',
+            'flex h-7 flex-1 items-center gap-2 rounded-lg border border-transparent bg-chrome-border-subtle px-3 text-[11px] text-chrome-fg',
             triggerClassName,
           )}
         >

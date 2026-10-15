@@ -5,7 +5,7 @@ import { useT } from '@/lib/i18n';
 import { DEFAULT_TEXT_AUTO_LAYOUT } from '@/lib/text-auto-layout';
 import { computeGroupAutoLayout, inferGroupAutoLayout, paddingOnlyGroupLayout } from '@/lib/group-auto-layout';
 import type { LayoutElement, TextAutoLayout } from '@/types';
-import { NumberField, type EditorTarget } from './PanelKit';
+import { IconNumberField, type EditorTarget } from './PanelKit';
 
 type Padding = TextAutoLayout['padding'];
 type Side = keyof Padding;
@@ -17,22 +17,51 @@ function formatPadding(value: number): string {
 
 function PaddingField({ icon, iconStyle, label, value, onCommit }: { icon: string; iconStyle?: React.CSSProperties; label: string; value: string; onCommit: (value: string) => void }) {
   return (
-    <div className="flex h-7 min-w-0 flex-1 items-center gap-2" title={label}>
-      <img src={icon} alt="" className="size-4 shrink-0" style={iconStyle} />
-      <NumberField scrubbable className="h-7 w-0 min-w-0 flex-1 rounded-[6px] border-transparent" value={value} onCommit={onCommit} />
-    </div>
+    <IconNumberField scrubbable icon={icon} iconStyle={iconStyle} title={label} className="min-w-0 flex-1" value={value} onCommit={onCommit} />
   );
 }
 
 /** One of the Dimensions row's W/H pills — read-only: a box's size follows its content (and
  * padding), and is changed by resizing it on the canvas rather than typed here. `onReset` (given
- * once that side has been resized by hand) adds a small "Reset" that makes it fit its content again. */
-export function DimensionField({ axis, value, onReset }: { axis: 'W' | 'H'; value: number; onReset?: () => void }) {
+ * once that side has been resized by hand) adds a small "Reset" that makes it fit its content again.
+ * `dimmed` (on by default) shows the value at 25% opacity, reading as "derived, not yours to type
+ * into" — the Dimensions row's own lock toggle turns it off, brightening to full white, once
+ * unlocked. */
+export function DimensionField({
+  axis,
+  value,
+  onReset,
+  onCommit,
+  resetKey,
+  dimmed = true,
+}: {
+  axis: 'W' | 'H';
+  value: number;
+  onReset?: () => void;
+  /** When given, this axis is actually typable (Shape/Image, whose frame size isn't content-derived)
+   * instead of the plain read-only display span Text/Group use. */
+  onCommit?: (raw: string) => void;
+  /** Forces the input to remount (so a fresh `defaultValue` takes) when the value changes from
+   * outside rather than from this very field's own blur — the selected element's id is enough. */
+  resetKey?: string;
+  dimmed?: boolean;
+}) {
   const t = useT();
   return (
-    <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-sm tracking-[-0.01em]">
+    <div className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-lg bg-[#26262C] px-3 text-[11px] tracking-[-0.01em]">
       <span className="text-white/65">{axis}</span>
-      <span className="min-w-0 flex-1 truncate text-white/25">{Math.round(value)}</span>
+      {onCommit ? (
+        <input
+          type="text"
+          defaultValue={String(Math.round(value))}
+          key={`${resetKey}-${axis}-${Math.round(value)}`}
+          onBlur={(e) => onCommit(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+          className={cn('w-0 min-w-0 flex-1 bg-transparent outline-none', dimmed ? 'text-white/25' : 'text-white')}
+        />
+      ) : (
+        <span className={cn('min-w-0 flex-1 truncate', dimmed ? 'text-white/25' : 'text-white')}>{Math.round(value)}</span>
+      )}
       {onReset && (
         <button
           type="button"
@@ -60,7 +89,7 @@ const MODES: { value: AutoLayoutMode; label: string; icon: string }[] = [
 export function LayoutShell({ mode, onModeChange, children }: { mode?: AutoLayoutMode; onModeChange?: (mode: AutoLayoutMode) => void; children: ReactNode }) {
   const t = useT();
   return (
-    <div className="flex flex-col gap-3 px-4">
+    <div className="flex flex-col gap-3 px-4 pt-2 pb-4">
       <div className="flex h-8 items-center">
         <span className="text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Layout')}</span>
       </div>
@@ -92,17 +121,88 @@ export function LayoutShell({ mode, onModeChange, children }: { mode?: AutoLayou
 /** The "Dimensions" caption every layer type's W/H row sits under. */
 export function DimensionsLabel() {
   const t = useT();
-  return <span className="flex h-[22px] items-center text-[11px] tracking-[-0.01em] text-white/65">{t('Dimensions')}</span>;
+  return <span className="flex h-[22px] items-center text-[9px] leading-4 tracking-[-0.01em] text-white/65">{t('Dimensions')}</span>;
 }
 
-/** "Dimensions" label over the read-only W/H pills. */
+/** "Dimensions" label over the read-only W/H pills. The lock toggle beside them is a visual
+ * preview only, matching this panel's other not-yet-wired controls (`PositionSection`'s anchor
+ * picker) — there's no real W/H aspect-lock concept to apply since both fields already derive from
+ * content rather than being independently typable; it still flips its own icon and `aria-pressed`
+ * state on click, same as any other toggle, even though nothing downstream reads it yet. */
 function DimensionsBlock({ w, h, onResetW, onResetH }: { w: number; h: number; onResetW?: () => void; onResetH?: () => void }) {
+  const t = useT();
+  const [locked, setLocked] = useState(true);
   return (
     <div className="flex flex-col gap-1">
       <DimensionsLabel />
       <div className="flex items-center gap-2">
-        <DimensionField axis="W" value={w} onReset={onResetW} />
-        <DimensionField axis="H" value={h} onReset={onResetH} />
+        <DimensionField axis="W" value={w} onReset={onResetW} dimmed={locked} />
+        <DimensionField axis="H" value={h} onReset={onResetH} dimmed={locked} />
+        <button
+          type="button"
+          aria-label={locked ? t('Unlock aspect ratio') : t('Lock aspect ratio')}
+          aria-pressed={locked}
+          onClick={() => setLocked((v) => !v)}
+          className="flex size-7 shrink-0 items-center justify-center rounded-lg text-white shadow-[0_1px_6px_-1px_rgba(0,0,0,0.02),0_1px_2px_rgba(0,0,0,0.03),0_2px_4px_rgba(0,0,0,0.02)] transition-colors hover:bg-white/10"
+        >
+          {/* Both source assets bake in their own fill color (the lock blue, the unlock white) —
+              forced to plain white here regardless, per spec. */}
+          <img
+            src={locked ? '/icons/edit_panel/lock%2012.svg' : '/icons/edit_panel/unlock%2012.svg'}
+            alt=""
+            className="size-4"
+            style={{ filter: 'brightness(0) invert(1)' }}
+          />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Shape/Image's own "Dimensions" row — unlike Text/Group's read-only `DimensionsBlock`, both W and
+ * H are the thing actually being sized here, so they're real typable fields, and the lock toggle is
+ * real too (caller owns the `locked` state and the aspect-ratio math on commit) rather than the
+ * decorative, always-local one `DimensionsBlock` uses. */
+export function EditableDimensionsBlock({
+  w,
+  h,
+  locked,
+  onToggleLock,
+  onCommitW,
+  onCommitH,
+  resetKey,
+}: {
+  w: number;
+  h: number;
+  locked: boolean;
+  onToggleLock: () => void;
+  onCommitW: (raw: string) => void;
+  onCommitH: (raw: string) => void;
+  resetKey: string;
+}) {
+  const t = useT();
+  return (
+    <div className="flex flex-col gap-1">
+      <DimensionsLabel />
+      <div className="flex items-center gap-2">
+        <DimensionField axis="W" value={w} onCommit={onCommitW} resetKey={resetKey} dimmed={false} />
+        <DimensionField axis="H" value={h} onCommit={onCommitH} resetKey={resetKey} dimmed={false} />
+        <button
+          type="button"
+          aria-label={locked ? t('Unlock aspect ratio') : t('Lock aspect ratio')}
+          aria-pressed={locked}
+          onClick={onToggleLock}
+          className="flex size-7 shrink-0 items-center justify-center rounded-lg text-white shadow-[0_1px_6px_-1px_rgba(0,0,0,0.02),0_1px_2px_rgba(0,0,0,0.03),0_2px_4px_rgba(0,0,0,0.02)] transition-colors hover:bg-white/10"
+        >
+          {/* Both source assets bake in their own fill color (the lock blue, the unlock white) —
+              forced to plain white here regardless, per spec, same as Dimensions' own lock. */}
+          <img
+            src={locked ? '/icons/edit_panel/lock%2012.svg' : '/icons/edit_panel/unlock%2012.svg'}
+            alt=""
+            className="size-4"
+            style={{ filter: 'brightness(0) invert(1)' }}
+          />
+        </button>
       </div>
     </div>
   );
@@ -133,8 +233,8 @@ function PaddingControls({ padding, resetKey, onCommit }: { padding: Padding; re
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-[11px] tracking-[-0.01em] text-white/65">{t('Padding')}</span>
-      <div className="flex items-center gap-4">
+      <span className="text-[9px] leading-4 tracking-[-0.01em] text-white/65">{t('Padding')}</span>
+      <div className="flex items-center gap-2">
         {individual ? (
           <>
             <PaddingField icon="/icons/edit_panel/padding-left%2016.svg" label={t('Left padding')} value={formatPadding(padding.left)} onCommit={(v) => commit(['left'], v)} />
@@ -161,7 +261,7 @@ function PaddingControls({ padding, resetKey, onCommit }: { padding: Padding; re
       </div>
       {individual && (
         // Right-padded by the toggle button's width + gap, so these fields line up under the row above.
-        <div className="flex items-center gap-4 pr-11">
+        <div className="flex items-center gap-2 pr-11">
           <PaddingField icon="/icons/edit_panel/padding-right%2016.svg" label={t('Right padding')} value={formatPadding(padding.right)} onCommit={(v) => commit(['right'], v)} />
           <PaddingField icon="/icons/edit_panel/padding-bottom%2016.svg" label={t('Bottom padding')} value={formatPadding(padding.bottom)} onCommit={(v) => commit(['bottom'], v)} />
         </div>
@@ -277,7 +377,7 @@ export function GroupAutoLayoutSection({ layoutId, groupId }: { layoutId: string
       <PaddingControls padding={padding} resetKey={groupId} onCommit={commitPadding} />
       {stacked && (
         <div className="flex flex-col gap-2">
-          <span className="text-[11px] tracking-[-0.01em] text-white/65">{t('Gap')}</span>
+          <span className="text-[9px] leading-4 tracking-[-0.01em] text-white/65">{t('Gap')}</span>
           <div className="flex w-[91.5px]">
             {/* The gap glyph is drawn for a column; turned a quarter for a row. */}
             <PaddingField

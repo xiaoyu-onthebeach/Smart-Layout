@@ -1,7 +1,9 @@
 import type { LayoutElement } from '@/types';
 
-/** Synthesizes a human-readable layer name from an element's slot/kind — there's no explicit `name` field. */
+/** Synthesizes a human-readable layer name from an element's slot/kind, or an explicit `name` when
+ * one was given at creation (SVG-imported/drawn vectors — see svg-import.ts). */
 export function layerName(el: LayoutElement): string {
+  if (el.name) return el.name;
   switch (el.slot) {
     case 'image':
       return 'Image';
@@ -16,6 +18,6 @@ export function layerName(el: LayoutElement): string {
     case 'badge':
       return 'Badge';
     default:
-      return el.kind === 'shape' ? 'Shape' : el.kind === 'text' ? 'Text' : 'Image';
+      return el.kind === 'shape' ? 'Shape' : el.kind === 'text' ? 'Text' : el.kind === 'vector' ? 'Vector' : 'Image';
   }
 }

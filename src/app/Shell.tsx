@@ -47,6 +47,8 @@ export function Shell() {
   const selectElement = useAppStore((s) => s.selectElement);
   const setSelectedElements = useAppStore((s) => s.setSelectedElements);
   const groupElements = useAppStore((s) => s.groupElements);
+  const editingVectorElementId = useAppStore((s) => s.editingVectorElementId);
+  const setEditingVectorElement = useAppStore((s) => s.setEditingVectorElement);
   const showRulers = useAppStore((s) => s.showRulers);
   // The ruler toggle only ever lives inside the editor's own canvas toolbar — this guard just
   // keeps a stale flag from a previous editor session from shifting the sidebar on another step.
@@ -75,6 +77,25 @@ export function Shell() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         e.preventDefault();
         undo();
+        return;
+      }
+
+      // Enter/Esc toggle a selected vector layer's joint-editing mode (svg import & edit spec,
+      // Part 2) — Enter only when exactly one vector is selected and focused (not mid-edit already);
+      // Esc only matters here while actually editing (an otherwise-focused selection has nothing to
+      // back out of via Esc, so this doesn't fight any other Escape handler in the app).
+      if (e.key === 'Enter' && !editingVectorElementId && selectedElements.length === 1) {
+        const ref = selectedElements[0];
+        const el = useAppStore.getState().layoutsById[ref.layoutId]?.elements.find((candidate) => candidate.id === ref.elementId);
+        if (el?.kind === 'vector') {
+          e.preventDefault();
+          setEditingVectorElement(el.id);
+          return;
+        }
+      }
+      if (e.key === 'Escape' && editingVectorElementId) {
+        e.preventDefault();
+        setEditingVectorElement(null);
         return;
       }
 
@@ -136,7 +157,7 @@ export function Shell() {
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [viewAllActivePageId, selectedElements, deletePage, removeElement, duplicateElement, reorderElement, selectElement, setSelectedElements, groupElements]);
+  }, [viewAllActivePageId, selectedElements, deletePage, removeElement, duplicateElement, reorderElement, selectElement, setSelectedElements, groupElements, editingVectorElementId, setEditingVectorElement]);
 
   if (step === 'playgrounds') return <PlaygroundsPage />;
 

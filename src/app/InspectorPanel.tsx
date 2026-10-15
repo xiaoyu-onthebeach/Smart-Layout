@@ -48,7 +48,10 @@ export function InspectorPanel() {
       content = <CombinedEditorPanel targets={targets} />;
     } else if (targets[0].element.kind === 'text') {
       content = <TextEditorPanel targets={targets} />;
-    } else if (targets[0].element.kind === 'shape') {
+    } else if (targets[0].element.kind === 'shape' || targets[0].element.kind === 'vector') {
+      // A converted/imported/drawn vector gets the exact same panel a shape does — same style
+      // fields apply either way, and the "Count" row inside it only shows up for a polygon or any
+      // vector (see ShapeEditorPanel's own `showsCornerCount`).
       content = <ShapeEditorPanel targets={targets} />;
     } else if (targets[0].element.kind === 'image') {
       content = <ImageEditorPanel targets={targets} />;

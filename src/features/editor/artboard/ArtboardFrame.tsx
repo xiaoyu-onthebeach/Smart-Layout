@@ -3,12 +3,16 @@ import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { nextId, layoutHasContent, isRealLayer } from '@/lib/create-layout';
+import { layerName } from '@/lib/layer-name';
 import { useApplyImage } from '@/hooks/useApplyImage';
 import type { GroupAutoLayout, Layout, LayoutElement, ShapeKind } from '@/types';
+import { parseSvgToElements } from '@/lib/svg-import';
+import { JOINT_ICON, shapeKindToVectorPath } from '@/lib/vector-path';
 import { ElementRenderer } from './ElementRenderer';
 import { DraggableImageElement } from './DraggableImageElement';
 import { EditableTextElement } from './EditableTextElement';
 import { SelectableShapeElement } from './SelectableShapeElement';
+import { SelectableVectorElement } from './SelectableVectorElement';
 import { ImagePickerDialog } from './ImagePickerDialog';
 import { ImageBox } from './ImageBox';
 import { LayerContextMenu } from './LayerContextMenu';
@@ -28,6 +32,33 @@ const FOCUS_RECT_MIN_SIZE = 24;
 // still working underneath via these bare hit zones, cursor-only, no visible squares. Edge zones
 // span the whole side (not just a short strip at the middle) so any point along the border drags.
 const FOCUS_HANDLE_HIT = 12;
+
+// Pen tool's custom "Default" cursor (svg import & edit spec, Part 3) — a preview joint sitting
+// right at the pen nib's own tip, so the two have to be two separately positioned images rather
+// than one plain CSS `cursor: url()`. Each icon's own true anchor point (not 50/50 center) matches
+// how every other joint/handle icon in this file is positioned — see vector-path.ts's own icons for
+// the same technique.
+const PEN_CURSOR_ICON = { src: '/icons/SVGs/pen cursor 24.svg', w: 24, h: 24, tip: { x: 3.87, y: 3.87 } };
+function PenToolCursor({ x, y }: { x: number; y: number }) {
+  return (
+    <>
+      {/* Painted first (behind) — the pen nib itself sits in front of the preview joint, not the
+          other way around. */}
+      <img
+        src={JOINT_ICON.src}
+        alt=""
+        className="pointer-events-none fixed z-50"
+        style={{ left: x - JOINT_ICON.center.x, top: y - JOINT_ICON.center.y, width: JOINT_ICON.w, height: JOINT_ICON.h }}
+      />
+      <img
+        src={PEN_CURSOR_ICON.src}
+        alt=""
+        className="pointer-events-none fixed z-50"
+        style={{ left: x - PEN_CURSOR_ICON.tip.x, top: y - PEN_CURSOR_ICON.tip.y, width: PEN_CURSOR_ICON.w, height: PEN_CURSOR_ICON.h }}
+      />
+    </>
+  );
+}
 
 function focusHandleCursor(handle: ResizeHandle): string {
   return handle === 'nw' || handle === 'se' ? 'nwse-resize' : handle === 'ne' || handle === 'sw' ? 'nesw-resize' : handle === 'n' || handle === 's' ? 'ns-resize' : 'ew-resize';
@@ -308,6 +339,8 @@ export function ArtboardFrame({
   const setGroupLayout = useAppStore((s) => s.setGroupLayout);
   const addElement = useAppStore((s) => s.addElement);
   const setEditingTextElement = useAppStore((s) => s.setEditingTextElement);
+  const editingVectorElementId = useAppStore((s) => s.editingVectorElementId);
+  const setEditingVectorElement = useAppStore((s) => s.setEditingVectorElement);
   const activeTool = useAppStore((s) => s.activeTool);
   const setActiveTool = useAppStore((s) => s.setActiveTool);
   const shapeToolKind = useAppStore((s) => s.shapeToolKind);
@@ -654,9 +687,18 @@ export function ArtboardFrame({
   // whatever's already there) centered on the drop point.
   function handleAssetDrop(e: ReactDragEvent) {
     e.preventDefault();
+    const point = nativePointFromEvent(e);
+
+    // An .svg dragged straight from the OS (not a library/uploads tile, which drags a plain URL —
+    // see the `text/plain` branch below) arrives as a real File on `dataTransfer.files`.
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (droppedFile && (droppedFile.type === 'image/svg+xml' || droppedFile.name.toLowerCase().endsWith('.svg'))) {
+      droppedFile.text().then((text) => importSvgAt(text, point));
+      return;
+    }
+
     const url = e.dataTransfer.getData('text/plain');
     if (!url) return;
-    const point = nativePointFromEvent(e);
     const img = new Image();
     img.onload = () => {
       const ratio = img.naturalWidth / img.naturalHeight;
@@ -740,6 +782,63 @@ export function ArtboardFrame({
     };
     img.src = url;
   }
+
+  // SVG import entry point (upload button, canvas file drop, clipboard paste — see svg-import.ts
+  // and svg-import-and-edit.md's Part 1) — parses `svgText` and adds the resulting vector/group/
+  // image layers centered on `point`, selecting all of them (a freshly-placed vector starts in the
+  // Focused state like any other new layer; Part 2's joint editing is entered separately, by
+  // double-click or Enter). Layer-panel presentation of the result is deliberately not handled yet.
+  function importSvgAt(svgText: string, point: { x: number; y: number }) {
+    const { elements, warning } = parseSvgToElements(svgText, point);
+    if (warning || elements.length === 0) {
+      console.warn('[svg-import]', warning ?? 'nothing to import');
+      return;
+    }
+    for (const element of elements) addElement(layoutId, element);
+    selectScene(layout.setId);
+    setSelectedElements(elements.map((el) => ({ layoutId, elementId: el.id })));
+  }
+
+  // "Make all shapes editable as svg": double-clicking any shape layer converts it in place into a
+  // real, joint-editable vector path (same geometry its own pre-conversion rendering already drew —
+  // see shapeKindToVectorPath's own doc comment) and hands it straight to Part 2's joint editing.
+  function convertShapeToVectorAndEdit(element: LayoutElement) {
+    // The layer's displayed name would otherwise flip from "Shape" to "Vector" the moment it
+    // converts (layerName() falls back to a kind-based default when nothing's set) — captured
+    // before the kind change so it reads exactly the same before and after.
+    const name = layerName(element);
+    const path = shapeKindToVectorPath(element.shape ?? 'rect', element.frame.w, element.frame.h, element.style.polygonSides);
+    updateElement(layoutId, element.id, { kind: 'vector', path, shape: undefined, name });
+    setEditingVectorElement(element.id);
+  }
+
+  // Third SVG import entry point: pasting markup straight from the clipboard, as its own
+  // `image/svg+xml` item or as text/html containing a `<svg>...</svg>` (e.g. copied from a code
+  // editor or a browser's "copy element" devtools action). Only this frame's own live instance
+  // listens, and only when focus isn't already inside some other text field/editable.
+  useEffect(() => {
+    if (!active) return;
+    function onPaste(e: ClipboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target?.isContentEditable || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return;
+      const point = { x: nativeWidth / 2, y: nativeHeight / 2 };
+      const svgItem = Array.from(e.clipboardData?.items ?? []).find((item) => item.type === 'image/svg+xml');
+      if (svgItem) {
+        e.preventDefault();
+        svgItem.getAsString((text) => importSvgAt(text, point));
+        return;
+      }
+      const text = e.clipboardData?.getData('text/html') || e.clipboardData?.getData('text/plain') || '';
+      const match = text.match(/<svg[\s\S]*?<\/svg>/i);
+      if (match) {
+        e.preventDefault();
+        importSvgAt(match[0], point);
+      }
+    }
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, layoutId, nativeWidth, nativeHeight]);
 
   // Commits the background image straight to the frame's own full bounds — the one-click fix for a
   // moved/undersized image leaving a gap. Sets pendingExpand first (briefly, just for the duration
@@ -983,7 +1082,21 @@ export function ArtboardFrame({
     }
   }
 
-  const frameCursorClass = !active ? 'cursor-pointer' : activeTool === 'text' ? 'cursor-text' : activeTool === 'shape' ? 'cursor-crosshair' : '';
+  const frameCursorClass = !active
+    ? 'cursor-pointer'
+    : activeTool === 'text'
+      ? 'cursor-text'
+      : activeTool === 'shape'
+        ? 'cursor-crosshair'
+        : activeTool === 'pen'
+          ? 'cursor-none'
+          : '';
+  // Pen tool's own cursor (svg import & edit spec, Part 3 "Default" state) is a DOM-tracked overlay,
+  // not a plain CSS `cursor: url()` — it's two separate icons (the pen nib + a preview joint sitting
+  // right at its tip), which a single cursor image can't compose. Native cursor hidden above via
+  // `cursor-none`, this follows the real mouse position in its place. Only the entry
+  // point/appearance is wired here — placing joints by clicking is later work.
+  const [penCursorPos, setPenCursorPos] = useState<{ x: number; y: number } | null>(null);
 
   // Keeps every auto-layout group stacked after any change — a member resized (text re-measured,
   // padding typed), dragged out of place, added or removed. Runs as a layout effect, after the
@@ -1065,6 +1178,8 @@ export function ArtboardFrame({
           borderRadius: layout.radius ? `${layout.radius}px` : undefined,
         }}
         onMouseDown={handleFrameMouseDown}
+        onMouseMove={activeTool === 'pen' ? (e) => setPenCursorPos({ x: e.clientX, y: e.clientY }) : undefined}
+        onMouseLeave={activeTool === 'pen' ? () => setPenCursorPos(null) : undefined}
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleAssetDrop}
         onContextMenu={(e) => {
@@ -1074,16 +1189,22 @@ export function ArtboardFrame({
         }}
       >
         {active && <ImagePickerDialog open={insertImagePickerOpen} onOpenChange={setInsertImagePickerOpen} onSelect={insertNewImage} />}
+        {activeTool === 'pen' && penCursorPos && <PenToolCursor x={penCursorPos.x} y={penCursorPos.y} />}
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.svg,image/svg+xml"
           className="hidden"
           onMouseDown={(e) => e.stopPropagation()}
           onChange={(e) => {
             const file = e.target.files?.[0];
             e.target.value = '';
-            if (file) handleUploadFile(file);
+            if (!file) return;
+            if (file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')) {
+              file.text().then((text) => importSvgAt(text, { x: nativeWidth / 2, y: nativeHeight / 2 }));
+            } else {
+              handleUploadFile(file);
+            }
           }}
         />
 
@@ -1197,6 +1318,28 @@ export function ArtboardFrame({
               );
             }
 
+            if (el.kind === 'vector') {
+              return (
+                <SelectableVectorElement
+                  key={el.id}
+                  element={el}
+                  layoutId={layoutId}
+                  layoutWidth={nativeWidth}
+                  layoutHeight={nativeHeight}
+                  scale={scale}
+                  activeTool={activeTool}
+                  selected={showsBoundsBox(el.id)}
+                  isEditing={editingVectorElementId === el.id}
+                  altKeyDown={altKeyDown}
+                  onSelect={makeOnSelect(el)}
+                  onStartEditing={() => setEditingVectorElement(el.id)}
+                  onContextMenu={handleLayerContextMenu(el.id)}
+                  onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
+                  onStartAltDuplicate={startAltDuplicate}
+                />
+              );
+            }
+
             if (el.kind === 'shape') {
               return (
                 <SelectableShapeElement
@@ -1208,8 +1351,11 @@ export function ArtboardFrame({
                   scale={scale}
                   activeTool={activeTool}
                   selected={showsBoundsBox(el.id)}
+                  isEditing={editingVectorElementId === el.id}
                   altKeyDown={altKeyDown}
                   onSelect={makeOnSelect(el)}
+                  onConvertAndEdit={() => convertShapeToVectorAndEdit(el)}
+                  onEnterEllipseEdit={() => setEditingVectorElement(el.id)}
                   onContextMenu={handleLayerContextMenu(el.id)}
                   onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
                   onStartAltDuplicate={startAltDuplicate}

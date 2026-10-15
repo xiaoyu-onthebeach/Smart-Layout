@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { boxShadowCss, textShadowCss } from '@/lib/shadow';
 import { isGradient } from '@/lib/gradient';
 import { autoLayoutPaddingCss } from '@/lib/text-auto-layout';
+import { shapeKindPolygonPoints } from '@/lib/vector-path';
 import type { LayoutElement } from '@/types';
 
 /**
@@ -122,8 +123,38 @@ export function ElementRenderer({
     );
   }
 
+  if (element.kind === 'vector') {
+    const path = element.path;
+    if (!path || path.points.length < 2) return <div onMouseDown={onMouseDown} style={pos} />;
+    const d = path.points.map((p) => `${p.x},${p.y}`).join(' ');
+    return (
+      <div onMouseDown={onMouseDown} style={{ ...pos, boxShadow: boxShadowCss(style.dropShadow, style.innerShadow) }} className={cn(selected && 'outline outline-[1.5px] outline-button-primary')}>
+        <svg viewBox={`0 0 ${frame.w} ${frame.h}`} preserveAspectRatio="none" className="size-full overflow-visible" style={{ opacity: style.opacity !== undefined ? style.opacity / 100 : undefined }}>
+          {path.closed ? (
+            <polygon points={d} fill={style.fill ?? 'none'} stroke={style.strokeColor} strokeWidth={style.strokeWidth} />
+          ) : (
+            <polyline points={d} fill="none" stroke={style.strokeColor ?? style.fill ?? '#000000'} strokeWidth={style.strokeWidth ?? 2} strokeLinecap="round" strokeLinejoin="round" />
+          )}
+        </svg>
+      </div>
+    );
+  }
+
   if (element.kind === 'shape') {
     const isLine = element.shape === 'line';
+    // Arrow/polygon aren't CSS-rect-shaped — same fixed silhouette the (also non-CSS-shaped) vector
+    // conversion on double-click draws, so entering/leaving edit mode never visually jumps.
+    if (element.shape === 'arrow' || element.shape === 'polygon') {
+      const points = shapeKindPolygonPoints(element.shape, frame.w, frame.h, style.polygonSides);
+      const d = points.map((p) => `${p.x},${p.y}`).join(' ');
+      return (
+        <div onMouseDown={onMouseDown} style={{ ...pos, boxShadow: boxShadowCss(style.dropShadow, style.innerShadow) }} className={cn(selected && 'outline outline-[1.5px] outline-button-primary')}>
+          <svg viewBox={`0 0 ${frame.w} ${frame.h}`} preserveAspectRatio="none" className="size-full overflow-visible" style={{ opacity: style.opacity !== undefined ? style.opacity / 100 : undefined }}>
+            <polygon points={d} fill={style.fill ?? '#d4d4d8'} stroke={style.strokeWidth ? (style.strokeColor ?? '#000000') : undefined} strokeWidth={style.strokeWidth} />
+          </svg>
+        </div>
+      );
+    }
     return (
       <div
         onMouseDown={onMouseDown}

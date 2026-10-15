@@ -10,16 +10,20 @@ import { useT } from '@/lib/i18n';
 const SOFT_SHADOW = 'shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)]';
 const HOVER_BG = 'hover:bg-[#26262C]';
 
-const SHAPE_KIND_OPTIONS: { kind: ShapeKind; label: string; shortcut: string }[] = [
+const SHAPE_KIND_OPTIONS: { kind: ShapeKind; label: string; shortcut: string; shiftShortcut?: boolean }[] = [
   { kind: 'rect', label: 'Rectangle', shortcut: 'R' },
   { kind: 'ellipse', label: 'Oval', shortcut: 'O' },
   { kind: 'line', label: 'Line', shortcut: 'L' },
+  { kind: 'arrow', label: 'Arrow', shortcut: 'L', shiftShortcut: true },
+  { kind: 'polygon', label: 'Polygon', shortcut: '' },
 ];
 
 const SHAPE_KIND_ICON: Record<ShapeKind, string> = {
   rect: '/icons/rectangle.svg',
   ellipse: '/icons/oval.svg',
   line: '/icons/line.svg',
+  arrow: '/icons/arrow%2024.svg',
+  polygon: '/icons/polygon%2024.svg',
 };
 
 /** The glyph for a given shape kind, at whatever size the caller's className sets. */
@@ -127,7 +131,7 @@ function ShapeToolButton() {
               >
                 <ShapeKindGlyph kind={opt.kind} className="size-6 shrink-0" />
                 <span className="min-w-0 flex-1 truncate text-sm tracking-[-0.01em]">{t(opt.label)}</span>
-                <span className="shrink-0 text-sm text-white/45">{opt.shortcut}</span>
+                <span className="shrink-0 text-sm text-white/45">{opt.shortcut && (opt.shiftShortcut ? `⇧${opt.shortcut}` : opt.shortcut)}</span>
               </button>
             </PopoverClose>
           ))}
@@ -150,15 +154,21 @@ export function DefaultModeToolbar() {
   const hasSceneSelected = selectedSceneIds.length > 0;
 
   // R/O/L arm the shape tool with that kind directly — the same shortcuts the picker itself
-  // advertises next to each option. Only live once a scene is selected, matching when the Shape
-  // button itself is even shown.
+  // advertises next to each option. P arms the pen tool (svg import & edit spec, Part 3). Both only
+  // live once a scene is selected, matching when the Shape/Pen buttons themselves are even shown.
   useEffect(() => {
     if (!hasSceneSelected) return;
     function onKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
       if (target?.isContentEditable || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const opt = SHAPE_KIND_OPTIONS.find((o) => o.shortcut.toLowerCase() === e.key.toLowerCase());
+      if (e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        setActiveTool('pen');
+        return;
+      }
+      // Arrow shares the 'L' key with Line, distinguished only by Shift (⇧L vs L) — matched here too.
+      const opt = SHAPE_KIND_OPTIONS.find((o) => o.shortcut !== '' && o.shortcut.toLowerCase() === e.key.toLowerCase() && Boolean(o.shiftShortcut) === e.shiftKey);
       if (!opt) return;
       e.preventDefault();
       setShapeToolKind(opt.kind);
@@ -179,6 +189,10 @@ export function DefaultModeToolbar() {
             <span className="h-full w-px self-stretch bg-chrome-border-soft" />
 
             <RenderedToolButton tool="text" active={activeTool === 'text'} onSelect={setActiveTool} icon="/icons/text.svg" label={t('Text')} />
+            {/* Pen tool entry point (svg import & edit spec, Part 3) — arms click-by-click vector
+                drawing on the canvas; see ArtboardFrame's PenToolCursor for the custom cursor this
+                shows while hovering it. The actual joint-by-joint drawing interaction is later work. */}
+            <GlyphToolButton tool="pen" active={activeTool === 'pen'} onSelect={setActiveTool} icon="/icons/SVGs/pen%2024.svg" label={t('Pen')} />
             <ShapeToolButton />
           </>
         )}

@@ -6,7 +6,7 @@ import type { SnapGuide } from '@/lib/snap-guides';
 export type AppStep = 'playgrounds' | 'start' | 'editor' | 'allLayouts';
 
 /** Bottom-toolbar tool. 'text'/'shape' arm a click/drag placement gesture rather than adding instantly. */
-export type Tool = 'select' | 'move' | 'text' | 'shape';
+export type Tool = 'select' | 'move' | 'text' | 'shape' | 'pen';
 
 /** 'full' cascades layers, content, and style; 'styleOnly' re-styles existing matching layers only. */
 export type CascadeMode = 'full' | 'styleOnly';
@@ -42,6 +42,11 @@ export type UiSlice = {
   selectedSceneIds: string[];
   /** The text element currently in contentEditable edit mode (typing/caret), if any. */
   editingTextElementId: string | null;
+  /** The vector element currently in joint-editing mode (see VectorEditOverlay / the SVG import &
+   * edit spec's Part 2), if any — entered via double-click or Enter while focused, exited via Esc or
+   * clicking away. Mirrors `editingTextElementId`'s reset points (selection/tool changes etc.);
+   * entering one kind of edit mode always clears the other. */
+  editingVectorElementId: string | null;
   /** The plain-text character range (start/end offsets into that element's own `content`) currently
    * highlighted inside a text element's contentEditable while it's being edited — lets
    * TextEditorPanel's Spacing/Stretch fields apply a change to just that substring. See
@@ -120,6 +125,7 @@ export type UiSlice = {
   selectScenes: (setIds: string[]) => void;
   /** Enters (id) or exits (null) contentEditable edit mode for a text element. */
   setEditingTextElement: (id: string | null) => void;
+  setEditingVectorElement: (id: string | null) => void;
   /** Updates (or clears, with `null`) the live in-progress text-range selection. */
   setTextRangeSelection: (sel: { layoutId: string; elementId: string; start: number; end: number } | null) => void;
   setActiveTool: (tool: Tool) => void;

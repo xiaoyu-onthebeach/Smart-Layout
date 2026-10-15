@@ -47,6 +47,12 @@ export function layoutHasSiblingSizes(state: MatchState, layoutId: string): bool
   return groupSiblingLayouts(state, layoutId).length > 0;
 }
 
+/** Total size count of `layoutId`'s own group, itself included — the number the match-select row
+ * reports once enabled ("Selected in N sizes"). */
+export function groupSizeCount(state: MatchState, layoutId: string): number {
+  return groupSiblingLayouts(state, layoutId).length + 1;
+}
+
 /** For one selected element, the matching refs across every other size in its group. */
 export function findMatchingRefsAcrossGroup(state: MatchState, ref: ElementRef): ElementRef[] {
   const sourceLayout = state.layoutsById[ref.layoutId];

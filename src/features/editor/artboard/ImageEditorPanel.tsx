@@ -5,17 +5,15 @@ import { useAppStore } from '@/store/useAppStore';
 import type { LayoutElement } from '@/types';
 import { layerName } from '@/lib/layer-name';
 import { useT } from '@/lib/i18n';
-import { cn } from '@/lib/utils';
 import {
   BORDER_STYLE_ICONS,
   CornerRadiusRow,
   FIELD_ACTIVE_BORDER,
-  fieldHighlightStyle,
   FIELD_HOVER_BG,
+  GridFieldRow,
+  IconSlot,
   ImageHoverReplace,
-  INLINE_VALUE_COL_WIDTH,
   InlineColorField,
-  InlineRow,
   NumberField,
   PanelCard,
   PanelDivider,
@@ -24,13 +22,13 @@ import {
   PanelSection,
   MatchSelectButton,
   PositionSection,
+  RotationRow,
   SectionIconBadge,
   SegmentedControl,
   ShadowSection,
-  useFieldHighlight,
   type EditorTarget,
 } from './PanelKit';
-import { DimensionsLabel, LayoutShell } from './AutoLayoutSection';
+import { EditableDimensionsBlock, LayoutShell } from './AutoLayoutSection';
 import { ImagePickerDialog } from './ImagePickerDialog';
 
 type SolidBorderStyle = 'solid' | 'dashed' | 'dotted';
@@ -90,50 +88,51 @@ function ImageFillField({
   const highlighted = active || hovered;
   return (
     <div
-      className="flex h-9 shrink-0 items-center gap-2 rounded-lg border pr-2 pl-1 transition-colors"
+      className="flex h-7 min-w-0 flex-1 items-center justify-between gap-1 rounded-md border px-1 transition-colors"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        width: INLINE_VALUE_COL_WIDTH,
         background: highlighted ? FIELD_HOVER_BG : '#26262C',
         borderColor: active ? FIELD_ACTIVE_BORDER : 'transparent',
       }}
     >
-      <Popover open={open} onOpenChange={handleOpenChange}>
-        <PopoverAnchor virtualRef={virtualAnchorRef} />
-        <PopoverTrigger asChild>
-          <button
-            ref={triggerRef}
-            type="button"
-            aria-label={t('Image')}
-            className="size-6 shrink-0 rounded-[4px] border border-black/20 bg-cover bg-center"
-            style={{ backgroundColor: '#40404A', backgroundImage: imageUrl ? `url(${imageUrl})` : undefined }}
-          />
-        </PopoverTrigger>
-        <PopoverContent
-          side="left"
-          align="start"
-          sideOffset={8}
-          className="flex flex-col gap-2 border-[#2F2F37] p-4 text-chrome-fg"
-          style={{ width: 279, background: '#19191D', borderRadius: 16, boxShadow: '0px 4px 32px 4px rgba(0,0,0,0.24)' }}
-        >
-          <div className="flex h-6 items-center gap-1">
-            <SectionIconBadge>
-              <img src="/icons/edit_panel/image%20header.svg" alt="" className="size-3.5" />
-            </SectionIconBadge>
-            <span className="text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Image')}</span>
-          </div>
-          <ImageHoverReplace onReplace={onReplace}>
-            <div
-              className="h-[238px] w-[247px] rounded-2xl border bg-cover bg-center"
-              style={{ backgroundColor: '#26262C', backgroundImage: imageUrl ? `url(${imageUrl})` : undefined, borderColor: '#40404A' }}
+      <div className="flex min-w-0 items-center gap-1">
+        <Popover open={open} onOpenChange={handleOpenChange}>
+          <PopoverAnchor virtualRef={virtualAnchorRef} />
+          <PopoverTrigger asChild>
+            <button
+              ref={triggerRef}
+              type="button"
+              aria-label={t('Image')}
+              className="size-[18px] shrink-0 rounded-[4px] border border-black/20 bg-cover bg-center"
+              style={{ backgroundColor: '#40404A', backgroundImage: imageUrl ? `url(${imageUrl})` : undefined }}
             />
-          </ImageHoverReplace>
-        </PopoverContent>
-      </Popover>
-      <span className="min-w-0 flex-1 truncate text-sm text-white">{t('Image')}</span>
-      <div className="h-4 w-px shrink-0" style={{ background: '#40404A' }} />
-      <div className="flex shrink-0 items-center">
+          </PopoverTrigger>
+          <PopoverContent
+            side="left"
+            align="start"
+            sideOffset={8}
+            className="flex flex-col gap-2 border-[#2F2F37] p-4 text-chrome-fg"
+            style={{ width: 279, background: '#19191D', borderRadius: 16, boxShadow: '0px 4px 32px 4px rgba(0,0,0,0.24)' }}
+          >
+            <div className="flex h-6 items-center gap-1">
+              <SectionIconBadge>
+                <img src="/icons/edit_panel/image%20header.svg" alt="" className="size-3.5" />
+              </SectionIconBadge>
+              <span className="text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Image')}</span>
+            </div>
+            <ImageHoverReplace onReplace={onReplace}>
+              <div
+                className="h-[238px] w-[247px] rounded-2xl border bg-cover bg-center"
+                style={{ backgroundColor: '#26262C', backgroundImage: imageUrl ? `url(${imageUrl})` : undefined, borderColor: '#40404A' }}
+              />
+            </ImageHoverReplace>
+          </PopoverContent>
+        </Popover>
+        <span className="truncate text-[11px] tracking-[-0.01em] text-white">{t('Image')}</span>
+      </div>
+      <div className="w-px self-stretch shrink-0" style={{ background: '#40404A' }} />
+      <div className="flex w-7 shrink-0 items-center">
         <input
           defaultValue={String(opacity)}
           key={opacity}
@@ -143,9 +142,9 @@ function ImageFillField({
             onOpacityCommit(Math.min(100, Math.max(0, Number(e.target.value) || 0)));
           }}
           onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-          className="w-6 bg-transparent text-right text-sm text-white outline-none"
+          className="w-[18px] shrink-0 bg-transparent text-right text-[11px] tracking-[-0.01em] text-white outline-none"
         />
-        <span className="text-sm text-white/65">%</span>
+        <span className="shrink-0 text-[11px] tracking-[-0.01em] text-white/65">%</span>
       </div>
     </div>
   );
@@ -159,9 +158,6 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const primary = targets[0].element;
   const [aspectLocked, setAspectLocked] = useState(false);
   const [replacingImage, setReplacingImage] = useState(false);
-  const widthField = useFieldHighlight();
-  const heightField = useFieldHighlight();
-  const rotationField = useFieldHighlight();
 
   function replaceImageUrl(url: string) {
     for (const tgt of targets) updateElement(tgt.layoutId, tgt.element.id, { imageUrl: url });
@@ -215,7 +211,7 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
   }));
 
   return (
-    <PanelCard gap={16}>
+    <PanelCard gap={0}>
       <PanelHeader icon={<PanelHeaderIcon src="/icons/edit_panel/panel_image.svg" />} title={title} trailing={<MatchSelectButton targets={targets} />} />
 
       <PositionSection
@@ -226,147 +222,76 @@ export function ImageEditorPanel({ targets }: { targets: EditorTarget[] }) {
         rotation={primary.rotation ?? 0}
         showPositionMode={false}
         resetKey={primary.id}
+        extra={<RotationRow rotation={primary.rotation ?? 0} onCommit={patchRotation} />}
       />
-
-      {/* Appended to the same visual section as Position/Alignment above (no divider in between). */}
-      <div className="flex flex-col gap-3 px-4">
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[11px] text-white/65">{t('Rotation')}</span>
-          <div
-            className="flex h-8 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
-            onMouseEnter={() => rotationField.setHovered(true)}
-            onMouseLeave={() => rotationField.setHovered(false)}
-            style={{ width: 119, ...fieldHighlightStyle(rotationField.hovered, rotationField.focused) }}
-          >
-            <img src="/icons/angle.svg" alt="" className="size-4 shrink-0" />
-            <input
-              type="text"
-              defaultValue={String(Math.round(primary.rotation ?? 0))}
-              key={`${primary.id}-rot-${Math.round(primary.rotation ?? 0)}`}
-              onFocus={() => rotationField.setFocused(true)}
-              onBlur={(e) => {
-                rotationField.setFocused(false);
-                patchRotation(Number(e.target.value) || 0);
-              }}
-              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-              className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
-            />
-            <span className="shrink-0 text-white">°</span>
-          </div>
-        </div>
-      </div>
 
       <PanelDivider />
 
       {/* Unlike text (which fits its content), this box is the thing being sized directly, so W/H
           stay real and editable here, with a lock toggle to scale them together. */}
       <LayoutShell>
-        <div className="flex flex-col gap-1">
-          <DimensionsLabel />
-          <div className="flex items-center gap-2">
-            <div
-              className="flex h-8 flex-1 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
-              onMouseEnter={() => widthField.setHovered(true)}
-              onMouseLeave={() => widthField.setHovered(false)}
-              style={fieldHighlightStyle(widthField.hovered, widthField.focused)}
-            >
-              <span className="shrink-0 text-white/65">W</span>
-              <input
-                type="text"
-                defaultValue={String(Math.round(primary.frame.w))}
-                key={`${primary.id}-w-${Math.round(primary.frame.w)}`}
-                onFocus={() => widthField.setFocused(true)}
-                onBlur={(e) => {
-                  widthField.setFocused(false);
-                  commitWidth(e.target.value);
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
-              />
-            </div>
-            <div
-              className="flex h-8 flex-1 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
-              onMouseEnter={() => heightField.setHovered(true)}
-              onMouseLeave={() => heightField.setHovered(false)}
-              style={fieldHighlightStyle(heightField.hovered, heightField.focused)}
-            >
-              <span className="shrink-0 text-white/65">H</span>
-              <input
-                type="text"
-                defaultValue={String(Math.round(primary.frame.h))}
-                key={`${primary.id}-h-${Math.round(primary.frame.h)}`}
-                onFocus={() => heightField.setFocused(true)}
-                onBlur={(e) => {
-                  heightField.setFocused(false);
-                  commitHeight(e.target.value);
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
-              />
-            </div>
-            <button
-              type="button"
-              aria-label={aspectLocked ? t('Unlock aspect ratio') : t('Lock aspect ratio')}
-              onClick={() => setAspectLocked((v) => !v)}
-              className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors', aspectLocked ? 'bg-white/15' : 'hover:bg-white/10')}
-            >
-              <img src={aspectLocked ? '/icons/edit_panel/lock%2012.svg' : '/icons/edit_panel/unlock%2012.svg'} alt="" className="size-3.5" />
-            </button>
-          </div>
-        </div>
+        <EditableDimensionsBlock
+          w={primary.frame.w}
+          h={primary.frame.h}
+          locked={aspectLocked}
+          onToggleLock={() => setAspectLocked((v) => !v)}
+          onCommitW={commitWidth}
+          onCommitH={commitHeight}
+          resetKey={primary.id}
+        />
       </LayoutShell>
 
       <PanelDivider />
 
       <PanelSection label={t('Styles')}>
-        <InlineRow label={t('Fill')}>
-          <ImageFillField
-            imageUrl={primary.imageUrl}
-            opacity={primary.style.opacity ?? 100}
-            onOpacityCommit={(opacity) => patchStyle({ opacity })}
-            onReplace={() => setReplacingImage(true)}
-          />
-        </InlineRow>
+        <div className="flex items-center gap-2">
+          <div className="grid min-w-0 flex-1 grid-cols-2 items-center gap-2">
+            <span className="text-[9px] leading-4 text-white/65">{t('Fill')}</span>
+            <ImageFillField
+              imageUrl={primary.imageUrl}
+              opacity={primary.style.opacity ?? 100}
+              onOpacityCommit={(opacity) => patchStyle({ opacity })}
+              onReplace={() => setReplacingImage(true)}
+            />
+          </div>
+          <IconSlot />
+        </div>
 
         <CornerRadiusRow value={primary.style.radius ?? 0} onCommit={(radius) => patchStyle({ radius })} max={Math.floor(Math.min(primary.frame.w, primary.frame.h) / 2)} />
       </PanelSection>
 
       <PanelDivider />
 
-      <div className="flex flex-col gap-2 px-4">
+      <div className="flex flex-col gap-2 px-4 pt-2 pb-4">
         <div className="flex items-center justify-between">
           <span className="text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Border')}</span>
           <button
             type="button"
             aria-label={borderExpanded ? t('Remove border') : t('Add border')}
             onClick={toggleBorder}
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white"
           >
             {borderExpanded ? <Minus className="size-4" /> : <Plus className="size-4" />}
           </button>
         </div>
         {borderExpanded && (
-          <div className="flex flex-col gap-3">
-            <InlineRow label={t('Style')}>
-              <div style={{ width: INLINE_VALUE_COL_WIDTH }}>
-                <SegmentedControl options={borderStyleOptions} value={strokeStyle} onChange={(v) => patchStyle({ strokeStyle: v })} />
-              </div>
-            </InlineRow>
+          <div className="flex flex-col gap-2">
+            <GridFieldRow label={t('Style')}>
+              <SegmentedControl options={borderStyleOptions} value={strokeStyle} onChange={(v) => patchStyle({ strokeStyle: v })} />
+            </GridFieldRow>
 
-            <InlineRow label={t('Color')}>
-              <InlineColorField color={primary.style.strokeColor ?? '#000000'} onChange={(strokeColor) => patchStyle({ strokeColor })} />
-            </InlineRow>
+            <GridFieldRow label={t('Color')}>
+              <InlineColorField color={primary.style.strokeColor ?? '#000000'} onChange={(strokeColor) => patchStyle({ strokeColor })} width={101.5} compact />
+            </GridFieldRow>
 
-            <InlineRow label={t('Weight')}>
-              <div className="flex" style={{ width: INLINE_VALUE_COL_WIDTH }}>
-                <NumberField
-                  scrubbable
-                  className="w-[72px]"
-                  value={String(primary.style.strokeWidth ?? 1)}
-                  onCommit={(v) => patchStyle({ strokeWidth: Math.max(0, Number(v) || 0) })}
-                />
-              </div>
-            </InlineRow>
+            <GridFieldRow label={t('Weight')}>
+              <NumberField
+                scrubbable
+                className="w-full bg-[#26262C] text-[11px] font-normal"
+                value={String(primary.style.strokeWidth ?? 1)}
+                onCommit={(v) => patchStyle({ strokeWidth: Math.max(0, Number(v) || 0) })}
+              />
+            </GridFieldRow>
           </div>
         )}
       </div>

@@ -4,14 +4,14 @@ import { useAppStore } from '@/store/useAppStore';
 import type { LayoutElement } from '@/types';
 import { layerName } from '@/lib/layer-name';
 import { useT } from '@/lib/i18n';
-import { cn } from '@/lib/utils';
+import { DEFAULT_POLYGON_SIDES, MIN_POLYGON_SIDES, regularPolygonPoints } from '@/lib/vector-path';
 import {
   BORDER_STYLE_ICONS,
   CornerRadiusRow,
-  fieldHighlightStyle,
-  INLINE_VALUE_COL_WIDTH,
+  GridFieldRow,
+  IconNumberField,
+  IconSlot,
   InlineColorField,
-  InlineRow,
   NumberField,
   PanelCard,
   PanelDivider,
@@ -19,13 +19,13 @@ import {
   PanelHeaderIcon,
   PanelSection,
   PositionSection,
+  RotationRow,
   SegmentedControl,
   MatchSelectButton,
   ShadowSection,
-  useFieldHighlight,
   type EditorTarget,
 } from './PanelKit';
-import { DimensionsLabel, LayoutShell } from './AutoLayoutSection';
+import { EditableDimensionsBlock, LayoutShell } from './AutoLayoutSection';
 
 type SolidBorderStyle = 'solid' | 'dashed' | 'dotted';
 const BORDER_STYLE_LABELS: Record<SolidBorderStyle, string> = { solid: 'Solid', dashed: 'Dashed', dotted: 'Dotted' };
@@ -35,6 +35,9 @@ const SHAPE_HEADER_ICONS: Record<NonNullable<LayoutElement['shape']>, string> = 
   rect: '/icons/edit_panel/panel%20rectangle.svg',
   ellipse: '/icons/edit_panel/panel_circle.svg',
   line: '/icons/edit_panel/panel_line.svg',
+  // No dedicated edit_panel variant exists for these two yet — the same glyph the toolbar itself uses.
+  arrow: '/icons/arrow%2024.svg',
+  polygon: '/icons/polygon%2024.svg',
 };
 
 /** Right-corner panel shown while one or more shape elements are selected — edits broadcast to every target. */
@@ -44,9 +47,6 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
   const updateElement = useAppStore((s) => s.updateElement);
   const primary = targets[0].element;
   const [aspectLocked, setAspectLocked] = useState(false);
-  const widthField = useFieldHighlight();
-  const heightField = useFieldHighlight();
-  const rotationField = useFieldHighlight();
 
   // Same collapsed-by-default, reset-per-selection convention as the text panel's own Border section.
   const [borderExpanded, setBorderExpanded] = useState(() => (primary.style.strokeWidth ?? 0) > 0);
@@ -84,6 +84,26 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
     }
   }
 
+  // "Count" row — only a polygon (regular N-gon) or any vector has a meaningful corner count to
+  // show/edit; other shape kinds (rect/ellipse/line/arrow) have a fixed point count that isn't a
+  // user-facing concept. Changing it regenerates a fresh regular N-gon inscribed in the current
+  // frame either way — for a vector this replaces whatever arbitrary points it had (an imported
+  // logo's actual path included), which is the only generic thing "corner count" can mean for an
+  // arbitrary path; there's no way to add/remove a joint from one specific spot via this field.
+  const showsCornerCount = primary.kind === 'vector' || primary.shape === 'polygon';
+  const cornerCount = primary.kind === 'vector' ? (primary.path?.points.length ?? DEFAULT_POLYGON_SIDES) : (primary.style.polygonSides ?? DEFAULT_POLYGON_SIDES);
+  function commitCornerCount(raw: string) {
+    const next = Math.max(MIN_POLYGON_SIDES, Math.round(Number(raw) || DEFAULT_POLYGON_SIDES));
+    for (const tgt of targets) {
+      const el = tgt.element;
+      if (el.kind === 'vector') {
+        updateElement(tgt.layoutId, el.id, { path: { points: regularPolygonPoints(next, el.frame.w, el.frame.h), closed: true } });
+      } else {
+        updateElement(tgt.layoutId, el.id, { style: { ...el.style, polygonSides: next } });
+      }
+    }
+  }
+
   const strokeStyle: SolidBorderStyle = primary.style.strokeStyle ?? 'solid';
   const title =
     targets.length === 1 ? t(layerName(primary)) : language === 'ja' ? `${targets.length} 個のシェイプレイヤー` : `${targets.length} shape layers`;
@@ -95,7 +115,7 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
   }));
 
   return (
-    <PanelCard gap={16}>
+    <PanelCard gap={0}>
       <PanelHeader icon={<PanelHeaderIcon src={SHAPE_HEADER_ICONS[primary.shape ?? 'rect']} />} title={title} trailing={<MatchSelectButton targets={targets} />} />
 
       <PositionSection
@@ -106,142 +126,77 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
         rotation={primary.rotation ?? 0}
         showPositionMode={false}
         resetKey={primary.id}
+        extra={<RotationRow rotation={primary.rotation ?? 0} onCommit={patchRotation} />}
       />
-
-      {/* Appended to the same visual section as Position/Alignment above (no divider in between). */}
-      <div className="flex flex-col gap-3 px-4">
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[11px] text-white/65">{t('Rotation')}</span>
-          <div
-            className="flex h-8 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
-            onMouseEnter={() => rotationField.setHovered(true)}
-            onMouseLeave={() => rotationField.setHovered(false)}
-            style={{ width: 119, ...fieldHighlightStyle(rotationField.hovered, rotationField.focused) }}
-          >
-            <img src="/icons/angle.svg" alt="" className="size-4 shrink-0" />
-            <input
-              type="text"
-              defaultValue={String(Math.round(primary.rotation ?? 0))}
-              key={`${primary.id}-rot-${Math.round(primary.rotation ?? 0)}`}
-              onFocus={() => rotationField.setFocused(true)}
-              onBlur={(e) => {
-                rotationField.setFocused(false);
-                patchRotation(Number(e.target.value) || 0);
-              }}
-              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-              className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
-            />
-            <span className="shrink-0 text-white">°</span>
-          </div>
-        </div>
-      </div>
 
       <PanelDivider />
 
       {/* Unlike text (which fits its content), this box is the thing being sized directly, so W/H
           stay real and editable here, with a lock toggle to scale them together. */}
       <LayoutShell>
-        <div className="flex flex-col gap-1">
-          <DimensionsLabel />
-          <div className="flex items-center gap-2">
-            <div
-              className="flex h-8 flex-1 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
-              onMouseEnter={() => widthField.setHovered(true)}
-              onMouseLeave={() => widthField.setHovered(false)}
-              style={fieldHighlightStyle(widthField.hovered, widthField.focused)}
-            >
-              <span className="shrink-0 text-white/65">W</span>
-              <input
-                type="text"
-                defaultValue={String(Math.round(primary.frame.w))}
-                key={`${primary.id}-w-${Math.round(primary.frame.w)}`}
-                onFocus={() => widthField.setFocused(true)}
-                onBlur={(e) => {
-                  widthField.setFocused(false);
-                  commitWidth(e.target.value);
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
-              />
-            </div>
-            <div
-              className="flex h-8 flex-1 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
-              onMouseEnter={() => heightField.setHovered(true)}
-              onMouseLeave={() => heightField.setHovered(false)}
-              style={fieldHighlightStyle(heightField.hovered, heightField.focused)}
-            >
-              <span className="shrink-0 text-white/65">H</span>
-              <input
-                type="text"
-                defaultValue={String(Math.round(primary.frame.h))}
-                key={`${primary.id}-h-${Math.round(primary.frame.h)}`}
-                onFocus={() => heightField.setFocused(true)}
-                onBlur={(e) => {
-                  heightField.setFocused(false);
-                  commitHeight(e.target.value);
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
-              />
-            </div>
-            <button
-              type="button"
-              aria-label={aspectLocked ? t('Unlock aspect ratio') : t('Lock aspect ratio')}
-              onClick={() => setAspectLocked((v) => !v)}
-              className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors', aspectLocked ? 'bg-white/15' : 'hover:bg-white/10')}
-            >
-              <img src={aspectLocked ? '/icons/edit_panel/lock%2012.svg' : '/icons/edit_panel/unlock%2012.svg'} alt="" className="size-3.5" />
-            </button>
-          </div>
-        </div>
+        <EditableDimensionsBlock
+          w={primary.frame.w}
+          h={primary.frame.h}
+          locked={aspectLocked}
+          onToggleLock={() => setAspectLocked((v) => !v)}
+          onCommitW={commitWidth}
+          onCommitH={commitHeight}
+          resetKey={primary.id}
+        />
       </LayoutShell>
 
       <PanelDivider />
 
       <PanelSection label={t('Styles')}>
-        <InlineRow label={t('Fill')}>
-          <InlineColorField color={primary.style.fill ?? '#d9d9d9'} onChange={(fill) => patchStyle({ fill })} />
-        </InlineRow>
+        <div className="flex items-center gap-2">
+          <div className="grid min-w-0 flex-1 grid-cols-2 items-center gap-2">
+            <span className="text-[9px] leading-4 text-white/65">{t('Fill')}</span>
+            <InlineColorField color={primary.style.fill ?? '#d9d9d9'} onChange={(fill) => patchStyle({ fill })} width="flex-1" />
+          </div>
+          <IconSlot />
+        </div>
 
         <CornerRadiusRow value={primary.style.radius ?? 0} onCommit={(radius) => patchStyle({ radius })} max={Math.floor(Math.min(primary.frame.w, primary.frame.h) / 2)} />
+
+        {showsCornerCount && (
+          <GridFieldRow label={t('Count')}>
+            <IconNumberField scrubbable icon="/icons/polygon-count%2016.svg" className="w-full" value={String(cornerCount)} onCommit={commitCornerCount} />
+          </GridFieldRow>
+        )}
       </PanelSection>
 
       <PanelDivider />
 
-      <div className="flex flex-col gap-2 px-4">
+      <div className="flex flex-col gap-2 px-4 pt-2 pb-4">
         <div className="flex items-center justify-between">
           <span className="text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Border')}</span>
           <button
             type="button"
             aria-label={borderExpanded ? t('Remove border') : t('Add border')}
             onClick={toggleBorder}
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white"
           >
             {borderExpanded ? <Minus className="size-4" /> : <Plus className="size-4" />}
           </button>
         </div>
         {borderExpanded && (
-          <div className="flex flex-col gap-3">
-            <InlineRow label={t('Style')}>
-              <div style={{ width: INLINE_VALUE_COL_WIDTH }}>
-                <SegmentedControl options={borderStyleOptions} value={strokeStyle} onChange={(v) => patchStyle({ strokeStyle: v })} />
-              </div>
-            </InlineRow>
+          <div className="flex flex-col gap-2">
+            <GridFieldRow label={t('Style')}>
+              <SegmentedControl options={borderStyleOptions} value={strokeStyle} onChange={(v) => patchStyle({ strokeStyle: v })} />
+            </GridFieldRow>
 
-            <InlineRow label={t('Color')}>
-              <InlineColorField color={primary.style.strokeColor ?? '#000000'} onChange={(strokeColor) => patchStyle({ strokeColor })} />
-            </InlineRow>
+            <GridFieldRow label={t('Color')}>
+              <InlineColorField color={primary.style.strokeColor ?? '#000000'} onChange={(strokeColor) => patchStyle({ strokeColor })} width={101.5} compact />
+            </GridFieldRow>
 
-            <InlineRow label={t('Weight')}>
-              <div className="flex" style={{ width: INLINE_VALUE_COL_WIDTH }}>
-                <NumberField
-                  scrubbable
-                  className="w-[72px]"
-                  value={String(primary.style.strokeWidth ?? 1)}
-                  onCommit={(v) => patchStyle({ strokeWidth: Math.max(0, Number(v) || 0) })}
-                />
-              </div>
-            </InlineRow>
+            <GridFieldRow label={t('Weight')}>
+              <NumberField
+                scrubbable
+                className="w-full bg-[#26262C] text-[11px] font-normal"
+                value={String(primary.style.strokeWidth ?? 1)}
+                onCommit={(v) => patchStyle({ strokeWidth: Math.max(0, Number(v) || 0) })}
+              />
+            </GridFieldRow>
           </div>
         )}
       </div>

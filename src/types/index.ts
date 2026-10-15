@@ -39,8 +39,17 @@ export type Product = {
   badge?: string;
 };
 
-export type ElementKind = 'image' | 'text' | 'shape';
-export type ShapeKind = 'rect' | 'ellipse' | 'line';
+export type ElementKind = 'image' | 'text' | 'shape' | 'vector';
+export type ShapeKind = 'rect' | 'ellipse' | 'line' | 'arrow' | 'polygon';
+
+/**
+ * A vector path's geometry — straight-segment-only (bezier creation/editing is out of scope per the
+ * SVG import/edit spec), in local coordinates relative to the element's own `frame` (0..frame.w,
+ * 0..frame.h at import time; `frame`/points are kept in sync as the shape is edited). Curves
+ * encountered on import (bezier/arc path commands) are flattened to enough straight segments to
+ * look right — real curve editing is a later project, not this one.
+ */
+export type VectorPath = { points: { x: number; y: number }[]; closed: boolean };
 
 export type ShadowStyle = { enabled: boolean; x: number; y: number; blur: number; color: string; opacity: number };
 
@@ -78,6 +87,17 @@ export type LayoutElement = {
   content?: string; // text content
   imageUrl?: string; // when kind === 'image'
   focalPoint?: { x: number; y: number };
+  /**
+   * Vector only — the path's own geometry. `style.fill`/`strokeColor`/`strokeWidth`/`strokeStyle`
+   * (the same fields a shape uses) paint it.
+   */
+  path?: VectorPath;
+  /**
+   * SVG-import-derived display name (the source element's id/title, or a numbered default like
+   * "Vector 2" per the import spec's numbering rules) — every other layer kind still derives its
+   * name from `kind`/`slot` via `layerName()`, since nothing else has a real name field yet.
+   */
+  name?: string;
   frame: { x: number; y: number; w: number; h: number }; // absolute px in layout space
   /**
    * Image only: briefly holds the target box while an "expand to frame" commit is animating (see
@@ -104,6 +124,11 @@ export type LayoutElement = {
     strokeColor?: string;
     strokeWidth?: number;
     strokeStyle?: 'solid' | 'dashed' | 'dotted';
+    /** Where the stroke sits relative to the layer's own edge — stored per-element like every
+     * other style field, but (same as `boxVerticalAlign`) not yet wired into the renderer: CSS
+     * `border`/`text-stroke` only ever draw centered on the edge, so inside/outside would need
+     * their own layout trick (e.g. an extra wrapping box) to actually render differently. */
+    strokePosition?: 'center' | 'inside' | 'outside';
     letterSpacing?: number;
     /** Horizontal text scale, in percent offset from 100 (0 = normal, e.g. 20 = 120% width). */
     stretch?: number;
@@ -122,10 +147,22 @@ export type LayoutElement = {
     fontStyle?: 'normal' | 'italic';
     /** Text only — the decoration popover's "Case" row. */
     textTransform?: 'none' | 'uppercase' | 'capitalize' | 'lowercase';
-    /** Text only — the decoration popover's "Features" row (superscript/subscript). */
+    /** Text only — the decoration popover's "Features" row (superscript/subscript). Not to be
+     * confused with `boxVerticalAlign` below — this one shifts a run's own baseline, it has
+     * nothing to do with where the text box's content sits within its own box. */
     verticalAlign?: 'baseline' | 'super' | 'sub';
+    /** Text only — the Typography section's own vertical-align row (top/middle/bottom), for
+     * whenever the box is taller than its content (Auto Layout with height hugging turned off).
+     * Stored per-element like every other style field, but — same as `PositionSection`'s anchor
+     * controls — not yet wired into the renderer; defaults to the existing always-top behavior. */
+    boxVerticalAlign?: 'top' | 'middle' | 'bottom';
     /** Shape/image only, 0-100. */
     opacity?: number;
+    /** Shape only, `shape === 'polygon'` — how many sides the regular polygon has (3 when unset,
+     * matching the toolbar's own default triangle). The same "Count" field also edits a converted
+     * `vector` element's own `path.points.length` directly, which needs no field here — see
+     * `regularPolygonPoints` in vector-path.ts. */
+    polygonSides?: number;
     /** Text only — 'vertical-rl' stacks characters top-to-bottom (traditional Japanese layout). */
     writingMode?: 'horizontal-tb' | 'vertical-rl';
     dropShadow?: ShadowStyle;

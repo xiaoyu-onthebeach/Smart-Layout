@@ -2,6 +2,7 @@ import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useSt
 import {
   ALargeSmall,
   AlignCenter,
+  AlignJustify,
   AlignLeft,
   AlignRight,
   Bold,
@@ -25,21 +26,21 @@ import {
   CornerRadiusRow,
   fieldHighlightStyle,
   IconNumberField,
-  INLINE_VALUE_COL_WIDTH,
+  IconSlot,
   InlineColorField,
-  InlineRow,
   NumberField,
   PanelCard,
   PanelDivider,
   PanelHeader,
   PanelHeaderIcon,
   PanelSection,
-  MatchSelectButton,
+  MatchSelectRow,
   PositionSection,
   SegmentedControl,
   SelectField,
   ShadowSection,
   useFieldHighlight,
+  useMatchSelectVisible,
   type EditorTarget,
 } from './PanelKit';
 import { AutoLayoutSection } from './AutoLayoutSection';
@@ -63,7 +64,71 @@ const ALIGN_OPTIONS = [
   { value: 'left', label: 'Left', icon: <AlignLeft className="size-4" /> },
   { value: 'center', label: 'Center', icon: <AlignCenter className="size-4" /> },
   { value: 'right', label: 'Right', icon: <AlignRight className="size-4" /> },
+  { value: 'justify', label: 'Justify', icon: <AlignJustify className="size-4" /> },
 ] as const;
+/** The box-level counterpart to `ALIGN_OPTIONS` above — where the text sits vertically within its
+ * own box, as opposed to left/center/right within a line. A dedicated icon set (`public/icons/
+ * Item/text-align-*.svg`), distinct from the Position section's "align to frame" row
+ * (`layers-align-top/middle/bottom.svg` in `PanelKit.tsx`), which means something different. */
+const VERTICAL_ALIGN_OPTIONS = [
+  { value: 'top', label: 'Top', icon: '/icons/Item/text-align-top%2016.svg' },
+  { value: 'middle', label: 'Middle', icon: '/icons/Item/text-align-middle%2016.svg' },
+  { value: 'bottom', label: 'Bottom', icon: '/icons/Item/text-align-bottom%2016.svg' },
+] as const;
+
+/** The Typography section's own pair of alignment rows (horizontal text-align, and the box-level
+ * vertical-align stacked beneath it) — a bespoke look distinct from the shared `SegmentedControl`:
+ * the active item sits on `#131316` (the same "pressed" dark `CornerRadiusRow`'s mode toggle uses)
+ * rather than the shared control's lighter `#41414A`, per this row's own spec. */
+function TextAlignSegmented<T extends string>({ options, value, onChange }: { options: readonly { value: T; icon: ReactNode }[]; value: T; onChange: (value: T) => void }) {
+  return (
+    <div className="flex items-center gap-0.5 rounded-md p-0.5" style={{ background: '#26262C' }}>
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className="flex h-6 flex-1 items-center justify-center rounded text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+          style={
+            opt.value === value
+              ? { background: '#131316', color: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.03), 0 1px 6px -1px rgba(0,0,0,0.02), 0 2px 4px rgba(0,0,0,0.02)' }
+              : undefined
+          }
+        >
+          {opt.icon}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The Border section's own row shape — a fixed-width label column (wide enough for "Position",
+ * its longest label) followed by the value, as a real 2-column grid rather than the shared
+ * `InlineRow`'s label-auto-width + `justify-between` pairing. `InlineRow` sizes itself to its own
+ * label+value content with no width of its own, so used standalone its label column's width (and
+ * therefore the value column's left edge) drifts per row depending on how long that row's own
+ * label happens to be — fine when every row's value has its own independent fixed width, but not
+ * when the goal is literally "every row's title column lines up." A plain grid with an explicit
+ * pixel column guarantees that across the 4 independent row instances here, which `InlineRow`'s
+ * own "auto" sizing can't (each row is its own separate layout, so "auto" would size to that row's
+ * own content, not a width shared with the others). `InlineRow` itself stays untouched — it's
+ * shared with the Shape/Image panels' own Border section. */
+function BorderFieldRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      {/* Both columns are a fixed 100.5px each (209px total with the 8px gap, matching the row
+          width the original spec measured) rather than the value column stretching to fill the
+          rest of the row — any space left over after it (this row's own outer wrapper is still
+          `flex-1`) just sits blank before the reserved `IconSlot`. */}
+      <div className="grid min-w-0 flex-1 grid-cols-[100.5px_100.5px] items-center gap-2">
+        <span className="text-[9px] leading-4 text-white/65">{label}</span>
+        {children}
+      </div>
+      <IconSlot />
+    </div>
+  );
+}
+
 /** One item inside a `DecorationSegmented` group — shares `SegmentedControl`'s own per-item look
  * (dark pill, lighter highlight when active) but as a bare toggle rather than an exclusive-choice
  * group, since the "Style" row's three toggles (bold/italic/underline) are independent of each
@@ -92,7 +157,7 @@ function DecorationSegmented({ children }: { children: ReactNode }) {
 function DecorationRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex h-8 w-full items-center gap-1">
-      <span className="w-[54px] shrink-0 text-[11px] tracking-[-0.01em] text-white/65">{label}</span>
+      <span className="w-[54px] shrink-0 text-[9px] leading-4 tracking-[-0.01em] text-white/65">{label}</span>
       {children}
     </div>
   );
@@ -261,6 +326,12 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
     setBorderExpanded((primary.style.strokeWidth ?? 0) > 0);
   }, [primary.id]);
   const rotationField = useFieldHighlight();
+  const rotationRounded = Math.round(primary.rotation ?? 0);
+  // Controlled (not the usual defaultValue+key-remount pattern) so the invisible mirror span below
+  // can track every keystroke, not just the value committed on blur — needed for the ° to stay
+  // flush against the number while typing, not just once the field is done being edited.
+  const [rotationDraft, setRotationDraft] = useState(String(rotationRounded));
+  useEffect(() => setRotationDraft(String(rotationRounded)), [rotationRounded]);
 
   function patchStyle(patch: Partial<LayoutElement['style']>) {
     for (const tgt of targets) updateElement(tgt.layoutId, tgt.element.id, { style: { ...tgt.element.style, ...patch } });
@@ -316,7 +387,8 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
     }
   }
 
-  const align = (primary.style.align as 'left' | 'center' | 'right') ?? 'left';
+  const align = (primary.style.align as 'left' | 'center' | 'right' | 'justify') ?? 'left';
+  const boxVerticalAlign = primary.style.boxVerticalAlign ?? 'top';
   const textDecoration = primary.style.textDecoration ?? 'none';
   const fontStyle = primary.style.fontStyle ?? 'normal';
   const textTransform = primary.style.textTransform ?? 'none';
@@ -330,16 +402,31 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
     targets.length === 1 ? t(layerName(primary)) : language === 'ja' ? `${targets.length} 個のテキストレイヤー` : `${targets.length} text layers`;
 
   const fontWeightOptions = FONT_WEIGHTS.map((w) => ({ ...w, label: t(w.label) }));
-  const alignOptions = ALIGN_OPTIONS.map((opt) => ({ ...opt, label: t(opt.label) }));
   const borderStyleOptions: { value: SolidBorderStyle; label: string; icon: React.ReactNode }[] = (['solid', 'dashed', 'dotted'] as const).map((value) => ({
     value,
     label: t(BORDER_STYLE_LABELS[value]),
     icon: <img src={BORDER_STYLE_ICONS[value]} alt="" className="size-4" />,
   }));
+  const strokePosition = primary.style.strokePosition ?? 'center';
+  const borderPositionOptions: { value: 'center' | 'inside' | 'outside'; label: string; icon: React.ReactNode }[] = [
+    { value: 'inside', label: t('Inside'), icon: <img src="/icons/inside.svg" alt="" className="size-4" /> },
+    { value: 'center', label: t('Center'), icon: <img src="/icons/center.svg" alt="" className="size-4" /> },
+    { value: 'outside', label: t('Outside'), icon: <img src="/icons/outside.svg" alt="" className="size-4" /> },
+  ];
+
+  const showMatchSelect = useMatchSelectVisible(targets);
 
   return (
-    <PanelCard gap={16}>
-      <PanelHeader icon={<PanelHeaderIcon src="/icons/edit_panel/Panel_text.svg" />} title={title} trailing={<MatchSelectButton targets={targets} />} />
+    <PanelCard gap={0}>
+      <PanelHeader icon={<PanelHeaderIcon src="/icons/edit_panel/Panel_text.svg" />} title={title} />
+
+      {showMatchSelect && (
+        <>
+          <PanelDivider />
+          <MatchSelectRow targets={targets} />
+          <PanelDivider />
+        </>
+      )}
 
       <PositionSection
         x={primary.frame.x}
@@ -349,37 +436,53 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
         rotation={primary.rotation ?? 0}
         showPositionMode={false}
         resetKey={primary.id}
-      />
-
-      {/* Appended to the same visual section as Position/Alignment above (no divider in between) —
-          Rotation is a real, editable mirror of dragging just outside a selected corner handle.
-          The box's W/H live in the Layout section below instead, alongside Auto Layout. */}
-      <div className="flex flex-col gap-3 px-4">
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[11px] text-white/65">{t('Rotation')}</span>
-          <div
-            className="flex h-8 shrink-0 items-center gap-2 rounded-lg border px-3 text-sm transition-colors"
-            onMouseEnter={() => rotationField.setHovered(true)}
-            onMouseLeave={() => rotationField.setHovered(false)}
-            style={{ width: 119, ...fieldHighlightStyle(rotationField.hovered, rotationField.focused) }}
-          >
-            <img src="/icons/angle.svg" alt="" className="size-4 shrink-0" />
-            <input
-              type="text"
-              defaultValue={String(Math.round(primary.rotation ?? 0))}
-              key={`${primary.id}-${Math.round(primary.rotation ?? 0)}`}
-              onFocus={() => rotationField.setFocused(true)}
-              onBlur={(e) => {
-                rotationField.setFocused(false);
-                patchRotation(Number(e.target.value) || 0);
-              }}
-              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-              className="w-0 min-w-0 flex-1 bg-transparent text-white outline-none"
-            />
-            <span className="shrink-0 text-white">°</span>
+        // Rotation is appended inside Position's own padded block (no divider in between) — a
+        // real, editable mirror of dragging just outside a selected corner handle. The box's W/H
+        // live in the Layout section below instead, alongside Auto Layout.
+        extra={
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[9px] leading-4 text-white/65">{t('Rotation')}</span>
+            <div className="flex items-center gap-2">
+              <div
+                className="flex h-7 shrink-0 items-center gap-2 rounded-lg border px-3 text-[11px] transition-colors"
+                onMouseEnter={() => rotationField.setHovered(true)}
+                onMouseLeave={() => rotationField.setHovered(false)}
+                style={{ width: 105, ...fieldHighlightStyle(rotationField.hovered, rotationField.focused) }}
+              >
+                <img src="/icons/angle.svg" alt="" className="size-4 shrink-0" />
+                {/* The number and ° are nested in their own gap-less flex group — the parent's own
+                    `gap-2` (meant for the icon-to-value spacing) was landing between them too when
+                    they were plain siblings of it, which is what the actual gap turned out to be,
+                    not the input's own sizing. */}
+                <div className="flex shrink-0 items-center">
+                  {/* Exact-width auto-sizing via an invisible mirror span that sets the wrapper's
+                      own size through normal text flow, with the input absolutely positioned over
+                      it so it never contributes its own (much wider) intrinsic size to that
+                      calculation — a `size`/`ch`-based width only approximates a proportional
+                      font's real glyph widths, which still left a gap of its own before the °. */}
+                  <span className="relative inline-block shrink-0">
+                    <span className="invisible whitespace-pre">{rotationDraft || '0'}</span>
+                    <input
+                      type="text"
+                      value={rotationDraft}
+                      onChange={(e) => setRotationDraft(e.target.value)}
+                      onFocus={() => rotationField.setFocused(true)}
+                      onBlur={(e) => {
+                        rotationField.setFocused(false);
+                        patchRotation(Number(e.target.value) || 0);
+                      }}
+                      onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                      className="absolute inset-0 w-full bg-transparent text-white outline-none"
+                    />
+                  </span>
+                  <span className="shrink-0 text-white">°</span>
+                </div>
+              </div>
+              <IconSlot />
+            </div>
           </div>
-        </div>
-      </div>
+        }
+      />
 
       <PanelDivider />
 
@@ -388,15 +491,18 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
       <PanelDivider />
 
       <PanelSection label={t('Content')}>
-        <textarea
-          ref={contentRef}
-          value={contentDraft}
-          onChange={(e) => setContentDraft(e.target.value)}
-          onBlur={() => commitContent(contentDraft)}
-          placeholder={t('placeholder text')}
-          rows={1}
-          className="w-full resize-none overflow-hidden rounded-lg bg-[#26262C] p-3 text-sm text-chrome-fg shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02)] outline-none placeholder:text-white/45"
-        />
+        <div className="flex items-start gap-2">
+          <textarea
+            ref={contentRef}
+            value={contentDraft}
+            onChange={(e) => setContentDraft(e.target.value)}
+            onBlur={() => commitContent(contentDraft)}
+            placeholder={t('placeholder text')}
+            rows={1}
+            className="min-w-0 flex-1 resize-none overflow-hidden rounded-lg bg-[#26262C] p-3 text-sm text-chrome-fg shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02)] outline-none placeholder:text-white/45"
+          />
+          <IconSlot />
+        </div>
       </PanelSection>
 
       <PanelDivider />
@@ -408,100 +514,133 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
             options={FONT_FAMILIES.map((f) => ({ value: f, label: <span style={{ fontFamily: f }}>{f}</span> }))}
             onChange={(fontFamily) => patchStyle({ fontFamily })}
           />
+          <IconSlot />
         </div>
         <div className="flex items-center gap-2">
-          <SelectField
-            value={String(primary.style.fontWeight ?? 600)}
-            options={fontWeightOptions.map((w) => ({ value: String(w.value), label: w.label }))}
-            onChange={(v) => patchStyle({ fontWeight: Number(v) })}
-          />
-          <NumberField
-            scrubbable
-            className="w-14 shrink-0"
-            value={String(primary.style.fontSize ?? 16)}
-            onCommit={(v) => patchStyle({ fontSize: Math.max(1, Number(v) || 16) })}
-          />
-        </div>
-
-        <div className="grid grid-cols-3 gap-2">
-          <div className="flex flex-col gap-1">
-            <span className="text-[11px] text-white/65">{t('Spacing')}</span>
-            <IconNumberField
-              scrubbable={!primary.style.letterSpacingRange}
-              icon="/icons/letter-spacing.svg"
-              value={primary.style.letterSpacingRange ? t('Mixed') : String(primary.style.letterSpacing ?? 0)}
-              onCommit={(v) => patchRangeableStyle('letterSpacingRange', 'letterSpacing', v)}
+          <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
+            <SelectField
+              value={String(primary.style.fontWeight ?? 600)}
+              options={fontWeightOptions.map((w) => ({ value: String(w.value), label: w.label }))}
+              onChange={(v) => patchStyle({ fontWeight: Number(v) })}
             />
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-[11px] text-white/65">{t('Stretch')}</span>
-            <IconNumberField
-              scrubbable={!primary.style.stretchRange}
-              icon="/icons/letter-stretch.svg"
-              value={primary.style.stretchRange ? t('Mixed') : String(primary.style.stretch ?? 0)}
-              onCommit={(v) => patchRangeableStyle('stretchRange', 'stretch', v)}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-[11px] text-white/65">{t('Line height')}</span>
-            <IconNumberField
+            <NumberField
               scrubbable
-              scrubStep={0.01}
-              icon="/icons/line-height.svg"
-              value={String(primary.style.lineHeight ?? 1.2)}
-              onCommit={(v) => patchStyle({ lineHeight: Number(v) || 1.2 })}
+              className="min-w-0 text-[11px] font-normal"
+              value={String(primary.style.fontSize ?? 16)}
+              onCommit={(v) => patchStyle({ fontSize: Math.max(1, Number(v) || 16) })}
             />
           </div>
+          <IconSlot />
         </div>
 
-        <div className="flex items-end gap-2">
-          <div className="flex flex-1 flex-col gap-1">
-            <span className="text-[11px] text-white/65">{t('Alignment')}</span>
-            <SegmentedControl
-              options={alignOptions as unknown as { value: 'left' | 'center' | 'right'; label: string; icon: React.ReactNode }[]}
-              value={align}
-              onChange={(v) => patchStyle({ align: v })}
-            />
+        {/* 2-column grid, not 3-across — Spacing/Stretch share the first row, Line height starts
+            the second on its own (left-aligned, not stretched to fill the row). The reserved icon
+            column sits once, outside the grid, so it reads as one continuous column alongside the
+            whole group rather than only appearing next to Line height's own row. */}
+        <div className="flex items-start gap-2">
+          <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
+            <div className="flex flex-col gap-1">
+              <span className="text-[9px] leading-4 text-white/65">{t('Spacing')}</span>
+              <IconNumberField
+                scrubbable={!primary.style.letterSpacingRange}
+                icon="/icons/letter-spacing.svg"
+                value={primary.style.letterSpacingRange ? t('Mixed') : String(primary.style.letterSpacing ?? 0)}
+                unit="px"
+                onCommit={(v) => patchRangeableStyle('letterSpacingRange', 'letterSpacing', v)}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[9px] leading-4 text-white/65">{t('Stretch')}</span>
+              <IconNumberField
+                scrubbable={!primary.style.stretchRange}
+                icon="/icons/letter-stretch.svg"
+                value={primary.style.stretchRange ? t('Mixed') : String(primary.style.stretch ?? 0)}
+                unit="px"
+                onCommit={(v) => patchRangeableStyle('stretchRange', 'stretch', v)}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[9px] leading-4 text-white/65">{t('Line height')}</span>
+              <IconNumberField
+                scrubbable
+                scrubStep={0.01}
+                icon="/icons/line-height.svg"
+                value={String(primary.style.lineHeight ?? 1.2)}
+                unit="px"
+                onCommit={(v) => patchStyle({ lineHeight: Number(v) || 1.2 })}
+              />
+            </div>
           </div>
+          <IconSlot />
+        </div>
+
+        <div className="flex items-start gap-2">
           <div className="flex flex-1 flex-col gap-1">
-            <span className="text-[11px] text-white/65">{t('Decoration')}</span>
-            <DecorationPopover
-              fontWeight={primary.style.fontWeight ?? 400}
-              fontStyle={fontStyle}
-              textDecoration={textDecoration}
-              textTransform={textTransform}
-              verticalAlign={verticalAlign}
-              onPatch={patchStyle}
+            {/* One "Alignment" label governs both rows below it — line-level text-align, then the
+                box-level vertical-align beneath it (where the text sits once the box is taller than
+                its content) — rather than each getting its own separate caption. */}
+            <span className="text-[9px] leading-4 text-white/45">{t('Alignment')}</span>
+            <div className="flex flex-col gap-2">
+              <TextAlignSegmented options={ALIGN_OPTIONS} value={align} onChange={(v) => patchStyle({ align: v })} />
+              <TextAlignSegmented
+                options={VERTICAL_ALIGN_OPTIONS.map((opt) => ({ value: opt.value, icon: <img src={opt.icon} alt="" className="size-4" /> }))}
+                value={boxVerticalAlign}
+                onChange={(v) => patchStyle({ boxVerticalAlign: v })}
+              />
+            </div>
+          </div>
+          <DecorationPopover
+            fontWeight={primary.style.fontWeight ?? 400}
+            fontStyle={fontStyle}
+            textDecoration={textDecoration}
+            textTransform={textTransform}
+            verticalAlign={verticalAlign}
+            onPatch={patchStyle}
+          >
+            {/* Icon only (no label, no border/background of its own at rest) — sits beside the two
+                alignment rows rather than taking a paired column the way it used to. The button
+                itself matches every other reserved icon slot's own 28px width (`IconSlot`), with a
+                24px icon inside it (2px of padding on every side), rather than filling it edge to
+                edge. */}
+            <button
+              type="button"
+              aria-label={t('Decoration')}
+              className={cn(
+                'mt-5 flex size-7 shrink-0 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white data-[state=open]:bg-white/10 data-[state=open]:text-white',
+                hasDecoration && 'text-white',
+              )}
             >
-              {/* No border/background of its own at rest — matching every other row's control
-                  here would make this the only one drawing attention when nothing's toggled on
-                  (see `hasDecoration`, used only to decide whether this reads as "on" while closed). */}
-              <button
-                type="button"
-                aria-label={t('Decoration')}
-                className={cn(
-                  'flex h-8 w-full items-center justify-center rounded-lg text-white/70 transition-colors hover:bg-white/10 hover:text-white data-[state=open]:bg-white/10 data-[state=open]:text-white',
-                  hasDecoration && 'text-white',
-                )}
-              >
-                <img src="/icons/edit_panel/text_decoration.svg" alt="" className="size-8" />
-              </button>
-            </DecorationPopover>
-          </div>
+              <img src="/icons/edit_panel/text_decoration.svg" alt="" className="size-6" />
+            </button>
+          </DecorationPopover>
         </div>
       </PanelSection>
 
       <PanelDivider />
 
       <PanelSection label={t('Styles')}>
-        <InlineRow label={t('Text fill')}>
-          <InlineColorField color={primary.style.color ?? '#ffffff'} onChange={(color) => patchStyle({ color })} />
-        </InlineRow>
+        {/* A true equal 2-column grid, with the same trailing reserved slot every other row in
+            this panel gets — not the shared `InlineRow`'s own label-auto-width + fixed-151px pill
+            (`InlineRow` stays untouched; it's shared with the Shape/Image/Group panels' own
+            Fill/Border rows). `InlineColorField`'s own "compact" padding/gaps are squeezed about
+            as tight as they can go and still read clearly, to fit its hex + opacity text in half
+            of this row's own ~215px. */}
+        <div className="flex items-center gap-2">
+          <div className="grid min-w-0 flex-1 grid-cols-2 items-center gap-2">
+            <span className="text-[9px] leading-4 text-white/65">{t('Text fill')}</span>
+            <InlineColorField color={primary.style.color ?? '#ffffff'} onChange={(color) => patchStyle({ color })} width="flex-1" />
+          </div>
+          <IconSlot />
+        </div>
         {/* The box's background, behind the glyphs (and inside any Auto Layout padding) — off by
             default; the picker's own "no fill" preset is how it's turned back off. */}
-        <InlineRow label={t('Fill')}>
-          <InlineColorField color={primary.style.fill} onChange={(fill) => patchStyle({ fill })} onClear={() => patchStyle({ fill: undefined })} />
-        </InlineRow>
+        <div className="flex items-center gap-2">
+          <div className="grid min-w-0 flex-1 grid-cols-2 items-center gap-2">
+            <span className="text-[9px] leading-4 text-white/65">{t('Shape fill')}</span>
+            <InlineColorField color={primary.style.fill} onChange={(fill) => patchStyle({ fill })} onClear={() => patchStyle({ fill: undefined })} width="flex-1" />
+          </div>
+          <IconSlot />
+        </div>
         {/* Rounds the background's corners — meaningless with no fill to round, so it only
             appears alongside one. Same control and cap (half the shorter side) as the Shape panel. */}
         {primary.style.fill && (
@@ -515,40 +654,46 @@ export function TextEditorPanel({ targets }: { targets: EditorTarget[] }) {
 
       <PanelDivider />
 
-      <div className="flex flex-col gap-2 px-4">
+      <div className="flex flex-col gap-2 px-4 pt-2 pb-4">
         <div className="flex items-center justify-between">
           <span className="text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Border')}</span>
           <button
             type="button"
             aria-label={borderExpanded ? t('Remove border') : t('Add border')}
             onClick={toggleBorder}
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white"
           >
             {borderExpanded ? <Minus className="size-4" /> : <Plus className="size-4" />}
           </button>
         </div>
         {borderExpanded && (
           <div className="flex flex-col gap-3">
-            <InlineRow label={t('Style')}>
-              <div style={{ width: INLINE_VALUE_COL_WIDTH }}>
-                <SegmentedControl options={borderStyleOptions} value={strokeStyle} onChange={(v) => patchStyle({ strokeStyle: v })} />
-              </div>
-            </InlineRow>
+            <BorderFieldRow label={t('Style')}>
+              <SegmentedControl options={borderStyleOptions} value={strokeStyle} onChange={(v) => patchStyle({ strokeStyle: v })} />
+            </BorderFieldRow>
 
-            <InlineRow label={t('Color')}>
-              <InlineColorField color={primary.style.strokeColor ?? '#000000'} onChange={(strokeColor) => patchStyle({ strokeColor })} />
-            </InlineRow>
+            {/* Explicit 100.5px (this row's own grid column width) plus `compact` to squeeze its
+                internal padding/gaps enough for the hex + opacity text to still fit at that width —
+                same treatment the Text panel's own Text fill/Shape fill rows needed. */}
+            <BorderFieldRow label={t('Color')}>
+              <InlineColorField color={primary.style.strokeColor ?? '#000000'} onChange={(strokeColor) => patchStyle({ strokeColor })} width={100.5} compact />
+            </BorderFieldRow>
 
-            <InlineRow label={t('Weight')}>
-              <div className="flex" style={{ width: INLINE_VALUE_COL_WIDTH }}>
-                <NumberField
-                  scrubbable
-                  className="w-[72px]"
-                  value={String(primary.style.strokeWidth ?? 1)}
-                  onCommit={(v) => patchStyle({ strokeWidth: Math.max(0, Number(v) || 0) })}
-                />
-              </div>
-            </InlineRow>
+            {/* Visual preview only, like `boxVerticalAlign` elsewhere — a real inside/outside
+                stroke position needs its own layout trick (CSS borders only ever draw centered on
+                the edge), which is out of scope here; the choice still persists per-element. */}
+            <BorderFieldRow label={t('Position')}>
+              <SegmentedControl options={borderPositionOptions} value={strokePosition} onChange={(v) => patchStyle({ strokePosition: v })} />
+            </BorderFieldRow>
+
+            <BorderFieldRow label={t('Weight')}>
+              <NumberField
+                scrubbable
+                className="w-full text-[11px] font-normal"
+                value={String(primary.style.strokeWidth ?? 1)}
+                onCommit={(v) => patchStyle({ strokeWidth: Math.max(0, Number(v) || 0) })}
+              />
+            </BorderFieldRow>
           </div>
         )}
       </div>

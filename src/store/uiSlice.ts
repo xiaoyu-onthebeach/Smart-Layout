@@ -16,6 +16,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   activeLayoutId: null,
   selectedSceneIds: [],
   editingTextElementId: null,
+  editingVectorElementId: null,
   textRangeSelection: null,
   activeTool: 'select',
   shapeToolKind: 'rect',
@@ -29,7 +30,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   activeCanvasRootId: null,
   pickingFocusForLayoutId: null,
   focusPickConfirmed: false,
-  matchSelectEnabled: true,
+  matchSelectEnabled: false,
   showRulers: false,
   canvasDotBackground: null,
   language: 'en',
@@ -45,7 +46,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   setDownloading: (value) => set({ downloading: value }),
   selectElement: (ref, additive) =>
     set((state) => {
-      if (!ref) return { selectedElements: [], autoMatchedElements: [], editingTextElementId: null, textRangeSelection: null };
+      if (!ref) return { selectedElements: [], autoMatchedElements: [], editingTextElementId: null, editingVectorElementId: null, textRangeSelection: null };
       const clicked = state.layoutsById[ref.layoutId]?.elements.find((el) => el.id === ref.elementId);
       // A locked layer can't be selected at all — from the layers panel or the canvas alike, since
       // both funnel every click through this one action.
@@ -64,7 +65,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
         // is also tracked separately so the canvas can outline only the literal clicked element,
         // not every auto-matched sibling (see autoMatchedElements).
         const matches = !clicked?.groupId && state.matchSelectEnabled ? findMatchingRefsAcrossGroup(state, ref) : [];
-        return { selectedElements: [...groupRefs, ...matches], autoMatchedElements: matches, editingTextElementId: null, textRangeSelection: null };
+        return { selectedElements: [...groupRefs, ...matches], autoMatchedElements: matches, editingTextElementId: null, editingVectorElementId: null, textRangeSelection: null };
       }
       const isRef = (r: { layoutId: string; elementId: string }, g: { layoutId: string; elementId: string }) => r.layoutId === g.layoutId && r.elementId === g.elementId;
       const alreadySelected = groupRefs.every((g) => state.selectedElements.some((r) => isRef(r, g)));
@@ -76,10 +77,11 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
         // whole group) from autoMatchedElements too (a no-op unless it happens to already be there).
         autoMatchedElements: state.autoMatchedElements.filter((r) => !groupRefs.some((g) => isRef(r, g))),
         editingTextElementId: null,
+        editingVectorElementId: null,
         textRangeSelection: null,
       };
     }),
-  setSelectedElements: (refs) => set({ selectedElements: refs, autoMatchedElements: [], editingTextElementId: null, textRangeSelection: null }),
+  setSelectedElements: (refs) => set({ selectedElements: refs, autoMatchedElements: [], editingTextElementId: null, editingVectorElementId: null, textRangeSelection: null }),
   setActiveGuides: (guides) => set({ activeGuides: guides }),
   setActiveLayout: (id) =>
     set({
@@ -88,6 +90,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
       selectedElements: [],
       autoMatchedElements: [],
       editingTextElementId: null,
+      editingVectorElementId: null,
       textRangeSelection: null,
     }),
   selectScene: (setId, additive) =>
@@ -101,7 +104,9 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   // Also drops any in-progress partial text-range selection (see textRangeSelection) — entering a
   // fresh edit session (or leaving one) always starts clean rather than carrying over a highlight
   // from whatever was last selected inside this or another text element.
-  setEditingTextElement: (id) => set({ editingTextElementId: id, textRangeSelection: null }),
+  setEditingTextElement: (id) => set({ editingTextElementId: id, editingVectorElementId: null, textRangeSelection: null }),
+  // Mirrors setEditingTextElement — entering one edit mode always leaves the other.
+  setEditingVectorElement: (id) => set({ editingVectorElementId: id, editingTextElementId: null }),
   // Updated live while typing/selecting inside a text element's contentEditable (see
   // EditableTextElement's selectionchange listener) — read by TextEditorPanel's Spacing/Stretch
   // fields to scope a change to just the highlighted substring instead of the whole layer. Not
@@ -113,8 +118,8 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   // old layer's selection box showing on canvas until the new element gets placed and takes over.
   setActiveTool: (tool) =>
     set(
-      tool === 'text' || tool === 'shape'
-        ? { activeTool: tool, selectedElements: [], autoMatchedElements: [], editingTextElementId: null, textRangeSelection: null }
+      tool === 'text' || tool === 'shape' || tool === 'pen'
+        ? { activeTool: tool, selectedElements: [], autoMatchedElements: [], editingTextElementId: null, editingVectorElementId: null, textRangeSelection: null }
         : { activeTool: tool },
     ),
   setShapeToolKind: (kind) => set({ shapeToolKind: kind }),
@@ -127,6 +132,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
       selectedElements: [],
       autoMatchedElements: [],
       editingTextElementId: null,
+      editingVectorElementId: null,
       textRangeSelection: null,
       selectedGroupId: null,
     }),
