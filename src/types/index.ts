@@ -49,7 +49,20 @@ export type ShapeKind = 'rect' | 'ellipse' | 'line' | 'arrow' | 'polygon';
  * encountered on import (bezier/arc path commands) are flattened to enough straight segments to
  * look right — real curve editing is a later project, not this one.
  */
-export type VectorPath = { points: { x: number; y: number }[]; closed: boolean };
+export type VectorPath = {
+  points: { x: number; y: number }[];
+  closed: boolean;
+  /**
+   * Per-point: true if this is a real anchor (a path command's own endpoint, or one later promoted
+   * via the midpoint-insert interaction) that the Part 2 editing overlay shows and lets the user
+   * drag; false for a curve-flattening sample point that exists only to approximate a bezier/arc's
+   * shape (see svg-geometry's `flattenPathD`/`ellipseToPoints`) and stays invisible there — "shows
+   * every anchor point... hides the control points that shape the curves between them." Absent means
+   * every point is a real anchor: pen-drawn vectors, shape-to-vector conversions, and an import with
+   * only straight-line commands never have hidden samples to begin with.
+   */
+  anchors?: boolean[];
+};
 
 export type ShadowStyle = { enabled: boolean; x: number; y: number; blur: number; color: string; opacity: number };
 
@@ -182,10 +195,23 @@ export type LayoutElement = {
   overridden?: Partial<Record<'frame' | 'style' | 'visible' | 'focalPoint', true>>;
   /** Elements sharing this id (within the same layout) act as one unit — selecting/moving/locking/
    * flipping/reordering/deleting any one of them does the same to every other member. Set by the
-   * "Group layers" layer-context-menu action, cleared by "Ungroup". */
+   * "Group layers" layer-context-menu action, cleared by "Ungroup" — or, for an SVG-imported <g>,
+   * assigned at import time (see `Layout.groupMeta`, and svg-import.ts's own doc comment). */
   groupId?: string;
   /** Set (identically) on every member of a group whose Auto Layout is on — see GroupAutoLayout. */
   groupLayout?: GroupAutoLayout;
+};
+
+/**
+ * A group's own record, keyed by its `groupId` — only exists for a group that needs more than the
+ * flat `groupId` tag on its members can express: a real name, and (via `parentGroupId`) nesting
+ * inside another group. A plain "Group layers"-made group has no entry here at all and just shows
+ * the layer panel's generic "Group"/"Layout group" label, exactly as before this existed. Populated
+ * by SVG import (see svg-import.ts's own doc comment for the structure rules this implements).
+ */
+export type GroupMeta = {
+  name?: string;
+  parentGroupId?: string;
 };
 
 export type Layout = {
@@ -196,6 +222,8 @@ export type Layout = {
   sizeClass: SizeClass;
   ruleSetId: string;
   elements: LayoutElement[];
+  /** See `GroupMeta`. Keyed by `groupId` — only groups that need a name and/or nesting appear here. */
+  groupMeta?: Record<string, GroupMeta>;
   isSource: boolean;
   detached: boolean;
   adaptationNotes: string[];

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useT } from '@/lib/i18n';
+import { readPasteableClipboardContent } from '@/lib/clipboard-import';
 
 function MenuItem({ label, icon, onClick }: { label: string; icon?: string; onClick: () => void }) {
   return (
@@ -34,6 +35,7 @@ export function SceneContextMenu({
   onRename,
   onDuplicate,
   onDelete,
+  onPasteHere,
 }: {
   x: number;
   y: number;
@@ -45,10 +47,26 @@ export function SceneContextMenu({
   onRename: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  /** Imports whatever's on the clipboard at the point this menu was opened from — see
+   * `readPasteableClipboardContent`. Only ever actually invoked while "Paste here" itself is showing. */
+  onPasteHere: () => void;
 }) {
   const t = useT();
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
+  // Checked once per time the menu opens (`x`/`y` change on every fresh right-click) — "only show
+  // when there is something in the clipboard" rather than always offering an item that would just
+  // silently no-op most of the time.
+  const [canPaste, setCanPaste] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    readPasteableClipboardContent().then((content) => {
+      if (!cancelled) setCanPaste(content !== null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [x, y]);
 
   useEffect(() => {
     const el = menuRef.current;
@@ -95,6 +113,12 @@ export function SceneContextMenu({
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {canPaste && (
+        <>
+          <MenuItem label={t('Paste here')} onClick={act(onPasteHere)} />
+          <Divider />
+        </>
+      )}
       <MenuItem label={t('Edit banner')} onClick={act(onEdit)} />
       <MenuItem label={hidden ? t('Show banner') : t('Hide banner')} onClick={act(onToggleHidden)} />
       <Divider />

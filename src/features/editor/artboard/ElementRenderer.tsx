@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { boxShadowCss, textShadowCss } from '@/lib/shadow';
 import { isGradient } from '@/lib/gradient';
 import { autoLayoutPaddingCss } from '@/lib/text-auto-layout';
-import { shapeKindPolygonPoints } from '@/lib/vector-path';
+import { arrowPoints, DEFAULT_POLYGON_SIDES, regularPolygonPoints } from '@/lib/vector-path';
 import type { LayoutElement } from '@/types';
 
 /**
@@ -142,10 +142,24 @@ export function ElementRenderer({
 
   if (element.kind === 'shape') {
     const isLine = element.shape === 'line';
-    // Arrow/polygon aren't CSS-rect-shaped — same fixed silhouette the (also non-CSS-shaped) vector
-    // conversion on double-click draws, so entering/leaving edit mode never visually jumps.
-    if (element.shape === 'arrow' || element.shape === 'polygon') {
-      const points = shapeKindPolygonPoints(element.shape, frame.w, frame.h, style.polygonSides);
+    // Arrow is a stroke-only open line+arrowhead (see `arrowPoints`) — not CSS-rect-shaped and not
+    // filled, unlike every other shape kind.
+    if (element.shape === 'arrow') {
+      const d = arrowPoints(frame.w, frame.h)
+        .map((p) => `${p.x},${p.y}`)
+        .join(' ');
+      return (
+        <div onMouseDown={onMouseDown} style={{ ...pos, boxShadow: boxShadowCss(style.dropShadow, style.innerShadow) }} className={cn(selected && 'outline outline-[1.5px] outline-button-primary')}>
+          <svg viewBox={`0 0 ${frame.w} ${frame.h}`} preserveAspectRatio="none" className="size-full overflow-visible" style={{ opacity: style.opacity !== undefined ? style.opacity / 100 : undefined }}>
+            <polyline points={d} fill="none" stroke={style.strokeColor ?? '#ffffff'} strokeWidth={style.strokeWidth ?? 4} strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+      );
+    }
+    // Polygon isn't CSS-rect-shaped either — same fixed filled silhouette the (also non-CSS-shaped)
+    // vector conversion on double-click draws, so entering/leaving edit mode never visually jumps.
+    if (element.shape === 'polygon') {
+      const points = regularPolygonPoints(style.polygonSides ?? DEFAULT_POLYGON_SIDES, frame.w, frame.h);
       const d = points.map((p) => `${p.x},${p.y}`).join(' ');
       return (
         <div onMouseDown={onMouseDown} style={{ ...pos, boxShadow: boxShadowCss(style.dropShadow, style.innerShadow) }} className={cn(selected && 'outline outline-[1.5px] outline-button-primary')}>

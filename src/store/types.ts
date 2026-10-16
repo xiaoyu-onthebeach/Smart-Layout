@@ -1,5 +1,5 @@
 import type { StateCreator } from 'zustand';
-import type { BannerSet, GroupAutoLayout, Layout, LayoutElement, Product, ShapeKind } from '@/types';
+import type { BannerSet, GroupAutoLayout, GroupMeta, Layout, LayoutElement, Product, ShapeKind } from '@/types';
 import type { SnapGuide } from '@/lib/snap-guides';
 
 /** Top-level app step. Overlays (size-select, add-sizes, bulk-products, export) layer on top of a step. */
@@ -223,6 +223,10 @@ export type LayoutsSlice = {
   ungroupElements: (layoutId: string, groupId: string) => void;
   /** Sets (or, with `undefined`, turns off) a group's Auto Layout on every one of its members at once. */
   setGroupLayout: (layoutId: string, groupId: string, groupLayout: GroupAutoLayout | undefined) => void;
+  /** Merges new/updated entries into a layout's `groupMeta` registry (SVG import's own named,
+   * possibly-nested groups — see `GroupMeta`'s doc comment) — a plain shallow merge, same pattern as
+   * `updateElement`, never removing an existing entry the caller didn't mention. */
+  mergeGroupMeta: (layoutId: string, meta: Record<string, GroupMeta>) => void;
   /** Patches the frame's own background/border, independent of any element on it. */
   updateLayoutStyle: (
     layoutId: string,

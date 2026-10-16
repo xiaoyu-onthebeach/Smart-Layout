@@ -105,8 +105,10 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
   }
 
   const strokeStyle: SolidBorderStyle = primary.style.strokeStyle ?? 'solid';
-  const title =
-    targets.length === 1 ? t(layerName(primary)) : language === 'ja' ? `${targets.length} 個のシェイプレイヤー` : `${targets.length} shape layers`;
+  // This panel is shared with `kind: 'vector'` layers (converted shapes, SVG imports) — the
+  // multi-select title says which one a mixed-count-but-same-kind selection actually is.
+  const kindLabel = primary.kind === 'vector' ? (language === 'ja' ? 'ベクターレイヤー' : 'vector layers') : language === 'ja' ? 'シェイプレイヤー' : 'shape layers';
+  const title = targets.length === 1 ? t(layerName(primary)) : language === 'ja' ? `${targets.length} 個の${kindLabel}` : `${targets.length} ${kindLabel}`;
 
   const borderStyleOptions: { value: SolidBorderStyle; label: string; icon: React.ReactNode }[] = (['solid', 'dashed', 'dotted'] as const).map((value) => ({
     value,

@@ -1,4 +1,4 @@
-import { useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, EyeOff, Image as ImageIcon, Lock } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
@@ -6,6 +6,17 @@ import { layerName } from '@/lib/layer-name';
 import { isRealLayer } from '@/lib/create-layout';
 import { useT } from '@/lib/i18n';
 import type { Layout, LayoutElement } from '@/types';
+
+/** Every nesting level shifts a row's own content right by one chevron-button's worth of space
+ * (24px + the 4px gap after it = 28px) — same width whether what's indenting is a group header's
+ * own chevron+label or a leaf row's thumbnail, so a child's content lines up under its parent
+ * group's name at any depth (svg import & edit.md's own "children indented one level per depth"). */
+const INDENT_PER_DEPTH = 28;
+const BASE_PADDING = 4;
+
+function rowPaddingLeft(depth: number): number {
+  return BASE_PADDING + depth * INDENT_PER_DEPTH;
+}
 
 /** Fits inside the 32px thumbnail box with a little margin on every side. */
 const SHAPE_THUMB_MAX = 20;
@@ -40,6 +51,10 @@ function LayerThumb({ element }: { element: LayoutElement }) {
   if (element.kind === 'shape') {
     return <ShapeThumb element={element} />;
   }
+  if (element.kind === 'vector') {
+    // Bakes in its own #26262C/rounded-corner background — unlike the other thumbnails, no wrapper needed.
+    return <img src="/icons/SVGs/vector%20layer%20thumbnail.svg" alt="" className="size-8 shrink-0" />;
+  }
   return (
     <div className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ background: '#26262C' }}>
       <img src="/icons/layer list/text.svg" alt="" className="size-4" />
@@ -51,7 +66,7 @@ function LayerRow({
   element,
   layoutId,
   selected,
-  indented = false,
+  depth,
   onClick,
 }: {
   element: LayoutElement;
@@ -59,8 +74,8 @@ function LayerRow({
   /** 'soft' is a member of a selected group — tinted rather than solid, so the group's own header
    * row reads as the thing that's selected. */
   selected: boolean | 'soft';
-  /** Nested under a group header — shifted right so its thumbnail lines up with the header's label. */
-  indented?: boolean;
+  /** How many group levels this row sits under — 0 for a top-level layer. */
+  depth: number;
   onClick: (e: ReactMouseEvent) => void;
 }) {
   const t = useT();
@@ -79,9 +94,9 @@ function LayerRow({
       onKeyDown={(e) => {
         if (!locked && (e.key === 'Enter' || e.key === ' ')) onClick(e as unknown as ReactMouseEvent);
       }}
+      style={{ paddingLeft: rowPaddingLeft(depth) }}
       className={cn(
         'group/row flex h-10 w-full shrink-0 items-center gap-2 rounded-lg py-1 pr-4 text-left transition-colors',
-        indented ? 'pl-8' : 'pl-1',
         locked ? 'cursor-not-allowed' : 'cursor-pointer',
         selected === 'soft' ? 'bg-button-primary/25' : selected ? 'bg-button-primary' : !locked && 'hover:bg-[#26262C]',
       )}
@@ -124,18 +139,21 @@ function LayerRow({
   );
 }
 
-/** A layer group's own row in the list — a collapse chevron plus a "GROUP" label ("LAYOUT GROUP"
- * once its Auto Layout is on); clicking the label selects the whole group, the same as clicking
- * any one of its members on the canvas. */
+/** A layer group's own row in the list — a collapse chevron plus an uppercase name label; clicking
+ * the label selects the whole group, the same as clicking any one of its members on the canvas.
+ * `label` is already resolved by the caller: a real name from `GroupMeta` (SVG import's own named,
+ * possibly-nested groups), else the generic "Group"/"Layout group" a plain flat group always showed. */
 function GroupHeaderRow({
+  label,
   selected,
-  autoLayout,
+  depth,
   collapsed,
   onToggle,
   onClick,
 }: {
+  label: string;
   selected: boolean;
-  autoLayout: boolean;
+  depth: number;
   collapsed: boolean;
   onToggle: () => void;
   onClick: (e: ReactMouseEvent) => void;
@@ -149,7 +167,8 @@ function GroupHeaderRow({
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') onClick(e as unknown as ReactMouseEvent);
       }}
-      className={cn('flex h-8 w-full shrink-0 cursor-pointer items-center gap-1 rounded-lg pr-4 pl-1 transition-colors', selected ? 'bg-button-primary' : 'hover:bg-[#26262C]')}
+      style={{ paddingLeft: rowPaddingLeft(depth) }}
+      className={cn('flex h-8 w-full shrink-0 cursor-pointer items-center gap-1 rounded-lg pr-4 transition-colors', selected ? 'bg-button-primary' : 'hover:bg-[#26262C]')}
     >
       <button
         type="button"
@@ -163,39 +182,129 @@ function GroupHeaderRow({
       >
         {collapsed ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
       </button>
-      <span className={cn('min-w-0 flex-1 truncate text-[11px] font-semibold tracking-[-0.01em] uppercase', selected ? 'text-white' : 'text-white/45')}>{autoLayout ? t('Layout group') : t('Group')}</span>
+      <span className={cn('min-w-0 flex-1 truncate text-[11px] font-semibold tracking-[-0.01em] uppercase', selected ? 'text-white' : 'text-white/45')}>{label}</span>
     </div>
   );
 }
 
-type ListItem = { kind: 'layer'; element: LayoutElement } | { kind: 'group'; groupId: string; members: LayoutElement[] };
+type TreeItem = { kind: 'layer'; element: LayoutElement } | { kind: 'group'; groupId: string; elements: LayoutElement[]; subGroupIds: string[] };
+
+/** Everything `SceneLayerRows` needs to know about a layout's groups, computed once per render:
+ * which elements/sub-groups sit directly under which parent (or at the top level), each group's own
+ * display position (so it sorts into the list at its most-recently-added member's spot, recursively
+ * — "newest first", same convention a flat group always used), and a quick membership lookup for
+ * "is this whole group currently selected". A legacy flat group (made via "Group layers", no
+ * `GroupMeta` entry) is just a group with no name and no parent — same tree, same code path. */
+function buildGroupIndex(layout: Layout) {
+  const meta = layout.groupMeta ?? {};
+  // Newest-added element first — `elements` itself stays oldest-to-newest (that order is also
+  // z-stacking order, back-to-front, for ElementRenderer), so only the list's own display order is
+  // reversed here, not the underlying data.
+  const layers = layout.elements.filter(isRealLayer).slice().reverse();
+  const positionOf = new Map<string, number>();
+  layers.forEach((el, i) => positionOf.set(el.id, i));
+
+  const elementsByParent = new Map<string | undefined, LayoutElement[]>();
+  for (const el of layers) {
+    const key = el.groupId;
+    elementsByParent.set(key, [...(elementsByParent.get(key) ?? []), el]);
+  }
+
+  // Every group id actually in use — from element membership and/or the metadata registry (a group
+  // can exist in `groupMeta` with no direct elements of its own if all its content is nested further).
+  const allGroupIds = new Set<string>();
+  for (const el of layers) if (el.groupId) allGroupIds.add(el.groupId);
+  for (const id of Object.keys(meta)) allGroupIds.add(id);
+
+  const subGroupsByParent = new Map<string | undefined, string[]>();
+  for (const id of allGroupIds) {
+    const parent = meta[id]?.parentGroupId;
+    subGroupsByParent.set(parent, [...(subGroupsByParent.get(parent) ?? []), id]);
+  }
+
+  const descendantsCache = new Map<string, LayoutElement[]>();
+  function descendantElements(groupId: string): LayoutElement[] {
+    const cached = descendantsCache.get(groupId);
+    if (cached) return cached;
+    const direct = elementsByParent.get(groupId) ?? [];
+    const subIds = subGroupsByParent.get(groupId) ?? [];
+    const result = [...direct, ...subIds.flatMap(descendantElements)];
+    descendantsCache.set(groupId, result);
+    return result;
+  }
+
+  function groupPosition(groupId: string): number {
+    const members = descendantElements(groupId);
+    return members.length === 0 ? Infinity : Math.min(...members.map((el) => positionOf.get(el.id)!));
+  }
+
+  function itemsAt(parent: string | undefined): TreeItem[] {
+    const items: TreeItem[] = [];
+    for (const el of elementsByParent.get(parent) ?? []) items.push({ kind: 'layer', element: el });
+    for (const groupId of subGroupsByParent.get(parent) ?? []) {
+      const members = descendantElements(groupId);
+      if (members.length === 0) continue; // a group that lost every member (deleted on canvas) just disappears
+      items.push({ kind: 'group', groupId, elements: members, subGroupIds: subGroupsByParent.get(groupId) ?? [] });
+    }
+    const posOf = (item: TreeItem) => (item.kind === 'layer' ? positionOf.get(item.element.id)! : groupPosition(item.groupId));
+    return items.sort((a, b) => posOf(a) - posOf(b));
+  }
+
+  function groupLabel(groupId: string): string {
+    const name = meta[groupId]?.name;
+    if (name) return name;
+    const members = descendantElements(groupId);
+    const autoLayout = Boolean(members[0]?.groupLayout && members[0].groupLayout.direction !== 'none');
+    return autoLayout ? 'Layout group' : 'Group';
+  }
+
+  /** Walks a leaf element's own `groupId` chain all the way to the top — used both to find a group
+   * header's representative canvas object and to auto-expand a selected child's ancestors. */
+  function ancestorGroupIds(element: LayoutElement): string[] {
+    const chain: string[] = [];
+    let current = element.groupId;
+    while (current) {
+      chain.push(current);
+      current = meta[current]?.parentGroupId;
+    }
+    return chain;
+  }
+
+  return { itemsAt, groupLabel, descendantElements, ancestorGroupIds };
+}
 
 function SceneLayerRows({
   layout,
   isSelected,
+  selectedElementIds,
   onSelectElement,
 }: {
   layout: Layout;
   isSelected: (elementId: string) => boolean;
+  selectedElementIds: Set<string>;
   onSelectElement: (elementId: string, e: ReactMouseEvent) => void;
 }) {
+  const t = useT();
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(() => new Set());
+  const index = buildGroupIndex(layout);
 
-  // Newest-added element first — `elements` itself stays oldest-to-newest (that order is also
-  // z-stacking order, back-to-front, for ElementRenderer), so only the list's own display order is
-  // reversed here, not the underlying data. A group shows up once, at its topmost member's spot,
-  // with every member listed beneath it (in that same top-to-bottom order).
-  const layers = layout.elements.filter(isRealLayer).slice().reverse();
-  const items: ListItem[] = [];
-  const placedGroupIds = new Set<string>();
-  for (const el of layers) {
-    if (!el.groupId) {
-      items.push({ kind: 'layer', element: el });
-    } else if (!placedGroupIds.has(el.groupId)) {
-      placedGroupIds.add(el.groupId);
-      items.push({ kind: 'group', groupId: el.groupId, members: layers.filter((m) => m.groupId === el.groupId) });
+  // "Selecting a child expands its parent groups" — whenever the selection changes, walk every
+  // selected element's own ancestor chain and make sure none of those groups are left collapsed.
+  useEffect(() => {
+    const toExpand = new Set<string>();
+    for (const el of layout.elements) {
+      if (!selectedElementIds.has(el.id)) continue;
+      for (const groupId of index.ancestorGroupIds(el)) toExpand.add(groupId);
     }
-  }
+    if (toExpand.size === 0) return;
+    setCollapsedGroupIds((prev) => {
+      if (![...toExpand].some((id) => prev.has(id))) return prev;
+      const next = new Set(prev);
+      for (const id of toExpand) next.delete(id);
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedElementIds, layout.elements]);
 
   function toggleCollapsed(groupId: string) {
     setCollapsedGroupIds((prev) => {
@@ -206,40 +315,32 @@ function SceneLayerRows({
     });
   }
 
-  return (
-    <>
-      {items.map((item) => {
-        if (item.kind === 'layer') {
-          const el = item.element;
-          return <LayerRow key={el.id} element={el} layoutId={layout.id} selected={isSelected(el.id)} onClick={(e) => onSelectElement(el.id, e)} />;
-        }
-        const groupSelected = item.members.every((m) => isSelected(m.id));
-        const collapsed = collapsedGroupIds.has(item.groupId);
-        return (
-          <div key={item.groupId} className="flex flex-col gap-0.5">
-            <GroupHeaderRow
-              selected={groupSelected}
-              autoLayout={Boolean(item.members[0].groupLayout && item.members[0].groupLayout.direction !== 'none')}
-              collapsed={collapsed}
-              onToggle={() => toggleCollapsed(item.groupId)}
-              onClick={(e) => onSelectElement(item.members[0].id, e)}
-            />
-            {!collapsed &&
-              item.members.map((el) => (
-                <LayerRow
-                  key={el.id}
-                  element={el}
-                  layoutId={layout.id}
-                  indented
-                  selected={groupSelected ? 'soft' : isSelected(el.id)}
-                  onClick={(e) => onSelectElement(el.id, e)}
-                />
-              ))}
-          </div>
-        );
-      })}
-    </>
-  );
+  function renderItems(parent: string | undefined, depth: number) {
+    return index.itemsAt(parent).map((item) => {
+      if (item.kind === 'layer') {
+        const el = item.element;
+        return <LayerRow key={el.id} element={el} layoutId={layout.id} depth={depth} selected={isSelected(el.id)} onClick={(e) => onSelectElement(el.id, e)} />;
+      }
+      const groupSelected = item.elements.every((m) => isSelected(m.id));
+      const collapsed = collapsedGroupIds.has(item.groupId);
+      const representative = item.elements[0];
+      return (
+        <div key={item.groupId} className="flex flex-col gap-0.5">
+          <GroupHeaderRow
+            label={t(index.groupLabel(item.groupId))}
+            selected={groupSelected}
+            depth={depth}
+            collapsed={collapsed}
+            onToggle={() => toggleCollapsed(item.groupId)}
+            onClick={(e) => onSelectElement(representative.id, e)}
+          />
+          {!collapsed && renderItems(item.groupId, depth + 1)}
+        </div>
+      );
+    });
+  }
+
+  return <>{renderItems(undefined, 0)}</>;
 }
 
 /** Left panel's per-scene view: the selected scene's own layer stack, shown in place of the banner list. */
@@ -252,6 +353,7 @@ export function LayersTab({ setId, onBack }: { setId: string; onBack: () => void
 
   const bannerSet = setsById[setId];
   const layout = bannerSet ? layoutsById[bannerSet.sourceLayoutId] : null;
+  const selectedElementIds = new Set(layout ? selectedElements.filter((r) => r.layoutId === layout.id).map((r) => r.elementId) : []);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -267,7 +369,8 @@ export function LayersTab({ setId, onBack }: { setId: string; onBack: () => void
         <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
           <SceneLayerRows
             layout={layout}
-            isSelected={(elementId) => selectedElements.some((r) => r.layoutId === layout.id && r.elementId === elementId)}
+            isSelected={(elementId) => selectedElementIds.has(elementId)}
+            selectedElementIds={selectedElementIds}
             onSelectElement={(elementId, e) => selectElement({ layoutId: layout.id, elementId }, e.shiftKey)}
           />
         </div>

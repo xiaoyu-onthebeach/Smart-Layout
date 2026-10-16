@@ -2,7 +2,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
 import { boxShadowCss } from '@/lib/shadow';
-import { shapeKindPolygonPoints } from '@/lib/vector-path';
+import { arrowPoints, DEFAULT_POLYGON_SIDES, regularPolygonPoints } from '@/lib/vector-path';
 import { useElementDrag, DUPLICATE_CURSOR } from './useElementDrag';
 import { SelectionBoundingBox } from './SelectionBoundingBox';
 import { EllipseEditOverlay } from './EllipseEditOverlay';
@@ -56,7 +56,8 @@ export function SelectableShapeElement({
   const { startDrag, startDragOrDeferredSelect, startResize, startRotate } = useElementDrag(layoutId, element.id, scale);
   const { frame, style } = element;
   const isLine = element.shape === 'line';
-  const isPolygonal = element.shape === 'arrow' || element.shape === 'polygon';
+  const isArrow = element.shape === 'arrow';
+  const isPolygon = element.shape === 'polygon';
   const isEllipse = element.shape === 'ellipse';
 
   return (
@@ -96,7 +97,25 @@ export function SelectableShapeElement({
         else onConvertAndEdit();
       }}
     >
-      {isPolygonal ? (
+      {isArrow ? (
+        <svg
+          viewBox={`0 0 ${frame.w} ${frame.h}`}
+          preserveAspectRatio="none"
+          className="size-full overflow-visible"
+          style={{ opacity: style.opacity !== undefined ? style.opacity / 100 : undefined, boxShadow: boxShadowCss(style.dropShadow, style.innerShadow) }}
+        >
+          <polyline
+            points={arrowPoints(frame.w, frame.h)
+              .map((p) => `${p.x},${p.y}`)
+              .join(' ')}
+            fill="none"
+            stroke={style.strokeColor ?? '#ffffff'}
+            strokeWidth={style.strokeWidth ?? 4}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ) : isPolygon ? (
         <svg
           viewBox={`0 0 ${frame.w} ${frame.h}`}
           preserveAspectRatio="none"
@@ -104,7 +123,7 @@ export function SelectableShapeElement({
           style={{ opacity: style.opacity !== undefined ? style.opacity / 100 : undefined, boxShadow: boxShadowCss(style.dropShadow, style.innerShadow) }}
         >
           <polygon
-            points={shapeKindPolygonPoints(element.shape as 'arrow' | 'polygon', frame.w, frame.h, style.polygonSides)
+            points={regularPolygonPoints(style.polygonSides ?? DEFAULT_POLYGON_SIDES, frame.w, frame.h)
               .map((p) => `${p.x},${p.y}`)
               .join(' ')}
             fill={style.fill ?? '#d9d9d9'}

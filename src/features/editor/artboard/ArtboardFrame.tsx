@@ -7,7 +7,10 @@ import { layerName } from '@/lib/layer-name';
 import { useApplyImage } from '@/hooks/useApplyImage';
 import type { GroupAutoLayout, Layout, LayoutElement, ShapeKind } from '@/types';
 import { parseSvgToElements } from '@/lib/svg-import';
-import { JOINT_ICON, shapeKindToVectorPath } from '@/lib/vector-path';
+import { readPasteableClipboardContent } from '@/lib/clipboard-import';
+import { defaultShapeStyle, JOINT_ICON, JOINT_SELECTED_ICON, PEN_DEFAULT_FILL, PEN_DEFAULT_STROKE_COLOR, PEN_DEFAULT_STROKE_WIDTH, shapeKindToVectorPath } from '@/lib/vector-path';
+import { boundsOf } from '@/lib/svg-geometry';
+import { isWithinClosePathRadius, PenDrawingOverlay } from './PenDrawingOverlay';
 import { ElementRenderer } from './ElementRenderer';
 import { DraggableImageElement } from './DraggableImageElement';
 import { EditableTextElement } from './EditableTextElement';
@@ -39,16 +42,20 @@ const FOCUS_HANDLE_HIT = 12;
 // how every other joint/handle icon in this file is positioned — see vector-path.ts's own icons for
 // the same technique.
 const PEN_CURSOR_ICON = { src: '/icons/SVGs/pen cursor 24.svg', w: 24, h: 24, tip: { x: 3.87, y: 3.87 } };
-function PenToolCursor({ x, y }: { x: number; y: number }) {
+/** `pressed` — mouse currently held down (svg import & edit spec, Part 3 "Pressed": "the preview
+ * joint switches to the selected style") — swaps the default joint for the selected one; everything
+ * else about the cursor stays the same. */
+function PenToolCursor({ x, y, pressed }: { x: number; y: number; pressed: boolean }) {
+  const joint = pressed ? JOINT_SELECTED_ICON : JOINT_ICON;
   return (
     <>
       {/* Painted first (behind) — the pen nib itself sits in front of the preview joint, not the
           other way around. */}
       <img
-        src={JOINT_ICON.src}
+        src={joint.src}
         alt=""
         className="pointer-events-none fixed z-50"
-        style={{ left: x - JOINT_ICON.center.x, top: y - JOINT_ICON.center.y, width: JOINT_ICON.w, height: JOINT_ICON.h }}
+        style={{ left: x - joint.center.x, top: y - joint.center.y, width: joint.w, height: joint.h }}
       />
       <img
         src={PEN_CURSOR_ICON.src}
@@ -229,10 +236,15 @@ function FocusRectCorners({ expanded }: { expanded: boolean }) {
 
 const EXPAND_DURATION_MS = 5000;
 
-/** The frame a shape-tool drag should produce — plain bounding box for rect/ellipse, but a 1px-
- * thick bar along whichever axis the drag moved further on for 'line' (this data model has no
- * rotation, so an arbitrary-angle line isn't representable; snapping to the drag's dominant axis
- * is the closest a frame-only shape can get to "draw a line by dragging"). */
+/** The frame a shape-tool drag should produce. 'line' and 'arrow' are both thin, direction-of-drag
+ * glyphs rather than a filled 2D shape (see ElementRenderer/`arrowPoints`) — a plain bounding box of
+ * the actual drag, same as ever, so the shaft tracks the cursor's real distance ('line' additionally
+ * collapses to a 1px-thick bar along whichever axis moved further, since this data model has no
+ * rotation and an arbitrary-angle line isn't representable). Forcing either into the square lock
+ * below would blow their "height" up to match a long horizontal drag and shove the whole glyph far
+ * off from the cursor's own trail. Every other kind scales up proportionally as you drag instead — a
+ * square bounding box sized to whichever of the two drag distances is currently larger, growing from
+ * the start point toward wherever the cursor is, rather than stretching into an arbitrary rectangle. */
 function shapeDragFrame(kind: ShapeKind, start: { x: number; y: number }, current: { x: number; y: number }) {
   const dragW = Math.abs(current.x - start.x);
   const dragH = Math.abs(current.y - start.y);
@@ -242,7 +254,16 @@ function shapeDragFrame(kind: ShapeKind, start: { x: number; y: number }, curren
     }
     return { x: (start.x + current.x) / 2 - 0.5, y: Math.min(start.y, current.y), w: 1, h: Math.max(dragH, 1) };
   }
-  return { x: Math.min(start.x, current.x), y: Math.min(start.y, current.y), w: dragW, h: dragH };
+  if (kind === 'arrow') {
+    return { x: Math.min(start.x, current.x), y: Math.min(start.y, current.y), w: Math.max(dragW, 1), h: Math.max(dragH, 1) };
+  }
+  const size = Math.max(dragW, dragH);
+  return {
+    x: current.x >= start.x ? start.x : start.x - size,
+    y: current.y >= start.y ? start.y : start.y - size,
+    w: size,
+    h: size,
+  };
 }
 
 const MEASURE_COLOR = '#FD4E62';
@@ -320,8 +341,10 @@ export function ArtboardFrame({
   /** View-all only: starts a snap-aware drag of the whole scene, in place of the old select-only click. */
   onSceneMouseDown?: (e: ReactMouseEvent) => void;
   /** Right-click anywhere on the frame that isn't itself already handled (e.g. an image layer's own
-   * context menu, which stops propagation) — the scene-level "Duplicate banner / Delete / Preview" menu. */
-  onSceneContextMenu?: (e: ReactMouseEvent) => void;
+   * context menu, which stops propagation) — the scene-level "Duplicate banner / Delete / Preview"
+   * menu. `pasteHere` is bound to wherever the click actually landed — the menu calls it for its own
+   * "Paste here" item. */
+  onSceneContextMenu?: (e: ReactMouseEvent, pasteHere: () => void) => void;
   /** View-all only: hides the "Choose or drag your visual" illustration/text once the camera is zoomed out past legibility. */
   showEmptyStateHint?: boolean;
   className?: string;
@@ -338,6 +361,7 @@ export function ArtboardFrame({
   const updateElement = useAppStore((s) => s.updateElement);
   const setGroupLayout = useAppStore((s) => s.setGroupLayout);
   const addElement = useAppStore((s) => s.addElement);
+  const mergeGroupMeta = useAppStore((s) => s.mergeGroupMeta);
   const setEditingTextElement = useAppStore((s) => s.setEditingTextElement);
   const editingVectorElementId = useAppStore((s) => s.editingVectorElementId);
   const setEditingVectorElement = useAppStore((s) => s.setEditingVectorElement);
@@ -682,23 +706,10 @@ export function ArtboardFrame({
     applyImage(url);
   }
 
-  // Lets an asset tile dragged from the left panel drop straight onto any frame — active or not,
-  // in the editor or a view-all card — adding it as a new decorative layer (never replacing
-  // whatever's already there) centered on the drop point.
-  function handleAssetDrop(e: ReactDragEvent) {
-    e.preventDefault();
-    const point = nativePointFromEvent(e);
-
-    // An .svg dragged straight from the OS (not a library/uploads tile, which drags a plain URL —
-    // see the `text/plain` branch below) arrives as a real File on `dataTransfer.files`.
-    const droppedFile = e.dataTransfer.files?.[0];
-    if (droppedFile && (droppedFile.type === 'image/svg+xml' || droppedFile.name.toLowerCase().endsWith('.svg'))) {
-      droppedFile.text().then((text) => importSvgAt(text, point));
-      return;
-    }
-
-    const url = e.dataTransfer.getData('text/plain');
-    if (!url) return;
+  // Adds a new decorative image layer (never replacing whatever's already there) centered on `point`,
+  // scaled to fit within 40% of the frame while keeping its own aspect ratio — shared by a dragged
+  // asset tile, a dropped file, and pasting an image straight from the clipboard.
+  function addImageAt(url: string, point: { x: number; y: number }) {
     const img = new Image();
     img.onload = () => {
       const ratio = img.naturalWidth / img.naturalHeight;
@@ -725,6 +736,26 @@ export function ArtboardFrame({
       selectElement({ layoutId, elementId: element.id });
     };
     img.src = url;
+  }
+
+  // Lets an asset tile dragged from the left panel drop straight onto any frame — active or not,
+  // in the editor or a view-all card — adding it as a new decorative layer (never replacing
+  // whatever's already there) centered on the drop point.
+  function handleAssetDrop(e: ReactDragEvent) {
+    e.preventDefault();
+    const point = nativePointFromEvent(e);
+
+    // An .svg dragged straight from the OS (not a library/uploads tile, which drags a plain URL —
+    // see the `text/plain` branch below) arrives as a real File on `dataTransfer.files`.
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (droppedFile && (droppedFile.type === 'image/svg+xml' || droppedFile.name.toLowerCase().endsWith('.svg'))) {
+      droppedFile.text().then((text) => importSvgAt(text, point));
+      return;
+    }
+
+    const url = e.dataTransfer.getData('text/plain');
+    if (!url) return;
+    addImageAt(url, point);
   }
 
   // Right-click on any layer (image/text/shape alike) — opens the layer context menu at the
@@ -788,13 +819,17 @@ export function ArtboardFrame({
   // image layers centered on `point`, selecting all of them (a freshly-placed vector starts in the
   // Focused state like any other new layer; Part 2's joint editing is entered separately, by
   // double-click or Enter). Layer-panel presentation of the result is deliberately not handled yet.
-  function importSvgAt(svgText: string, point: { x: number; y: number }) {
-    const { elements, warning } = parseSvgToElements(svgText, point);
+  async function importSvgAt(svgText: string, point: { x: number; y: number }) {
+    // Async because any embedded <image> missing explicit width/height needs its own natural size
+    // decoded first (see preloadImageNaturalSizes in svg-import.ts) — callers fire this and move on,
+    // nothing downstream of the import depends on it finishing synchronously.
+    const { elements, groupMeta, warning } = await parseSvgToElements(svgText, point);
     if (warning || elements.length === 0) {
       console.warn('[svg-import]', warning ?? 'nothing to import');
       return;
     }
     for (const element of elements) addElement(layoutId, element);
+    if (Object.keys(groupMeta).length > 0) mergeGroupMeta(layoutId, groupMeta);
     selectScene(layout.setId);
     setSelectedElements(elements.map((el) => ({ layoutId, elementId: el.id })));
   }
@@ -812,27 +847,63 @@ export function ArtboardFrame({
     setEditingVectorElement(element.id);
   }
 
-  // Third SVG import entry point: pasting markup straight from the clipboard, as its own
-  // `image/svg+xml` item or as text/html containing a `<svg>...</svg>` (e.g. copied from a code
-  // editor or a browser's "copy element" devtools action). Only this frame's own live instance
-  // listens, and only when focus isn't already inside some other text field/editable.
+  // Third SVG import entry point: pasting straight from the clipboard. Covers every shape that can
+  // actually land there — an `image/svg+xml` clipboard *item*, which can be either `kind: 'string'`
+  // (markup copied as text, e.g. from a code editor) or `kind: 'file'` (an actual .svg file copied in
+  // Finder/Explorer and pasted in, which only exposes a Blob via `getAsFile()`, not `getAsString()`);
+  // a `.svg` file surfacing on `clipboardData.files` instead of `.items` (happens on some browser/OS
+  // combinations for a file copy); or plain text/html containing a bare `<svg>...</svg>` (e.g. a
+  // browser devtools "copy element" action). Only this frame's own live instance listens, and only
+  // when focus isn't already inside some other text field/editable.
   useEffect(() => {
     if (!active) return;
+    function isSvgFile(file: File) {
+      return file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
+    }
     function onPaste(e: ClipboardEvent) {
       const target = e.target as HTMLElement | null;
       if (target?.isContentEditable || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return;
       const point = { x: nativeWidth / 2, y: nativeHeight / 2 };
-      const svgItem = Array.from(e.clipboardData?.items ?? []).find((item) => item.type === 'image/svg+xml');
-      if (svgItem) {
+
+      const svgFile = Array.from(e.clipboardData?.files ?? []).find(isSvgFile);
+      if (svgFile) {
         e.preventDefault();
-        svgItem.getAsString((text) => importSvgAt(text, point));
+        svgFile.text().then((text) => importSvgAt(text, point));
         return;
       }
+
+      const items = Array.from(e.clipboardData?.items ?? []);
+      const svgFileItem = items.find((item) => item.kind === 'file' && item.type === 'image/svg+xml');
+      if (svgFileItem) {
+        e.preventDefault();
+        const file = svgFileItem.getAsFile();
+        if (file) file.text().then((text) => importSvgAt(text, point));
+        return;
+      }
+      const svgStringItem = items.find((item) => item.kind === 'string' && item.type === 'image/svg+xml');
+      if (svgStringItem) {
+        e.preventDefault();
+        svgStringItem.getAsString((text) => importSvgAt(text, point));
+        return;
+      }
+
       const text = e.clipboardData?.getData('text/html') || e.clipboardData?.getData('text/plain') || '';
       const match = text.match(/<svg[\s\S]*?<\/svg>/i);
       if (match) {
         e.preventDefault();
         importSvgAt(match[0], point);
+        return;
+      }
+
+      // A plain Cmd+C on a layer in most design tools (Figma, Sketch, Illustrator...) puts a
+      // flattened PNG on the clipboard, not real SVG/vector data — the tool's own proprietary format
+      // alongside it isn't something a web page can ever read, no matter how this handler is written
+      // (there's a "Copy as SVG" action in Figma specifically that writes real markup instead, which
+      // the branches above already handle). A plain image layer is still more useful than nothing.
+      const imageFile = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith('image/')) ?? items.find((item) => item.kind === 'file' && item.type.startsWith('image/'))?.getAsFile();
+      if (imageFile) {
+        e.preventDefault();
+        addImageAt(URL.createObjectURL(imageFile), point);
       }
     }
     window.addEventListener('paste', onPaste);
@@ -1053,13 +1124,15 @@ export function ArtboardFrame({
         const dragH = Math.abs(current.y - start.y);
         const small = dragW < 10 && dragH < 10;
         // A plain click (no drag) drops a default-sized shape centered on the click point — 'line'
-        // gets its own thin, wide default instead of the square rect/ellipse use, since a line
-        // renders as a plain filled bar (see ElementRenderer) and a square one is indistinguishable
-        // from a small rectangle.
+        // and 'arrow' get their own thin, wide default instead of the square rect/ellipse use, since
+        // both render as a horizontal bar/shaft (see ElementRenderer) and a square is either
+        // indistinguishable from a small rectangle or leaves the arrowhead with no room to read.
         const smallFrame =
           shapeToolKind === 'line'
             ? { x: start.x - nativeWidth * 0.15, y: start.y - nativeHeight * 0.01, w: nativeWidth * 0.3, h: nativeHeight * 0.02 }
-            : { x: start.x - nativeWidth * 0.1, y: start.y - nativeHeight * 0.1, w: nativeWidth * 0.2, h: nativeHeight * 0.2 };
+            : shapeToolKind === 'arrow'
+              ? { x: start.x - nativeWidth * 0.15, y: start.y - nativeHeight * 0.04, w: nativeWidth * 0.3, h: nativeHeight * 0.08 }
+              : { x: start.x - nativeWidth * 0.1, y: start.y - nativeHeight * 0.1, w: nativeWidth * 0.2, h: nativeHeight * 0.2 };
         const frame = small ? smallFrame : shapeDragFrame(shapeToolKind, start, current);
         const element: LayoutElement = {
           id: nextId('el'),
@@ -1067,8 +1140,7 @@ export function ArtboardFrame({
           shape: shapeToolKind,
           slot: null,
           frame,
-          // Defaults match the prototype's reference shape: a soft gray, generously rounded rect.
-          style: { fill: '#d9d9d9', radius: 28, strokeWidth: 0 },
+          style: defaultShapeStyle(shapeToolKind),
           visible: true,
         };
         addElement(layoutId, element);
@@ -1079,6 +1151,11 @@ export function ArtboardFrame({
       }
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
+      return;
+    }
+
+    if (activeTool === 'pen') {
+      handlePenMouseDown(e);
     }
   }
 
@@ -1094,9 +1171,149 @@ export function ArtboardFrame({
   // Pen tool's own cursor (svg import & edit spec, Part 3 "Default" state) is a DOM-tracked overlay,
   // not a plain CSS `cursor: url()` — it's two separate icons (the pen nib + a preview joint sitting
   // right at its tip), which a single cursor image can't compose. Native cursor hidden above via
-  // `cursor-none`, this follows the real mouse position in its place. Only the entry
-  // point/appearance is wired here — placing joints by clicking is later work.
+  // `cursor-none`, this follows the real mouse position in its place.
   const [penCursorPos, setPenCursorPos] = useState<{ x: number; y: number } | null>(null);
+
+  // The pen tool's own in-progress drawing session (Part 3) — `points` are committed joints so far
+  // (layout-space, absolute), `cursor` is the live mouse position in that same space (drives the
+  // rubber-band preview segment), `pressed` is true for the window between mousedown and mouseup
+  // (shows the cursor's own preview joint in its selected style — "Pressed" state). `null` points
+  // means the tool isn't active at all; an empty array means it's active but nothing's placed yet.
+  type PenDrawState = { points: { x: number; y: number }[]; cursor: { x: number; y: number } | null; pressed: boolean };
+  const [penDraw, setPenDraw] = useState<PenDrawState | null>(null);
+  // Mirrors `penDraw` for the tool-switch-away effect below, whose cleanup needs the *latest* value
+  // at the moment the tool actually changes — the effect's own closure would otherwise see whatever
+  // `penDraw` was when that render's effect was set up, not whatever it became since.
+  const penDrawRef = useRef<PenDrawState | null>(null);
+  penDrawRef.current = penDraw;
+
+  // "Vector N" scoped per frame (not per import, which has its own counter — see svg-import.ts):
+  // never resets across drawing sessions, continues from whatever's already in this layout (import
+  // or earlier pen drawings alike), never renumbers existing ones since it only ever reads names.
+  function nextPenVectorName(): string {
+    let max = 0;
+    for (const el of layout.elements) {
+      const m = el.name?.match(/^Vector (\d+)$/);
+      if (m) max = Math.max(max, Number(m[1]));
+    }
+    return `Vector ${max + 1}`;
+  }
+
+  /** Ends the current drawing session — Enter/Esc, switching tools, or closing the path by clicking
+   * the first joint all funnel through here. A single remaining joint is discarded outright (spec:
+   * "A path with only one joint is discarded on finish"); otherwise a real Vector layer is created,
+   * selected, and left in the canvas's normal Focused state (handled already — any freshly added,
+   * freshly selected element starts there). Does **not** touch `activeTool` itself — callers that
+   * need it back on Select (finishing via Enter/Esc/close-click) set that separately, since the
+   * tool-switch-away path (this ending up running from that effect's own cleanup) must not fight
+   * whatever tool the user is actually switching to.
+   */
+  function finishDrawing(closed: boolean) {
+    const session = penDrawRef.current;
+    setPenDraw(null);
+    if (!session || session.points.length < 2) return;
+    const bounds = boundsOf(session.points);
+    const w = Math.max(1, bounds.maxX - bounds.minX);
+    const h = Math.max(1, bounds.maxY - bounds.minY);
+    const points = session.points.map((p) => ({ x: p.x - bounds.minX, y: p.y - bounds.minY }));
+    const element: LayoutElement = {
+      id: nextId('el'),
+      kind: 'vector',
+      slot: null,
+      frame: { x: bounds.minX, y: bounds.minY, w, h },
+      visible: true,
+      name: nextPenVectorName(),
+      path: { points, closed },
+      style: closed
+        ? { fill: PEN_DEFAULT_FILL, strokeWidth: undefined }
+        : { fill: undefined, strokeColor: PEN_DEFAULT_STROKE_COLOR, strokeWidth: PEN_DEFAULT_STROKE_WIDTH, strokeStyle: 'solid' },
+    };
+    addElement(layoutId, element);
+    selectScene(layout.setId);
+    selectElement({ layoutId, elementId: element.id });
+  }
+
+  // Entering the tool starts a fresh session; leaving it (switching tools, including back to
+  // 'select' after finishing) ends whatever was in progress — "switching to another tool also
+  // finishes the current path". The cleanup closure's own `activeTool` is whatever it was when caught
+  // in this exact effect run, i.e. still 'pen' right up until the moment it's about to change away.
+  useEffect(() => {
+    if (activeTool !== 'pen') return;
+    setPenDraw({ points: [], cursor: null, pressed: false });
+    return () => {
+      if (penDrawRef.current) finishDrawing(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool]);
+
+  // Enter/Esc finish as an open path; Backspace removes the last placed joint. Scoped to this one
+  // live frame instance, same guard every other canvas keyboard shortcut in this file already uses.
+  useEffect(() => {
+    if (!active || activeTool !== 'pen') return;
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target?.isContentEditable || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return;
+      if (e.key === 'Enter' || e.key === 'Escape') {
+        if (!penDrawRef.current) return;
+        e.preventDefault();
+        finishDrawing(false);
+        setActiveTool('select');
+        return;
+      }
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        const session = penDrawRef.current;
+        if (!session || session.points.length === 0) return;
+        e.preventDefault();
+        setPenDraw({ ...session, points: session.points.slice(0, -1) });
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, activeTool]);
+
+  /** One mousedown→(optional drag)→mouseup gesture places (or, clicking the first joint again,
+   * closes on) the next joint — covers both gestures the spec asks for ("click, move, click" and
+   * "press, drag, release") uniformly, since both just place the point wherever the mouse ends up on
+   * release. Shift during the drag snaps the segment from the active joint to 45° increments. */
+  function handlePenMouseDown(e: ReactMouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const session = penDrawRef.current;
+    if (!session) return;
+    const from = session.points[session.points.length - 1] ?? null;
+
+    function constrain(raw: { x: number; y: number }, shiftKey: boolean) {
+      if (!shiftKey || !from) return raw;
+      const dx = raw.x - from.x;
+      const dy = raw.y - from.y;
+      const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+      const dist = Math.hypot(dx, dy);
+      return { x: from.x + Math.cos(angle) * dist, y: from.y + Math.sin(angle) * dist };
+    }
+
+    setPenDraw((prev) => (prev ? { ...prev, pressed: true } : prev));
+
+    function onMove(ev: globalThis.MouseEvent) {
+      const p = constrain(nativePointFromEvent(ev), ev.shiftKey);
+      setPenDraw((prev) => (prev ? { ...prev, cursor: p } : prev));
+    }
+    function onUp(ev: globalThis.MouseEvent) {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      const p = constrain(nativePointFromEvent(ev), ev.shiftKey);
+      const current = penDrawRef.current;
+      if (!current) return;
+      if (current.points.length >= 2 && isWithinClosePathRadius(p, current.points[0], scale)) {
+        finishDrawing(true);
+        setActiveTool('select');
+        return;
+      }
+      setPenDraw({ points: [...current.points, p], cursor: p, pressed: false });
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
 
   // Keeps every auto-layout group stacked after any change — a member resized (text re-measured,
   // padding typed), dragged out of place, added or removed. Runs as a layout effect, after the
@@ -1178,18 +1395,50 @@ export function ArtboardFrame({
           borderRadius: layout.radius ? `${layout.radius}px` : undefined,
         }}
         onMouseDown={handleFrameMouseDown}
-        onMouseMove={activeTool === 'pen' ? (e) => setPenCursorPos({ x: e.clientX, y: e.clientY }) : undefined}
-        onMouseLeave={activeTool === 'pen' ? () => setPenCursorPos(null) : undefined}
+        onMouseMove={
+          activeTool === 'pen'
+            ? (e) => {
+                setPenCursorPos({ x: e.clientX, y: e.clientY });
+                // Not while `pressed` — the window-level listener handlePenMouseDown starts owns
+                // `cursor` for that whole gesture (with Shift's 45° snap applied), and would
+                // otherwise race this plain hover update for the same native mousemove event.
+                setPenDraw((prev) => (prev && !prev.pressed ? { ...prev, cursor: nativePointFromEvent(e) } : prev));
+              }
+            : undefined
+        }
+        onMouseLeave={
+          activeTool === 'pen'
+            ? () => {
+                setPenCursorPos(null);
+                setPenDraw((prev) => (prev && !prev.pressed ? { ...prev, cursor: null } : prev));
+              }
+            : undefined
+        }
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleAssetDrop}
         onContextMenu={(e) => {
           if (!onSceneContextMenu) return;
           e.preventDefault();
-          onSceneContextMenu(e);
+          const point = nativePointFromEvent(e);
+          onSceneContextMenu(e, async () => {
+            const content = await readPasteableClipboardContent();
+            if (!content) return;
+            if (content.kind === 'svg') importSvgAt(content.text, point);
+            else addImageAt(URL.createObjectURL(content.blob), point);
+          });
         }}
       >
         {active && <ImagePickerDialog open={insertImagePickerOpen} onOpenChange={setInsertImagePickerOpen} onSelect={insertNewImage} />}
-        {activeTool === 'pen' && penCursorPos && <PenToolCursor x={penCursorPos.x} y={penCursorPos.y} />}
+        {penDraw && penDraw.points.length > 0 && (
+          <PenDrawingOverlay
+            points={penDraw.points}
+            cursor={penDraw.cursor}
+            closeHover={Boolean(penDraw.cursor && penDraw.points.length >= 2 && isWithinClosePathRadius(penDraw.cursor, penDraw.points[0], scale))}
+            nativeWidth={nativeWidth}
+            nativeHeight={nativeHeight}
+          />
+        )}
+        {activeTool === 'pen' && penCursorPos && <PenToolCursor x={penCursorPos.x} y={penCursorPos.y} pressed={penDraw?.pressed ?? false} />}
         <input
           ref={fileInputRef}
           type="file"
@@ -1392,14 +1641,23 @@ export function ArtboardFrame({
 
         {active && drawRect && (
           <div
-            className="pointer-events-none absolute border-2 border-button-primary bg-button-primary/20"
+            className="pointer-events-none absolute"
             style={{
               left: `${(drawRect.x / nativeWidth) * 100}%`,
               top: `${(drawRect.y / nativeHeight) * 100}%`,
               width: `${(drawRect.w / nativeWidth) * 100}%`,
               height: `${(drawRect.h / nativeHeight) * 100}%`,
             }}
-          />
+          >
+            {/* The real shape kind, live — not a generic box — so a dragged ellipse already looks
+                round, an arrow already shows its head, etc., instead of only snapping into its real
+                look once the drag finishes. */}
+            <ElementRenderer
+              element={{ id: '__shape-preview__', kind: 'shape', shape: shapeToolKind, slot: null, frame: { x: 0, y: 0, w: drawRect.w, h: drawRect.h }, style: defaultShapeStyle(shapeToolKind), visible: true }}
+              layoutWidth={drawRect.w}
+              layoutHeight={drawRect.h}
+            />
+          </div>
         )}
 
         {groupBounds.map((b) => (

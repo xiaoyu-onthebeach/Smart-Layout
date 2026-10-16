@@ -372,7 +372,7 @@ function PageCard({
   renaming: boolean;
   onRenamingChange: (renaming: boolean) => void;
   /** Right-click anywhere on the scene that isn't already its own image layer's context menu. */
-  onSceneContextMenu: (e: ReactMouseEvent) => void;
+  onSceneContextMenu: (e: ReactMouseEvent, pasteHere: () => void) => void;
 }) {
   const { set: bannerSet, layout } = entry;
   const [isHovered, setIsHovered] = useState(false);
@@ -508,7 +508,7 @@ export function MultiPageCanvas() {
   // `entryId` is always the cluster root itself (a bare page, or a group's own primary), never one
   // of its siblings, even when the whole pack visually rides along with the drag.
   const [clusterReorderDrag, setClusterReorderDrag] = useState<{ rootId: string; entryId: string; x: number; y: number } | null>(null);
-  const [sceneContextMenu, setSceneContextMenu] = useState<{ x: number; y: number; entryId: string } | null>(null);
+  const [sceneContextMenu, setSceneContextMenu] = useState<{ x: number; y: number; entryId: string; pasteHere: () => void } | null>(null);
   // Lifted out of PageTitleBar so the scene's own right-click menu can also enter rename mode, not
   // just a double-click on the name.
   const [renamingEntryId, setRenamingEntryId] = useState<string | null>(null);
@@ -1518,7 +1518,7 @@ export function MultiPageCanvas() {
                 onRenamingChange={(v) => setRenamingEntryId(v ? entry.id : null)}
                 showBottomAdd={!isMultiMemberGroupPage(entry.id) && !hasBlockerBelow(entry, entries)}
                 onAddAdjacent={(edge, results) => handleAddAdjacent(entry, edge, results)}
-                onSceneContextMenu={(e) => setSceneContextMenu({ x: e.clientX, y: e.clientY, entryId: entry.id })}
+                onSceneContextMenu={(e, pasteHere) => setSceneContextMenu({ x: e.clientX, y: e.clientY, entryId: entry.id, pasteHere })}
               />
             );
           })}
@@ -1560,6 +1560,7 @@ export function MultiPageCanvas() {
               onRename={() => setRenamingEntryId(entry.id)}
               onDuplicate={() => handleDuplicateScene(entry)}
               onDelete={() => handleDeleteScene(entry)}
+              onPasteHere={sceneContextMenu.pasteHere}
             />
           );
         })()}

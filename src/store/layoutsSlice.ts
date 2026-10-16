@@ -174,7 +174,18 @@ export const createLayoutsSlice: Slice<LayoutsSlice> = (set, get) => ({
       const layout = state.layoutsById[layoutId];
       if (!layout) return state;
       const elements = layout.elements.map((el) => (el.groupId === groupId ? { ...el, groupId: undefined, groupLayout: undefined } : el));
-      return { layoutsById: { ...state.layoutsById, [layoutId]: { ...layout, elements } } };
+      // Drops the group's own metadata entry (if it had one — an SVG-imported group), and promotes
+      // any of its direct sub-groups to top-level rather than leaving them pointing at a group that
+      // no longer exists.
+      let groupMeta = layout.groupMeta;
+      if (groupMeta?.[groupId]) {
+        groupMeta = Object.fromEntries(
+          Object.entries(groupMeta)
+            .filter(([id]) => id !== groupId)
+            .map(([id, meta]) => [id, meta.parentGroupId === groupId ? { ...meta, parentGroupId: undefined } : meta]),
+        );
+      }
+      return { layoutsById: { ...state.layoutsById, [layoutId]: { ...layout, elements, groupMeta } } };
     }),
   setGroupLayout: (layoutId, groupId, groupLayout) =>
     set((state) => {
@@ -186,6 +197,12 @@ export const createLayoutsSlice: Slice<LayoutsSlice> = (set, get) => ({
         layoutsById: { ...state.layoutsById, [layoutId]: { ...layout, elements } },
         pendingCascadeSetIds: pendingSetId ? { ...state.pendingCascadeSetIds, [pendingSetId]: true } : state.pendingCascadeSetIds,
       };
+    }),
+  mergeGroupMeta: (layoutId, meta) =>
+    set((state) => {
+      const layout = state.layoutsById[layoutId];
+      if (!layout) return state;
+      return { layoutsById: { ...state.layoutsById, [layoutId]: { ...layout, groupMeta: { ...layout.groupMeta, ...meta } } } };
     }),
   updateLayoutStyle: (layoutId, patch) =>
     set((state) => {

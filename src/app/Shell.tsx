@@ -143,6 +143,11 @@ export function Shell() {
 
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
 
+      // The pen tool owns Backspace/Delete while it's actively drawing (removes the last placed
+      // joint — see ArtboardFrame) — nothing is "selected" mid-drawing, so without this guard this
+      // handler falls through to deleting the whole page out from under the user.
+      if (useAppStore.getState().activeTool === 'pen') return;
+
       if (selectedElements.length > 0) {
         e.preventDefault();
         for (const ref of selectedElements) removeElement(ref.layoutId, ref.elementId);

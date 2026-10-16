@@ -23,36 +23,99 @@ export const MIDPOINT_ICON = { src: '/icons/SVGs/joint-midpoint.svg', w: 8, h: 8
 export const RADIUS_HANDLE_ICON = { src: '/icons/SVGs/radius handler.svg', w: 16, h: 16, center: { x: 8, y: 6 } };
 export const PEN_ADD_CURSOR = "url('/icons/SVGs/pen cursor-add 24.svg') 2 2, auto";
 
-/** Every (point, nextPoint) pair a path actually draws a segment between — for an open path, the
- * closing segment back to the first point doesn't exist. */
-export function segments(path: VectorPath): { a: number; b: number }[] {
+// Part 3 (pen tool) — "Default style for new vectors... final values TBD by design". Matches the
+// rest of this app's own shape defaults (`#d9d9d9` is the Shape tool's own default fill) for a
+// closed path; an open path has no real precedent elsewhere, so plain black at a readable 2px.
+export const PEN_DEFAULT_FILL = '#D9D9D9';
+export const PEN_DEFAULT_STROKE_COLOR = '#000000';
+export const PEN_DEFAULT_STROKE_WIDTH = 2;
+// Screen px — how close a click needs to land on the first joint to close the path instead of
+// placing a new one, same radius every other joint in this app is hit-tested at.
+export const CLOSE_PATH_HIT_RADIUS = JOINT_HIT_RADIUS;
+
+/** One edit-mode "segment" per the Part 2 spec's Joint/Adding-joints interactions — not necessarily
+ * a single straight line: for an SVG-imported curve this spans everything between two consecutive
+ * *visible* anchors (`VectorPath.anchors`), carrying every hidden curve-sample point in between, so
+ * hovering/inserting treats the whole curve run as one segment instead of each tiny flattening
+ * sample as its own. A path with no hidden samples (pen-drawn, shape-converted, or an import with
+ * only straight-line commands) gets exactly the old literal adjacent-point pairs, since every point
+ * is its own anchor there. `pointIndices` always runs start→end along the path (wrapping for the
+ * closing run), inclusive of both ends. */
+export function segments(path: VectorPath): { a: number; b: number; pointIndices: number[] }[] {
   const n = path.points.length;
-  const out: { a: number; b: number }[] = [];
-  for (let i = 0; i < n - 1; i++) out.push({ a: i, b: i + 1 });
-  if (path.closed && n > 2) out.push({ a: n - 1, b: 0 });
+  const isAnchor = (i: number) => !path.anchors || path.anchors[i];
+  const anchorIdx: number[] = [];
+  for (let i = 0; i < n; i++) if (isAnchor(i)) anchorIdx.push(i);
+  if (anchorIdx.length < 2) return [];
+  const out: { a: number; b: number; pointIndices: number[] }[] = [];
+  const limit = path.closed ? anchorIdx.length : anchorIdx.length - 1;
+  for (let k = 0; k < limit; k++) {
+    const a = anchorIdx[k];
+    const b = anchorIdx[(k + 1) % anchorIdx.length];
+    const pointIndices: number[] = [];
+    for (let i = a; ; i = (i + 1) % n) {
+      pointIndices.push(i);
+      if (i === b) break;
+    }
+    out.push({ a, b, pointIndices });
+  }
   return out;
 }
 
+/** The true midpoint along a (possibly multi-point, curved) segment's own run length — a plain
+ * 2-point run is just the straight-line average; a curved run interpolates by cumulative arc length
+ * so the dot actually sits halfway along the curve, not halfway between its first and last sample. */
 export function midpoint(path: VectorPath, segmentIndex: number): { x: number; y: number } {
-  const segs = segments(path);
-  const { a, b } = segs[segmentIndex];
-  const pa = path.points[a];
-  const pb = path.points[b];
-  return { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+  const { pointIndices } = segments(path)[segmentIndex];
+  const pts = pointIndices.map((i) => path.points[i]);
+  if (pts.length <= 2) return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+  const lens = [0];
+  for (let i = 1; i < pts.length; i++) lens.push(lens[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+  const half = lens[lens.length - 1] / 2;
+  for (let i = 1; i < lens.length; i++) {
+    if (lens[i] >= half) {
+      const segLen = lens[i] - lens[i - 1];
+      const t = segLen > 0 ? (half - lens[i - 1]) / segLen : 0;
+      return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t };
+    }
+  }
+  return pts[pts.length - 1];
 }
 
-/** Splits a segment by inserting a new joint at its midpoint (straight segments only — curves are
- * out of scope here, so there's no de Casteljau split to do, just an array insert). Returns the new
- * path and the inserted point's index, so the caller can select it right away. */
+/** Splits a segment by adding a new joint at its midpoint. A plain straight run (no hidden curve
+ * samples) still means a literal array insert, exactly as before. A curved run instead *promotes*
+ * whichever existing flattening sample already sits closest to the arc-length midpoint into a real,
+ * draggable anchor — no new point is invented, so "the curve shape is unchanged". Returns the new
+ * path and the inserted/promoted point's index, so the caller can select it right away. */
 export function insertMidpointJoint(path: VectorPath, segmentIndex: number): { path: VectorPath; insertedIndex: number } {
-  const segs = segments(path);
-  const { a, b } = segs[segmentIndex];
-  const mid = midpoint(path, segmentIndex);
-  // Inserting after `a` is correct for every segment except the closing one (b === 0), which must
-  // append at the end instead of before index 0.
-  const insertAt = b === 0 && a === path.points.length - 1 ? path.points.length : a + 1;
-  const points = [...path.points.slice(0, insertAt), mid, ...path.points.slice(insertAt)];
-  return { path: { ...path, points }, insertedIndex: insertAt };
+  const seg = segments(path)[segmentIndex];
+  const { a, b, pointIndices } = seg;
+  if (pointIndices.length <= 2) {
+    const mid = midpoint(path, segmentIndex);
+    // Inserting after `a` is correct for every segment except the closing one (b === 0), which must
+    // append at the end instead of before index 0.
+    const insertAt = b === 0 && a === path.points.length - 1 ? path.points.length : a + 1;
+    const points = [...path.points.slice(0, insertAt), mid, ...path.points.slice(insertAt)];
+    const anchors = path.anchors ? [...path.anchors.slice(0, insertAt), true, ...path.anchors.slice(insertAt)] : undefined;
+    return { path: { ...path, points, anchors }, insertedIndex: insertAt };
+  }
+  const pts = pointIndices.map((i) => path.points[i]);
+  const lens = [0];
+  for (let i = 1; i < pts.length; i++) lens.push(lens[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+  const half = lens[lens.length - 1] / 2;
+  let bestI = 1;
+  let bestDiff = Infinity;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const diff = Math.abs(lens[i] - half);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestI = i;
+    }
+  }
+  const insertedIndex = pointIndices[bestI];
+  const anchors = [...(path.anchors ?? path.points.map(() => true))];
+  anchors[insertedIndex] = true;
+  return { path: { ...path, anchors }, insertedIndex };
 }
 
 /**
@@ -79,23 +142,63 @@ export function rebaseVectorFrame(
  * - rect/line: a 'line' shape already renders as a plain filled rectangle (its "thinness" is just a
  *   very short frame height, not a stroke) — see ElementRenderer — so it converts the same way rect
  *   does, as its 4 corners.
- * - arrow/polygon: the same fixed silhouette their own (non-editable, pre-conversion) SVG rendering
- *   already draws — see `shapeKindPolygonPoints` below, which both share. `polygonSides` carries a
+ * - arrow: the same open shaft+arrowhead line `arrowPoints` below draws — stroke-only, not closed.
+ * - polygon: the same fixed silhouette `shapeKindPolygonPoints` below draws. `polygonSides` carries a
  *   polygon's current side count across the conversion (its own "Count" field in ShapeEditorPanel).
- * Ellipse never reaches this function — keeping a circle looking like a circle once editing starts
- * means it never actually becomes a flat-point vector; see SelectableShapeElement's own
- * ellipse-specific resize-handles-as-joints overlay instead.
+ * Either way the pre-conversion (non-editable) SVG rendering already draws the exact same points, so
+ * converting never visually jumps. Ellipse never reaches this function — keeping a circle looking
+ * like a circle once editing starts means it never actually becomes a flat-point vector; see
+ * SelectableShapeElement's own ellipse-specific resize-handles-as-joints overlay instead.
  */
 export function shapeKindToVectorPath(shape: ShapeKind, w: number, h: number, polygonSides?: number): VectorPath {
   switch (shape) {
     case 'arrow':
+      return { points: arrowPoints(w, h), closed: false };
     case 'polygon':
-      return { points: shapeKindPolygonPoints(shape, w, h, polygonSides), closed: true };
+      return { points: regularPolygonPoints(polygonSides ?? DEFAULT_POLYGON_SIDES, w, h), closed: true };
     case 'rect':
     case 'line':
     default:
       return { points: rectToPoints(0, 0, w, h), closed: true };
   }
+}
+
+/** Default style for a freshly-added shape — every kind but arrow is a solid fill with no border;
+ * an arrow is a stroke-only line+arrowhead (see `arrowPoints`), so its whole visible color comes from
+ * `strokeColor`/`strokeWidth` instead ("the default one as white and 4px width"). A rect starts
+ * perfectly square-cornered; ellipse/polygon ignore `radius` entirely (see ElementRenderer), so it
+ * only ever mattered for rect to begin with. */
+export function defaultShapeStyle(shape: ShapeKind): { fill?: string; radius?: number; strokeWidth?: number; strokeColor?: string; strokeStyle?: 'solid' | 'dashed' | 'dotted' } {
+  if (shape === 'arrow') return { strokeColor: '#ffffff', strokeWidth: 4, strokeStyle: 'solid' };
+  if (shape === 'rect') return { fill: '#d9d9d9', radius: 0, strokeWidth: 0 };
+  return { fill: '#d9d9d9', radius: 28, strokeWidth: 0 };
+}
+
+/** Arrowhead wing length — a fixed constant, deliberately *not* scaled with the frame's own `w`/`h`:
+ * as the frame grows (dragging to create it, or resizing it after), only the shaft — the straight
+ * run from tail to tip — should visibly grow longer; the two wing lines stay exactly this long the
+ * whole time ("the 2 side arrow lines [stay] the same length from the beginning to the end, only the
+ * middle line is growing"). */
+export const ARROW_HEAD_LENGTH = 24;
+
+/** A simple rightward shaft with an open "V" arrowhead at its tip, sized to its own `w`×`h` frame —
+ * drawn with `stroke` only (see `defaultShapeStyle`), the same convention Figma/Sketch use for an
+ * Arrow tool, unlike every other shape kind's solid `fill` silhouette. One open contour — shaft tail
+ * → tip → back along one wing → tip → back along the other — so the whole glyph still fits
+ * `VectorPath`'s single-contour model without a second `moveto`; retracing the tip is invisible for a
+ * stroked (not filled) line. */
+export function arrowPoints(w: number, h: number): { x: number; y: number }[] {
+  const cy = h / 2;
+  // Always the fixed length, even for a just-clicked, still-zero-width shaft — the wings show up at
+  // full size immediately instead of sizing up from 0 as the shaft grows.
+  const headLen = ARROW_HEAD_LENGTH;
+  return [
+    { x: 0, y: cy },
+    { x: w, y: cy },
+    { x: w - headLen, y: cy - headLen * 0.6 },
+    { x: w, y: cy },
+    { x: w - headLen, y: cy + headLen * 0.6 },
+  ];
 }
 
 export const DEFAULT_POLYGON_SIDES = 3;
@@ -117,26 +220,3 @@ export function regularPolygonPoints(sides: number, w: number, h: number): { x: 
   return points;
 }
 
-/** The fixed silhouette for the two shape kinds that were never a plain CSS rect/ellipse to begin
- * with — both the ordinary (pre-edit) SVG rendering in ElementRenderer/SelectableShapeElement and
- * the editable conversion above draw the exact same points, so an arrow/polygon never visually
- * changes at the moment it becomes editable. `sides` only matters for 'polygon' (its own "Count"
- * field in ShapeEditorPanel — see `style.polygonSides`); arrow ignores it. */
-export function shapeKindPolygonPoints(shape: 'arrow' | 'polygon', w: number, h: number, sides: number = DEFAULT_POLYGON_SIDES): { x: number; y: number }[] {
-  if (shape === 'polygon') return regularPolygonPoints(sides, w, h);
-  // A rightward arrow sized to its own frame: a shaft (30% of the height, vertically centered) the
-  // first 60% of the width, then a full-height triangular head for the rest.
-  const shaftH = h * 0.3;
-  const shaftTop = h / 2 - shaftH / 2;
-  const shaftBottom = h / 2 + shaftH / 2;
-  const headX = w * 0.6;
-  return [
-    { x: 0, y: shaftTop },
-    { x: headX, y: shaftTop },
-    { x: headX, y: 0 },
-    { x: w, y: h / 2 },
-    { x: headX, y: h },
-    { x: headX, y: shaftBottom },
-    { x: 0, y: shaftBottom },
-  ];
-}

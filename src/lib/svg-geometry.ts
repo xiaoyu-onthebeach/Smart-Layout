@@ -135,25 +135,39 @@ function sampleArc(p0: Point, rxIn: number, ryIn: number, xAxisRotDeg: number, l
 /** Flattens an SVG path `d` attribute into one or more straight-segment subpaths (absolute points,
  * no transform applied — the caller composes its own ancestor matrix). A `d` with more than one
  * `M` becomes more than one subpath, since `VectorPath` only models a single contour per element —
- * the import step turns each subpath into its own sibling vector layer. */
-export function flattenPathD(d: string): { points: Point[]; closed: boolean }[] {
+ * the import step turns each subpath into its own sibling vector layer. Each subpath also carries a
+ * parallel `anchors` array marking which points are real command endpoints (M/L/H/V, or a curve's
+ * own end) versus a hidden bezier/arc sample that only exists to approximate the curve's shape —
+ * see `VectorPath.anchors`. */
+export function flattenPathD(d: string): { points: Point[]; closed: boolean; anchors: boolean[] }[] {
   const tokens = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
   let i = 0;
   const next = () => Number(tokens[i++]);
-  const subpaths: { points: Point[]; closed: boolean }[] = [];
+  const subpaths: { points: Point[]; closed: boolean; anchors: boolean[] }[] = [];
   let current: Point[] = [];
+  let anchors: boolean[] = [];
   let start: Point = { x: 0, y: 0 };
   let cur: Point = { x: 0, y: 0 };
   let prevCmd = '';
   let prevCtrl: Point | null = null; // reflected control point for S/T
 
+  // Pushes a curve/arc's sampled points, marking only the final one (the command's own endpoint) as
+  // a real anchor — every point before it is a hidden shape-defining sample.
+  function pushCurve(pts: Point[]) {
+    for (let k = 0; k < pts.length; k++) {
+      current.push(pts[k]);
+      anchors.push(k === pts.length - 1);
+    }
+  }
   function closeSubpath() {
-    if (current.length > 0) subpaths.push({ points: current, closed: true });
+    if (current.length > 0) subpaths.push({ points: current, closed: true, anchors });
     current = [];
+    anchors = [];
   }
   function openSubpath() {
-    if (current.length > 0) subpaths.push({ points: current, closed: false });
+    if (current.length > 0) subpaths.push({ points: current, closed: false, anchors });
     current = [];
+    anchors = [];
   }
 
   let cmd = '';
@@ -175,6 +189,7 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean }[] 
         cur = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
         start = cur;
         current.push(cur);
+        anchors.push(true);
         cmd = isRel ? 'l' : 'L'; // subsequent pairs are implicit lineto
         break;
       }
@@ -183,18 +198,21 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean }[] 
         const y = next();
         cur = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
         current.push(cur);
+        anchors.push(true);
         break;
       }
       case 'H': {
         const x = next();
         cur = { x: isRel ? cur.x + x : x, y: cur.y };
         current.push(cur);
+        anchors.push(true);
         break;
       }
       case 'V': {
         const y = next();
         cur = { x: cur.x, y: isRel ? cur.y + y : y };
         current.push(cur);
+        anchors.push(true);
         break;
       }
       case 'C': {
@@ -207,7 +225,9 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean }[] 
         const p1 = isRel ? { x: cur.x + x1, y: cur.y + y1 } : { x: x1, y: y1 };
         const p2 = isRel ? { x: cur.x + x2, y: cur.y + y2 } : { x: x2, y: y2 };
         const p3 = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
-        sampleCubic(cur, p1, p2, p3, current);
+        const sampled: Point[] = [];
+        sampleCubic(cur, p1, p2, p3, sampled);
+        pushCurve(sampled);
         prevCtrl = p2;
         cur = p3;
         break;
@@ -220,7 +240,9 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean }[] 
         const p1 = prevCtrl && /[CS]/.test(prevCmd.toUpperCase()) ? { x: 2 * cur.x - prevCtrl.x, y: 2 * cur.y - prevCtrl.y } : cur;
         const p2 = isRel ? { x: cur.x + x2, y: cur.y + y2 } : { x: x2, y: y2 };
         const p3 = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
-        sampleCubic(cur, p1, p2, p3, current);
+        const sampled: Point[] = [];
+        sampleCubic(cur, p1, p2, p3, sampled);
+        pushCurve(sampled);
         prevCtrl = p2;
         cur = p3;
         break;
@@ -232,7 +254,9 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean }[] 
           y = next();
         const p1 = isRel ? { x: cur.x + x1, y: cur.y + y1 } : { x: x1, y: y1 };
         const p2 = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
-        sampleQuadratic(cur, p1, p2, current);
+        const sampled: Point[] = [];
+        sampleQuadratic(cur, p1, p2, sampled);
+        pushCurve(sampled);
         prevCtrl = p1;
         cur = p2;
         break;
@@ -242,7 +266,9 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean }[] 
           y = next();
         const p1 = prevCtrl && /[QT]/.test(prevCmd.toUpperCase()) ? { x: 2 * cur.x - prevCtrl.x, y: 2 * cur.y - prevCtrl.y } : cur;
         const p2 = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
-        sampleQuadratic(cur, p1, p2, current);
+        const sampled: Point[] = [];
+        sampleQuadratic(cur, p1, p2, sampled);
+        pushCurve(sampled);
         prevCtrl = p1;
         cur = p2;
         break;
@@ -256,7 +282,9 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean }[] 
           x = next(),
           y = next();
         const p1 = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
-        sampleArc(cur, rx, ry, rot, largeArc, sweep, p1, current);
+        const sampled: Point[] = [];
+        sampleArc(cur, rx, ry, rot, largeArc, sweep, p1, sampled);
+        pushCurve(sampled);
         cur = p1;
         break;
       }
@@ -269,7 +297,7 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean }[] 
     if (C !== 'C' && C !== 'S' && C !== 'Q' && C !== 'T') prevCtrl = null;
     prevCmd = cmd;
   }
-  if (current.length > 0) subpaths.push({ points: current, closed: false });
+  if (current.length > 0) subpaths.push({ points: current, closed: false, anchors });
   return subpaths.filter((s) => s.points.length >= 2);
 }
 
@@ -282,13 +310,19 @@ export function rectToPoints(x: number, y: number, w: number, h: number): Point[
   ];
 }
 
-export function ellipseToPoints(cx: number, cy: number, rx: number, ry: number, segments = 48): Point[] {
-  const pts: Point[] = [];
+/** A `<circle>`/`<ellipse>` has no real anchors of its own (no path commands at all) — the 4 cardinal
+ * points (the same convention Illustrator/Figma use when converting a circle to a path) are marked
+ * as the only visible anchors; every other sampled point stays a hidden curve-shaping point, same as
+ * a flattened bezier's interior samples. */
+export function ellipseToPoints(cx: number, cy: number, rx: number, ry: number, segments = 48): { points: Point[]; anchors: boolean[] } {
+  const points: Point[] = [];
+  const anchors: boolean[] = [];
   for (let i = 0; i < segments; i++) {
     const t = (i / segments) * Math.PI * 2;
-    pts.push({ x: cx + rx * Math.cos(t), y: cy + ry * Math.sin(t) });
+    points.push({ x: cx + rx * Math.cos(t), y: cy + ry * Math.sin(t) });
+    anchors.push(i % (segments / 4) === 0);
   }
-  return pts;
+  return { points, anchors };
 }
 
 export function parsePointsAttr(attr: string | null | undefined): Point[] {
