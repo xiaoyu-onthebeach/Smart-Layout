@@ -47,6 +47,14 @@ export type UiSlice = {
    * clicking away. Mirrors `editingTextElementId`'s reset points (selection/tool changes etc.);
    * entering one kind of edit mode always clears the other. */
   editingVectorElementId: string | null;
+  /** The joints currently selected while `editingVectorElementId` is set, if any — what
+   * `VectorPathPanel` reads to show/edit per-joint controls (aligning the selection, each joint's own
+   * position, and — only when exactly one is selected — its Curve/mirroring mode), and writes to
+   * directly via `updateElement` (VectorEditOverlay owns the real interactive multi-select state
+   * locally; this is just that same set mirrored up since the panel lives outside its component
+   * tree). `referenceSide` is "the handle most recently dragged in this session; `'out'` if neither
+   * has been" — the spec's own rule for which handle a mirror-mode switch keeps fixed. */
+  editingVectorJoint: { layoutId: string; elementId: string; jointIndices: number[]; referenceSide: 'in' | 'out' } | null;
   /** The plain-text character range (start/end offsets into that element's own `content`) currently
    * highlighted inside a text element's contentEditable while it's being edited — lets
    * TextEditorPanel's Spacing/Stretch fields apply a change to just that substring. See
@@ -126,6 +134,7 @@ export type UiSlice = {
   /** Enters (id) or exits (null) contentEditable edit mode for a text element. */
   setEditingTextElement: (id: string | null) => void;
   setEditingVectorElement: (id: string | null) => void;
+  setEditingVectorJoint: (joint: UiSlice['editingVectorJoint']) => void;
   /** Updates (or clears, with `null`) the live in-progress text-range selection. */
   setTextRangeSelection: (sel: { layoutId: string; elementId: string; start: number; end: number } | null) => void;
   setActiveTool: (tool: Tool) => void;

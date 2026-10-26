@@ -222,3 +222,107 @@ Create sample SVGs in the prototype (e.g. /fixtures/svg/) and a quick way to loa
 * Red ring handle behavior (render only)  
 * Vertical text trim  
 * Exporting back to SVG  
+
+## Part 4: Curves, handles, and mirroring
+
+### Joint data model
+
+Represent each path as contours of joints, and generate the Fabric path from this model (don't edit raw path commands directly).
+
+```tsx
+type CurveMode = 'sharp' | 'mirror' | 'nomirror';
+
+type Joint = {
+  x: number; y: number;
+  handleIn:  { x: number; y: number } | null; // controls the segment arriving at this joint
+  handleOut: { x: number; y: number } | null; // controls the segment leaving this joint
+  mirror: MirrorMode;
+};
+
+type Contour = { joints: Joint[]; closed: boolean };
+```
+
+- A joint with **no handles** is a **corner** joint.
+- A joint with handles is a **curve** joint; Curvemode decides how its two handles move together.
+- Endpoints of open paths can have only one handle.
+
+**Model → path:** the segment from joint A to joint B is
+
+- `L` (straight) if `A.handleOut` and `B.handleIn` are both null
+- otherwise `C` with control points `A.handleOut ?? A` and `B.handleIn ?? B`
+
+**Path → model (on import and for existing vectors):**
+
+- Joints = the endpoint of each `M` / `L` / `C` command (control points are handles, not joints). Skip `Z`; if the last joint equals the contour's start, merge them.
+- Convert quadratic `Q` segments to cubic on load: `cp1 = P0 + 2/3 (Q − P0)`, `cp2 = P2 + 2/3 (Q − P2)`.
+- A control point equal to its joint means "no handle" on that side.
+- SVG doesn't store mirror modes, so **infer them**: handles collinear and opposite with equal length → `angleAndLength`; collinear and opposite, different lengths → `angle`; otherwise → `none`. Use a small tolerance (e.g. 1° and 0.5px).
+
+### Handle visibility
+
+- Handles are **hidden** unless a joint is selected.
+- With a joint selected, show its handles **and** the handles of its neighbor joints that face it (the ones that shape the two segments touching the selected joint).
+- While drawing with the pen tool, show the handles of the active joint.
+
+### 1. Drag to draw a curve (pen tool)
+
+- **Press and drag** to place a joint: the joint is placed at the press point, and dragging pulls out its handles.
+    - The **outgoing handle** follows the cursor.
+    - The **incoming handle** mirrors it (opposite direction, same length). New joints default to mirror.
+    - The segment from the previous joint to this one **updates its curvature live** while dragging.
+- Release confirms the joint. The next preview segment starts curved, following the outgoing handle.
+- **Modifiers while dragging:**
+    - `Shift`: constrain the handle angle to 45° increments.
+    - `Space` (hold): move the joint itself instead of the handle; release `Space` to continue shaping the handle.
+- **Click on the active (last placed) joint:** removes its outgoing handle, so the next segment starts straight from it (nice to have).
+
+### 2. Drag a handle to change curvature (edit mode)
+
+- Hover a handle end: it enlarges with accent fill.
+- Drag it: the curve updates live. What happens to the opposite handle depends on the joint's mode:
+
+| Mode | Dragging one handle… |
+| --- | --- |
+| `Sharp` | Not a curve joint |
+| `Mirror` | The other handle rotates to stay exactly opposite and matches the length. |
+| `No mirror` | The other handle doesn't move. |
+- `Shift`drag: constrain the angle to 45° increments.
+- Dragging the joint itself moves both of its handles with it (handles keep their offsets).
+- One handle drag = one undo step.
+
+### 3. Convert sharp ↔ curve joint
+
+Two ways to trigger it, both in edit mode:
+
+- **Double-click a joint**, or
+- select in the curve section in the right editing panel
+
+**sharp → curve**
+
+- Create both handles along the direction from the previous joint to the next joint (so the curve flows smoothly through the joint).
+- Each handle's length = 1/3 of the distance to its neighbor on that side.
+- Set the mode to mirror mode
+- For an endpoint of an open path, create only the handle facing its single neighbor.
+
+**Curve → sharp**
+
+- Remove both handles. The adjacent segments become straight on this side (they stay curved only if the neighbor joint has a handle facing this joint).
+
+### 4. Mirroring control in the right editing panel
+
+When exactly one joint is selected in edit mode, the panel shows a curve section:
+
+- **Mirroring** dropdown or segmented control: `sharp` / `Mirror`/ `No Mirror`
+
+**Switching modes snaps the handles immediately:**
+
+- To `no mirror`: keep the **reference handle** as is; rotate the other to be exactly opposite, keeping its length.
+- To `mirror`: rotate the other handle to be opposite **and** set its length to match the reference handle.
+- To `sharp`: nothing moves.
+- The reference handle is the one most recently dragged; if neither has been dragged in this session, use `handleOut`.
+
+### 5. Adding a joint on a curved segment
+
+- Split the curve at t = 0.5 with de Casteljau (shape doesn't change).
+- The new joint gets the split's handles; they are collinear by construction, so set its mode to mirror mode.
+- The neighbor joints' handles facing the new joint are shortened by the split as well.

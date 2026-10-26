@@ -42,27 +42,35 @@ export type Product = {
 export type ElementKind = 'image' | 'text' | 'shape' | 'vector';
 export type ShapeKind = 'rect' | 'ellipse' | 'line' | 'arrow' | 'polygon';
 
+/** See the SVG import/edit spec's Part 4 "Joint data model" — `'sharp'` is a corner joint (no
+ * handles); `'mirror'`/`'nomirror'` only have real meaning once a joint actually has handles, and
+ * decide how dragging one handle moves the other (exactly opposite + matching length, vs. untouched). */
+export type MirrorMode = 'sharp' | 'mirror' | 'nomirror';
+
 /**
- * A vector path's geometry — straight-segment-only (bezier creation/editing is out of scope per the
- * SVG import/edit spec), in local coordinates relative to the element's own `frame` (0..frame.w,
- * 0..frame.h at import time; `frame`/points are kept in sync as the shape is edited). Curves
- * encountered on import (bezier/arc path commands) are flattened to enough straight segments to
- * look right — real curve editing is a later project, not this one.
+ * One vertex of a `VectorPath`, in local coordinates relative to the element's own `frame` (0..
+ * frame.w, 0..frame.h). `handleIn`/`handleOut` are themselves absolute points in that same space
+ * (not offsets from `x`/`y`) — directly usable as a cubic bezier control point, per "Model → path"
+ * below. `null` means no handle on that side: a joint with both null is a plain corner; a path
+ * command's own endpoint becomes a joint, never a control point (control points become handles).
  */
-export type VectorPath = {
-  points: { x: number; y: number }[];
-  closed: boolean;
-  /**
-   * Per-point: true if this is a real anchor (a path command's own endpoint, or one later promoted
-   * via the midpoint-insert interaction) that the Part 2 editing overlay shows and lets the user
-   * drag; false for a curve-flattening sample point that exists only to approximate a bezier/arc's
-   * shape (see svg-geometry's `flattenPathD`/`ellipseToPoints`) and stays invisible there — "shows
-   * every anchor point... hides the control points that shape the curves between them." Absent means
-   * every point is a real anchor: pen-drawn vectors, shape-to-vector conversions, and an import with
-   * only straight-line commands never have hidden samples to begin with.
-   */
-  anchors?: boolean[];
+export type Joint = {
+  x: number;
+  y: number;
+  handleIn: { x: number; y: number } | null;
+  handleOut: { x: number; y: number } | null;
+  mirror: MirrorMode;
 };
+
+/**
+ * A vector path's geometry, as contours of joints (bezier curves and corners alike) — see the SVG
+ * import/edit spec's Part 4. The segment from joint A to joint B is a straight `L` when both
+ * `A.handleOut` and `B.handleIn` are null, otherwise a cubic `C` with control points
+ * `A.handleOut ?? A` and `B.handleIn ?? B` (see `jointsToPathD` in `vector-path.ts`, which is the one
+ * and only place that turns this model into a real SVG `d` string — never hand-edit path commands
+ * directly, always go through the joint model so every consumer stays in sync).
+ */
+export type VectorPath = { joints: Joint[]; closed: boolean };
 
 export type ShadowStyle = { enabled: boolean; x: number; y: number; blur: number; color: string; opacity: number };
 
@@ -173,7 +181,7 @@ export type LayoutElement = {
     opacity?: number;
     /** Shape only, `shape === 'polygon'` — how many sides the regular polygon has (3 when unset,
      * matching the toolbar's own default triangle). The same "Count" field also edits a converted
-     * `vector` element's own `path.points.length` directly, which needs no field here — see
+     * `vector` element's own `path.joints.length` directly, which needs no field here — see
      * `regularPolygonPoints` in vector-path.ts. */
     polygonSides?: number;
     /** Text only — 'vertical-rl' stacks characters top-to-bottom (traditional Japanese layout). */

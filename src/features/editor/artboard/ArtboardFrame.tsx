@@ -5,10 +5,10 @@ import { cn } from '@/lib/utils';
 import { nextId, layoutHasContent, isRealLayer } from '@/lib/create-layout';
 import { layerName } from '@/lib/layer-name';
 import { useApplyImage } from '@/hooks/useApplyImage';
-import type { GroupAutoLayout, Layout, LayoutElement, ShapeKind } from '@/types';
+import type { GroupAutoLayout, Joint, Layout, LayoutElement, ShapeKind } from '@/types';
 import { parseSvgToElements } from '@/lib/svg-import';
 import { readPasteableClipboardContent } from '@/lib/clipboard-import';
-import { defaultShapeStyle, JOINT_ICON, JOINT_SELECTED_ICON, PEN_DEFAULT_FILL, PEN_DEFAULT_STROKE_COLOR, PEN_DEFAULT_STROKE_WIDTH, shapeKindToVectorPath } from '@/lib/vector-path';
+import { allControlPoints, defaultShapeStyle, JOINT_ICON, PEN_DEFAULT_FILL, PEN_DEFAULT_STROKE_COLOR, PEN_DEFAULT_STROKE_WIDTH, shapeKindToVectorPath } from '@/lib/vector-path';
 import { boundsOf } from '@/lib/svg-geometry';
 import { isWithinClosePathRadius, PenDrawingOverlay } from './PenDrawingOverlay';
 import { ElementRenderer } from './ElementRenderer';
@@ -46,17 +46,21 @@ const PEN_CURSOR_ICON = { src: '/icons/SVGs/pen cursor 24.svg', w: 24, h: 24, ti
  * joint switches to the selected style") — swaps the default joint for the selected one; everything
  * else about the cursor stays the same. */
 function PenToolCursor({ x, y, pressed }: { x: number; y: number; pressed: boolean }) {
-  const joint = pressed ? JOINT_SELECTED_ICON : JOINT_ICON;
   return (
     <>
       {/* Painted first (behind) — the pen nib itself sits in front of the preview joint, not the
-          other way around. */}
-      <img
-        src={joint.src}
-        alt=""
-        className="pointer-events-none fixed z-50"
-        style={{ left: x - joint.center.x, top: y - joint.center.y, width: joint.w, height: joint.h }}
-      />
+          other way around. Suppressed while `pressed`: that's exactly when the cursor is actually
+          shaping a curve handle (Part 4), which already draws its own end-point marker right at this
+          same spot (see PenDrawingOverlay) — showing both here would double up two joint glyphs on
+          top of each other. */}
+      {!pressed && (
+        <img
+          src={JOINT_ICON.src}
+          alt=""
+          className="pointer-events-none fixed z-50"
+          style={{ left: x - JOINT_ICON.center.x, top: y - JOINT_ICON.center.y, width: JOINT_ICON.w, height: JOINT_ICON.h }}
+        />
+      )}
       <img
         src={PEN_CURSOR_ICON.src}
         alt=""
@@ -1174,12 +1178,13 @@ export function ArtboardFrame({
   // `cursor-none`, this follows the real mouse position in its place.
   const [penCursorPos, setPenCursorPos] = useState<{ x: number; y: number } | null>(null);
 
-  // The pen tool's own in-progress drawing session (Part 3) — `points` are committed joints so far
-  // (layout-space, absolute), `cursor` is the live mouse position in that same space (drives the
+  // The pen tool's own in-progress drawing session (Part 3 straight segments, Part 4 curves) —
+  // `joints` are committed so far (layout-space, absolute; each a real `Joint` with its own handles,
+  // not a flattened point), `cursor` is the live mouse position in that same space (drives the
   // rubber-band preview segment), `pressed` is true for the window between mousedown and mouseup
-  // (shows the cursor's own preview joint in its selected style — "Pressed" state). `null` points
-  // means the tool isn't active at all; an empty array means it's active but nothing's placed yet.
-  type PenDrawState = { points: { x: number; y: number }[]; cursor: { x: number; y: number } | null; pressed: boolean };
+  // (shows the cursor's own preview joint in its selected style — "Pressed" state). `null` means the
+  // tool isn't active at all; an empty array means it's active but nothing's placed yet.
+  type PenDrawState = { joints: Joint[]; cursor: { x: number; y: number } | null; pressed: boolean };
   const [penDraw, setPenDraw] = useState<PenDrawState | null>(null);
   // Mirrors `penDraw` for the tool-switch-away effect below, whose cleanup needs the *latest* value
   // at the moment the tool actually changes — the effect's own closure would otherwise see whatever
@@ -1211,11 +1216,14 @@ export function ArtboardFrame({
   function finishDrawing(closed: boolean) {
     const session = penDrawRef.current;
     setPenDraw(null);
-    if (!session || session.points.length < 2) return;
-    const bounds = boundsOf(session.points);
+    if (!session || session.joints.length < 2) return;
+    // Bounds over every joint *and* handle (see `allControlPoints`) — a curve bulging on its handles
+    // must not get clipped by a frame sized only to the joints themselves.
+    const bounds = boundsOf(allControlPoints(session.joints));
     const w = Math.max(1, bounds.maxX - bounds.minX);
     const h = Math.max(1, bounds.maxY - bounds.minY);
-    const points = session.points.map((p) => ({ x: p.x - bounds.minX, y: p.y - bounds.minY }));
+    const shift = (p: { x: number; y: number }) => ({ x: p.x - bounds.minX, y: p.y - bounds.minY });
+    const joints: Joint[] = session.joints.map((j) => ({ ...j, ...shift(j), handleIn: j.handleIn ? shift(j.handleIn) : null, handleOut: j.handleOut ? shift(j.handleOut) : null }));
     const element: LayoutElement = {
       id: nextId('el'),
       kind: 'vector',
@@ -1223,7 +1231,7 @@ export function ArtboardFrame({
       frame: { x: bounds.minX, y: bounds.minY, w, h },
       visible: true,
       name: nextPenVectorName(),
-      path: { points, closed },
+      path: { joints, closed },
       style: closed
         ? { fill: PEN_DEFAULT_FILL, strokeWidth: undefined }
         : { fill: undefined, strokeColor: PEN_DEFAULT_STROKE_COLOR, strokeWidth: PEN_DEFAULT_STROKE_WIDTH, strokeStyle: 'solid' },
@@ -1239,7 +1247,7 @@ export function ArtboardFrame({
   // in this exact effect run, i.e. still 'pen' right up until the moment it's about to change away.
   useEffect(() => {
     if (activeTool !== 'pen') return;
-    setPenDraw({ points: [], cursor: null, pressed: false });
+    setPenDraw({ joints: [], cursor: null, pressed: false });
     return () => {
       if (penDrawRef.current) finishDrawing(false);
     };
@@ -1262,9 +1270,9 @@ export function ArtboardFrame({
       }
       if (e.key === 'Backspace' || e.key === 'Delete') {
         const session = penDrawRef.current;
-        if (!session || session.points.length === 0) return;
+        if (!session || session.joints.length === 0) return;
         e.preventDefault();
-        setPenDraw({ ...session, points: session.points.slice(0, -1) });
+        setPenDraw({ ...session, joints: session.joints.slice(0, -1) });
       }
     }
     window.addEventListener('keydown', onKeyDown);
@@ -1273,46 +1281,124 @@ export function ArtboardFrame({
   }, [active, activeTool]);
 
   /** One mousedown→(optional drag)→mouseup gesture places (or, clicking the first joint again,
-   * closes on) the next joint — covers both gestures the spec asks for ("click, move, click" and
-   * "press, drag, release") uniformly, since both just place the point wherever the mouse ends up on
-   * release. Shift during the drag snaps the segment from the active joint to 45° increments. */
+   * closes on) the next joint — covers both gestures the spec asks for: a plain "click, move, click"
+   * places a corner joint (no handles) wherever the mouse ends up on release; "press, drag, release"
+   * additionally pulls that same joint's handles out as it drags (Part 4). A small movement threshold
+   * tells the two apart, same as a real pen tool's own click-vs-drag detection. */
   function handlePenMouseDown(e: ReactMouseEvent) {
     e.preventDefault();
     e.stopPropagation();
     const session = penDrawRef.current;
     if (!session) return;
-    const from = session.points[session.points.length - 1] ?? null;
+    const pressPoint = nativePointFromEvent(e);
+    const activeJoint = session.joints[session.joints.length - 1] ?? null;
+    // This gesture's own joint always lands at this index — `onMove` keeps overwriting it live as
+    // the drag continues; a plain click (never entering `onMove`) appends it fresh in `onUp` instead.
+    const newIndex = session.joints.length;
+    let spaceHeld = false;
+    let draggedHandle: { x: number; y: number } | null = null; // last real (non-Space) handle drag, for the final onUp recompute
 
-    function constrain(raw: { x: number; y: number }, shiftKey: boolean) {
-      if (!shiftKey || !from) return raw;
-      const dx = raw.x - from.x;
-      const dy = raw.y - from.y;
-      const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
-      const dist = Math.hypot(dx, dy);
-      return { x: from.x + Math.cos(angle) * dist, y: from.y + Math.sin(angle) * dist };
+    // Shift constrains the OUTGOING HANDLE's own angle (relative to the joint being placed, i.e.
+    // `pressPoint`) to 45° increments — Part 4's own replacement for Part 3's straight-segment-angle
+    // constrain, now that dragging shapes a curve instead of just repositioning a corner.
+    function constrainHandle(cursor: { x: number; y: number }, shiftKey: boolean) {
+      const raw = { x: cursor.x - pressPoint.x, y: cursor.y - pressPoint.y };
+      if (!shiftKey) return raw;
+      const len = Math.hypot(raw.x, raw.y);
+      const angle = Math.round(Math.atan2(raw.y, raw.x) / (Math.PI / 4)) * (Math.PI / 4);
+      return { x: Math.cos(angle) * len, y: Math.sin(angle) * len };
+    }
+
+    function curveJointAt(jointPos: { x: number; y: number }, vec: { x: number; y: number }): Joint {
+      return { x: jointPos.x, y: jointPos.y, handleOut: { x: jointPos.x + vec.x, y: jointPos.y + vec.y }, handleIn: { x: jointPos.x - vec.x, y: jointPos.y - vec.y }, mirror: 'mirror' };
     }
 
     setPenDraw((prev) => (prev ? { ...prev, pressed: true } : prev));
 
     function onMove(ev: globalThis.MouseEvent) {
-      const p = constrain(nativePointFromEvent(ev), ev.shiftKey);
-      setPenDraw((prev) => (prev ? { ...prev, cursor: p } : prev));
+      const current = penDrawRef.current;
+      if (!current) return;
+      const cur = nativePointFromEvent(ev);
+      if (spaceHeld) {
+        // "Space (hold): move the joint itself instead of the handle" — the handle stays wherever it
+        // already was (an absolute point, same as every other handle), only the joint's own x/y follow.
+        const existing = current.joints[newIndex];
+        const joints = [...current.joints];
+        joints[newIndex] = existing ? { ...existing, x: cur.x, y: cur.y } : { x: cur.x, y: cur.y, handleIn: null, handleOut: null, mirror: 'sharp' };
+        setPenDraw({ ...current, joints, cursor: cur });
+        return;
+      }
+      const vec = constrainHandle(cur, ev.shiftKey);
+      draggedHandle = vec;
+      const joints = [...current.joints];
+      joints[newIndex] = curveJointAt(pressPoint, vec);
+      setPenDraw({ ...current, joints, cursor: cur });
     }
+    function onKeyDown(ev: KeyboardEvent) {
+      if (ev.code === 'Space') {
+        ev.preventDefault();
+        spaceHeld = true;
+      }
+    }
+    function onKeyUp(ev: KeyboardEvent) {
+      if (ev.code === 'Space') spaceHeld = false;
+    }
+
     function onUp(ev: globalThis.MouseEvent) {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      const p = constrain(nativePointFromEvent(ev), ev.shiftKey);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
       const current = penDrawRef.current;
       if (!current) return;
-      if (current.points.length >= 2 && isWithinClosePathRadius(p, current.points[0], scale)) {
+      const cur = nativePointFromEvent(ev);
+      const moved = Math.hypot(cur.x - pressPoint.x, cur.y - pressPoint.y) > 2;
+
+      let joints: Joint[];
+      if (moved) {
+        if (spaceHeld) {
+          // Released while still holding Space — the joint is wherever it last tracked the cursor to.
+          const existing = current.joints[newIndex];
+          joints = [...current.joints];
+          joints[newIndex] = existing ? { ...existing, x: cur.x, y: cur.y } : { x: cur.x, y: cur.y, handleIn: null, handleOut: null, mirror: 'sharp' };
+        } else {
+          const vec = draggedHandle ?? constrainHandle(cur, ev.shiftKey);
+          joints = [...current.joints];
+          joints[newIndex] = curveJointAt(pressPoint, vec);
+        }
+      } else {
+        // A plain click. "Click on the active (last placed) joint: removes its outgoing handle" —
+        // checked against the joint that was already active *before* this gesture, so clicking it
+        // again (rather than empty canvas) is unambiguous.
+        if (activeJoint && activeJoint.handleOut && isWithinClosePathRadius(pressPoint, activeJoint, scale)) {
+          joints = [...current.joints];
+          joints[joints.length - 1] = { ...activeJoint, handleOut: null, mirror: activeJoint.handleIn ? 'nomirror' : 'sharp' };
+          setPenDraw({ ...current, joints, cursor: pressPoint, pressed: false });
+          return;
+        }
+        joints = [...current.joints, { x: pressPoint.x, y: pressPoint.y, handleIn: null, handleOut: null, mirror: 'sharp' }];
+      }
+
+      // Closing: this release landed within the first joint's own hit radius, and there's enough of
+      // a shape to close (at least a triangle). The closing joint we just placed/shaped is discarded
+      // — closing reuses joint[0] as the shared start/end point, carrying over whatever incoming
+      // handle this gesture gave it (so closing with a drag still curves into the start correctly).
+      if (joints.length >= 3 && isWithinClosePathRadius(cur, joints[0], scale)) {
+        const closingJoint = joints[joints.length - 1];
+        const committed = joints.slice(0, -1);
+        committed[0] = { ...committed[0], handleIn: closingJoint.handleIn ?? committed[0].handleIn };
+        setPenDraw({ ...current, joints: committed, cursor: null });
         finishDrawing(true);
         setActiveTool('select');
         return;
       }
-      setPenDraw({ points: [...current.points, p], cursor: p, pressed: false });
+
+      setPenDraw({ ...current, joints, cursor: cur, pressed: false });
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
   }
 
   // Keeps every auto-layout group stacked after any change — a member resized (text re-measured,
@@ -1429,11 +1515,12 @@ export function ArtboardFrame({
         }}
       >
         {active && <ImagePickerDialog open={insertImagePickerOpen} onOpenChange={setInsertImagePickerOpen} onSelect={insertNewImage} />}
-        {penDraw && penDraw.points.length > 0 && (
+        {penDraw && penDraw.joints.length > 0 && (
           <PenDrawingOverlay
-            points={penDraw.points}
+            joints={penDraw.joints}
             cursor={penDraw.cursor}
-            closeHover={Boolean(penDraw.cursor && penDraw.points.length >= 2 && isWithinClosePathRadius(penDraw.cursor, penDraw.points[0], scale))}
+            pressed={penDraw.pressed}
+            closeHover={Boolean(penDraw.cursor && penDraw.joints.length >= 2 && isWithinClosePathRadius(penDraw.cursor, penDraw.joints[0], scale))}
             nativeWidth={nativeWidth}
             nativeHeight={nativeHeight}
           />

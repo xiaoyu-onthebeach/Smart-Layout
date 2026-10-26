@@ -6,6 +6,7 @@ import { layerName } from '@/lib/layer-name';
 import { isRealLayer } from '@/lib/create-layout';
 import { useT } from '@/lib/i18n';
 import type { Layout, LayoutElement } from '@/types';
+import { VectorShapeIcon } from '@/features/editor/artboard/PanelKit';
 
 /** Every nesting level shifts a row's own content right by one chevron-button's worth of space
  * (24px + the 4px gap after it = 28px) — same width whether what's indenting is a group header's
@@ -52,8 +53,7 @@ function LayerThumb({ element }: { element: LayoutElement }) {
     return <ShapeThumb element={element} />;
   }
   if (element.kind === 'vector') {
-    // Bakes in its own #26262C/rounded-corner background — unlike the other thumbnails, no wrapper needed.
-    return <img src="/icons/SVGs/vector%20layer%20thumbnail.svg" alt="" className="size-8 shrink-0" />;
+    return <VectorShapeIcon path={element.path} radius={element.style.radius ?? 0} />;
   }
   return (
     <div className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ background: '#26262C' }}>

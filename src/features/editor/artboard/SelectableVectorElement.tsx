@@ -2,7 +2,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { LayoutElement } from '@/types';
 import type { Tool } from '@/store/types';
 import { boxShadowCss } from '@/lib/shadow';
-import { RADIUS_HANDLE_ICON } from '@/lib/vector-path';
+import { jointsToRoundedPathD, RADIUS_HANDLE_ICON } from '@/lib/vector-path';
 import { useElementDrag, DUPLICATE_CURSOR } from './useElementDrag';
 import { SelectionBoundingBox } from './SelectionBoundingBox';
 import { VectorEditOverlay } from './VectorEditOverlay';
@@ -47,7 +47,7 @@ export function SelectableVectorElement({
   const { startDrag, startDragOrDeferredSelect, startResize, startRotate } = useElementDrag(layoutId, element.id, scale);
   const { frame, style, path } = element;
 
-  const d = path && path.points.length >= 2 ? path.points.map((p) => `${p.x},${p.y}`).join(' ') : '';
+  const d = path && path.joints.length >= 2 ? jointsToRoundedPathD(path, style.radius ?? 0) : '';
 
   return (
     <div
@@ -91,9 +91,9 @@ export function SelectableVectorElement({
           style={{ opacity: style.opacity !== undefined ? style.opacity / 100 : undefined }}
         >
           {path!.closed ? (
-            <polygon points={d} fill={style.fill ?? 'none'} stroke={style.strokeColor} strokeWidth={style.strokeWidth} />
+            <path d={d} fill={style.fill ?? 'none'} stroke={style.strokeColor} strokeWidth={style.strokeWidth} />
           ) : (
-            <polyline points={d} fill="none" stroke={style.strokeColor ?? style.fill ?? '#000000'} strokeWidth={style.strokeWidth ?? 2} strokeLinecap="round" strokeLinejoin="round" />
+            <path d={d} fill="none" stroke={style.strokeColor ?? style.fill ?? '#000000'} strokeWidth={style.strokeWidth ?? 2} strokeLinecap="round" strokeLinejoin="round" />
           )}
         </svg>
       )}

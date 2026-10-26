@@ -10,7 +10,9 @@ import { exportLayout, type ExportFileType, type ExportScale } from '@/lib/expor
 import { isGradient } from '@/lib/gradient';
 import { isValidHex } from '@/lib/color';
 import { ColorPickerPopover } from './ColorPickerPopover';
-import type { Layout, LayoutElement, ShadowStyle } from '@/types';
+import type { Layout, LayoutElement, ShadowStyle, VectorPath } from '@/types';
+import { boundsOf } from '@/lib/svg-geometry';
+import { allControlPoints, jointsToRoundedPathD } from '@/lib/vector-path';
 
 /** One selected element, paired with the scene (layout) it lives in — a multi-select can span scenes. */
 export type EditorTarget = { element: LayoutElement; layoutId: string };
@@ -44,6 +46,41 @@ export function PanelHeader({ icon, title, trailing }: { icon: ReactNode; title:
  * `items-center`; a lopsided asset still needs its own nudge on top of that). */
 export function PanelHeaderIcon({ src, style }: { src: string; style?: CSSProperties }) {
   return <img src={src} alt="" className="-ml-1 size-8 shrink-0" style={style} />;
+}
+
+/** A vector layer's own glyph: a tiny outline preview of its actual path (not a generic shape
+ * silhouette), on the same dark rounded-square backdrop every sibling `panel_*.svg` bakes in —
+ * used for both the layers-list row thumbnail and this element's own panel header icon. Always
+ * stroked, never filled, regardless of the element's real fill/stroke style (matching how the
+ * plain shape thumbnails in the layers list ignore fill too). */
+export function VectorShapeIcon({ path, radius = 0, size = 32 }: { path: VectorPath | undefined; radius?: number; size?: number }) {
+  if (!path || path.joints.length < 2) {
+    return <div className="shrink-0 rounded-lg" style={{ width: size, height: size, background: '#26262C' }} />;
+  }
+  const bounds = boundsOf(allControlPoints(path.joints));
+  const w = Math.max(bounds.maxX - bounds.minX, 1e-3);
+  const h = Math.max(bounds.maxY - bounds.minY, 1e-3);
+  // Longer side maxes out at innerMax (20 at the usual 32px size) — same fit-to-box math `ShapeThumb`
+  // (LayersTab.tsx) uses, so a vector's glyph reads at the same visual scale as every other kind's.
+  const innerMax = size * 0.625;
+  const ratio = w / h;
+  const renderedW = Math.max(4, ratio >= 1 ? innerMax : innerMax * ratio);
+  const renderedH = Math.max(4, ratio >= 1 ? innerMax / ratio : innerMax);
+  return (
+    <div className="flex shrink-0 items-center justify-center rounded-lg" style={{ width: size, height: size, background: '#26262C' }}>
+      <svg width={renderedW} height={renderedH} viewBox={`${bounds.minX} ${bounds.minY} ${w} ${h}`} style={{ overflow: 'visible' }}>
+        <path
+          d={jointsToRoundedPathD(path, radius)}
+          fill="none"
+          stroke="rgba(255,255,255,0.45)"
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+    </div>
+  );
 }
 
 /** Shared toggle state/logic behind both `MatchSelectButton` (the compact header icon) and
@@ -1052,6 +1089,71 @@ export const BORDER_STYLE_ICONS: Record<'none' | 'solid' | 'dashed' | 'dotted', 
   dotted: '/icons/edit_panel/border-dotted%2016.svg',
 };
 
+type SolidBorderStyle = 'solid' | 'dashed' | 'dotted';
+const BORDER_STYLE_LABELS: Record<SolidBorderStyle, string> = { solid: 'Solid', dashed: 'Dashed', dotted: 'Dotted' };
+
+/** The collapsed-by-default "+ Border" row (Style/Color/Weight once expanded) — shared by
+ * ShapeEditorPanel and VectorPathPanel so the two panels' Border sections never drift apart. Starts
+ * expanded only if the style it's handed already has a border, same lazy-init convention the text
+ * panel's own Border section uses. */
+export function BorderSection({ style, onPatch }: { style: LayoutElement['style']; onPatch: (patch: Partial<LayoutElement['style']>) => void }) {
+  const t = useT();
+  const [borderExpanded, setBorderExpanded] = useState(() => (style.strokeWidth ?? 0) > 0);
+  const strokeStyle: SolidBorderStyle = style.strokeStyle ?? 'solid';
+
+  function toggleBorder() {
+    if (borderExpanded) {
+      onPatch({ strokeWidth: 0 });
+      setBorderExpanded(false);
+    } else {
+      onPatch({ strokeWidth: style.strokeWidth || 1, strokeStyle: style.strokeStyle ?? 'solid' });
+      setBorderExpanded(true);
+    }
+  }
+
+  const borderStyleOptions: { value: SolidBorderStyle; label: string; icon: ReactNode }[] = (['solid', 'dashed', 'dotted'] as const).map((value) => ({
+    value,
+    label: t(BORDER_STYLE_LABELS[value]),
+    icon: <img src={BORDER_STYLE_ICONS[value]} alt="" className="size-4" />,
+  }));
+
+  return (
+    <div className="flex flex-col gap-2 px-4 pt-2 pb-4">
+      <div className="flex items-center justify-between">
+        <span className="text-[13px] font-semibold tracking-[-0.01em] text-white">{t('Border')}</span>
+        <button
+          type="button"
+          aria-label={borderExpanded ? t('Remove border') : t('Add border')}
+          onClick={toggleBorder}
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+        >
+          {borderExpanded ? <Minus className="size-4" /> : <Plus className="size-4" />}
+        </button>
+      </div>
+      {borderExpanded && (
+        <div className="flex flex-col gap-2">
+          <GridFieldRow label={t('Style')}>
+            <SegmentedControl options={borderStyleOptions} value={strokeStyle} onChange={(v) => onPatch({ strokeStyle: v })} />
+          </GridFieldRow>
+
+          <GridFieldRow label={t('Color')}>
+            <InlineColorField color={style.strokeColor ?? '#000000'} onChange={(strokeColor) => onPatch({ strokeColor })} width={101.5} compact />
+          </GridFieldRow>
+
+          <GridFieldRow label={t('Weight')}>
+            <NumberField
+              scrubbable
+              className="w-full bg-[#26262C] text-[11px] font-normal"
+              value={String(style.strokeWidth ?? 1)}
+              onCommit={(v) => onPatch({ strokeWidth: Math.max(0, Number(v) || 0) })}
+            />
+          </GridFieldRow>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Reused for every corner via CSS rotation (see the per-corner radius row below) — one asset, four orientations.
 const CORNER_ROTATIONS = [0, 90, -90, -180];
 
@@ -1241,7 +1343,26 @@ function ScrubbableNumberField({
  * the layout engine yet) — dragging/typing the uniform field above overwrites all four's own local
  * state to match, the same way it always overwrites the one real `value` this row is wired to;
  * typing the same value into every corner likewise folds back into that one real value. */
-export function CornerRadiusRow({ value, onCommit, max }: { value: number; onCommit: (value: number) => void; max: number }) {
+export function CornerRadiusRow({
+  value,
+  onCommit,
+  max,
+  allowIndividual = true,
+  layout = 'grid',
+}: {
+  value: number;
+  onCommit: (value: number) => void;
+  max: number;
+  /** A vector's joints have no fixed "4 corners" to split a uniform radius across — the per-corner
+   * toggle (and whatever it would even mean here) doesn't apply, so this hides it rather than
+   * leaving a control with nothing real to do. The toggle's own slot still reserves the same width
+   * in its place either way, so the field doesn't grow to fill the gap. */
+  allowIndividual?: boolean;
+  /** 'grid' (default, unchanged) is `GridFieldRow`'s own fixed label|field halves — what Text/Image
+   * panels still use. 'stacked' puts the label on its own line above a field that spans the row's
+   * full width, matching Fill's own layout in `ShapeEditorPanel`/`VectorPathPanel`. */
+  layout?: 'grid' | 'stacked';
+}) {
   const t = useT();
   const [individual, setIndividual] = useState(false);
   const [corners, setCorners] = useState<number[]>([value, value, value, value]);
@@ -1260,38 +1381,49 @@ export function CornerRadiusRow({ value, onCommit, max }: { value: number; onCom
     });
   }
 
+  const toggleButton = allowIndividual ? (
+    <button
+      type="button"
+      aria-label={individual ? t('Uniform radius') : t('Per-corner radius')}
+      aria-pressed={individual}
+      onClick={() => setIndividual((v) => !v)}
+      className="flex size-7 shrink-0 items-center justify-center rounded-md text-white transition-colors hover:bg-white/10"
+    >
+      <img src="/icons/radius_4.svg" alt="" className="size-4" />
+    </button>
+  ) : undefined;
+
+  const field = isMixed ? (
+    <div className="flex h-7 w-full items-center gap-2 rounded-md bg-[#26262C] px-3 text-[11px] text-white transition-colors">
+      <img src="/icons/radius-all%2016.svg" alt="" className="size-4 shrink-0" style={{ opacity: 0.45 }} />
+      <span className="min-w-0 flex-1 truncate">{t('Mixed')}</span>
+    </div>
+  ) : (
+    <IconNumberField
+      scrubbable
+      icon="/icons/radius-all%2016.svg"
+      iconStyle={{ opacity: 0.45 }}
+      className="w-full"
+      value={String(value)}
+      onCommit={(raw) => commitUniform(Math.max(0, Math.min(max, Math.round(Number(raw) || 0))))}
+    />
+  );
+
   return (
     <div className="flex flex-col gap-2">
-      <GridFieldRow
-        label={t('Radius')}
-        trailing={
-          <button
-            type="button"
-            aria-label={individual ? t('Uniform radius') : t('Per-corner radius')}
-            aria-pressed={individual}
-            onClick={() => setIndividual((v) => !v)}
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-white transition-colors hover:bg-white/10"
-          >
-            <img src="/icons/radius_4.svg" alt="" className="size-4" />
-          </button>
-        }
-      >
-        {isMixed ? (
-          <div className="flex h-7 w-full items-center gap-2 rounded-md bg-[#26262C] px-3 text-[11px] text-white transition-colors">
-            <img src="/icons/radius-all%2016.svg" alt="" className="size-4 shrink-0" style={{ opacity: 0.45 }} />
-            <span className="min-w-0 flex-1 truncate">{t('Mixed')}</span>
+      {layout === 'stacked' ? (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[9px] leading-4 text-white/65">{t('Radius')}</span>
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">{field}</div>
+            <IconSlot>{toggleButton}</IconSlot>
           </div>
-        ) : (
-          <IconNumberField
-            scrubbable
-            icon="/icons/radius-all%2016.svg"
-            iconStyle={{ opacity: 0.45 }}
-            className="w-full"
-            value={String(value)}
-            onCommit={(raw) => commitUniform(Math.max(0, Math.min(max, Math.round(Number(raw) || 0))))}
-          />
-        )}
-      </GridFieldRow>
+        </div>
+      ) : (
+        <GridFieldRow label={t('Radius')} trailing={toggleButton}>
+          {field}
+        </GridFieldRow>
+      )}
       {individual && (
         <div className="flex items-center gap-2">
           <div className="grid min-w-0 flex-1 grid-cols-[101.5px_101.5px] gap-2">

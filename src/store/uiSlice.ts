@@ -17,6 +17,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   selectedSceneIds: [],
   editingTextElementId: null,
   editingVectorElementId: null,
+  editingVectorJoint: null,
   textRangeSelection: null,
   activeTool: 'select',
   shapeToolKind: 'rect',
@@ -106,7 +107,8 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   // from whatever was last selected inside this or another text element.
   setEditingTextElement: (id) => set({ editingTextElementId: id, editingVectorElementId: null, textRangeSelection: null }),
   // Mirrors setEditingTextElement — entering one edit mode always leaves the other.
-  setEditingVectorElement: (id) => set({ editingVectorElementId: id, editingTextElementId: null }),
+  setEditingVectorElement: (id) => set({ editingVectorElementId: id, editingTextElementId: null, editingVectorJoint: null }),
+  setEditingVectorJoint: (joint) => set({ editingVectorJoint: joint }),
   // Updated live while typing/selecting inside a text element's contentEditable (see
   // EditableTextElement's selectionchange listener) — read by TextEditorPanel's Spacing/Stretch
   // fields to scope a change to just the highlighted substring instead of the whole layer. Not

@@ -1,7 +1,9 @@
-// Pure geometry helpers for SVG import — 2D affine transforms, and flattening every SVG shape kind
-// (path data included) down to plain polylines, since vector layers in this prototype only ever
-// store straight segments (see `VectorPath` in types/index.ts; bezier editing is out of scope for
-// the SVG import/edit spec). Curves are sampled finely enough to still *look* right.
+// Pure geometry helpers for SVG import — 2D affine transforms, and turning every SVG shape kind
+// (path data included) into the joint+handle model `VectorPath` actually stores (see Part 4 of the
+// SVG import/edit spec, and `Joint` in types/index.ts). A path's own curve commands (C/S/Q/T/A) turn
+// into real joints with handles, not a flattened polyline — Q and A have no direct equivalent in the
+// joint model, so both get converted to one or more cubic segments first (`quadToCubic`/
+// `arcToCubicSegments`) and handled identically to a real `C` from there on.
 
 export type Point = { x: number; y: number };
 /** [a, b, c, d, e, f] — same layout as `DOMMatrix`/CSS `matrix()`: x' = a*x + c*y + e, y' = b*x + d*y + f. */
@@ -61,35 +63,27 @@ export function parseTransformAttr(attr: string | null | undefined): Matrix {
   return m;
 }
 
-const BEZIER_STEPS = 16;
-const ARC_STEPS = 24;
-
-function sampleCubic(p0: Point, p1: Point, p2: Point, p3: Point, out: Point[]) {
-  for (let i = 1; i <= BEZIER_STEPS; i++) {
-    const t = i / BEZIER_STEPS;
-    const mt = 1 - t;
-    const a = mt * mt * mt;
-    const b = 3 * mt * mt * t;
-    const c = 3 * mt * t * t;
-    const d = t * t * t;
-    out.push({ x: a * p0.x + b * p1.x + c * p2.x + d * p3.x, y: a * p0.y + b * p1.y + c * p2.y + d * p3.y });
-  }
+/** `Q`'s single control point promoted to an equivalent cubic's two, per the spec's "Path → model":
+ * `cp1 = P0 + 2/3 (Q − P0)`, `cp2 = P2 + 2/3 (Q − P2)`. */
+export function quadToCubic(p0: Point, q: Point, p2: Point): { p1: Point; p2: Point } {
+  return {
+    p1: { x: p0.x + (2 / 3) * (q.x - p0.x), y: p0.y + (2 / 3) * (q.y - p0.y) },
+    p2: { x: p2.x + (2 / 3) * (q.x - p2.x), y: p2.y + (2 / 3) * (q.y - p2.y) },
+  };
 }
 
-function sampleQuadratic(p0: Point, p1: Point, p2: Point, out: Point[]) {
-  for (let i = 1; i <= BEZIER_STEPS; i++) {
-    const t = i / BEZIER_STEPS;
-    const mt = 1 - t;
-    out.push({ x: mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x, y: mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y });
-  }
-}
+/** One cubic segment's own control points — `p0` is implicit (whatever the running "current point"
+ * already is when the caller consumes this), `p1`/`p2`/`p3` are absolute. */
+type CubicSeg = { p1: Point; p2: Point; p3: Point };
 
-/** Endpoint-to-center arc parameterization (SVG spec appendix F.6), sampled into straight segments. */
-function sampleArc(p0: Point, rxIn: number, ryIn: number, xAxisRotDeg: number, largeArc: boolean, sweep: boolean, p1: Point, out: Point[]) {
-  if (rxIn === 0 || ryIn === 0 || (p0.x === p1.x && p0.y === p1.y)) {
-    out.push(p1);
-    return;
-  }
+/**
+ * Endpoint-to-center arc parameterization (SVG spec appendix F.6), converted straight to one or more
+ * cubic bezier segments (standard ≤90°-per-segment construction) instead of flattened sample points —
+ * the joint model has no representation for an arc itself, only corners and cubic curves, so this is
+ * the one and only place arc geometry gets approximated at all.
+ */
+export function arcToCubicSegments(p0: Point, rxIn: number, ryIn: number, xAxisRotDeg: number, largeArc: boolean, sweep: boolean, p1: Point): CubicSeg[] {
+  if (rxIn === 0 || ryIn === 0 || (p0.x === p1.x && p0.y === p1.y)) return [{ p1: p0, p2: p1, p3: p1 }];
   let rx = Math.abs(rxIn);
   let ry = Math.abs(ryIn);
   const phi = (xAxisRotDeg * Math.PI) / 180;
@@ -114,60 +108,117 @@ function sampleArc(p0: Point, rxIn: number, ryIn: number, xAxisRotDeg: number, l
   const cx = cosPhi * cxp - sinPhi * cyp + (p0.x + p1.x) / 2;
   const cy = sinPhi * cxp + cosPhi * cyp + (p0.y + p1.y) / 2;
 
-  const angle = (ux: number, uy: number, vx: number, vy: number) => {
+  const angleBetween = (ux: number, uy: number, vx: number, vy: number) => {
     const sign2 = ux * vy - uy * vx < 0 ? -1 : 1;
     const dot = Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy))));
     return sign2 * Math.acos(dot);
   };
-  const theta1 = angle(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
-  let dTheta = angle((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry);
+  const theta1 = angleBetween(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
+  let dTheta = angleBetween((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry);
   if (!sweep && dTheta > 0) dTheta -= 2 * Math.PI;
   if (sweep && dTheta < 0) dTheta += 2 * Math.PI;
 
-  for (let i = 1; i <= ARC_STEPS; i++) {
-    const t = theta1 + (dTheta * i) / ARC_STEPS;
-    const x = cx + rx * Math.cos(t) * cosPhi - ry * Math.sin(t) * sinPhi;
-    const y = cy + rx * Math.cos(t) * sinPhi + ry * Math.sin(t) * cosPhi;
-    out.push({ x, y });
+  // Point on the transformed ellipse at angle `t` (own ellipse-space angle, not the final rotated one).
+  const ellipsePoint = (t: number): Point => ({
+    x: cx + rx * Math.cos(t) * cosPhi - ry * Math.sin(t) * sinPhi,
+    y: cy + rx * Math.cos(t) * sinPhi + ry * Math.sin(t) * cosPhi,
+  });
+  const ellipseTangent = (t: number): Point => ({
+    x: -rx * Math.sin(t) * cosPhi - ry * Math.cos(t) * sinPhi,
+    y: -rx * Math.sin(t) * sinPhi + ry * Math.cos(t) * cosPhi,
+  });
+
+  const segCount = Math.max(1, Math.ceil(Math.abs(dTheta) / (Math.PI / 2)));
+  const segSweep = dTheta / segCount;
+  // Standard unit-circle bezier-arc control-length constant for a `segSweep`-wide slice.
+  const alpha = (Math.sin(segSweep) * (Math.sqrt(4 + 3 * Math.tan(segSweep / 2) ** 2) - 1)) / 3;
+
+  const out: CubicSeg[] = [];
+  for (let k = 0; k < segCount; k++) {
+    const a1 = theta1 + k * segSweep;
+    const a2 = theta1 + (k + 1) * segSweep;
+    const start = ellipsePoint(a1);
+    const end = ellipsePoint(a2);
+    const tanStart = ellipseTangent(a1);
+    const tanEnd = ellipseTangent(a2);
+    out.push({
+      p1: { x: start.x + alpha * tanStart.x, y: start.y + alpha * tanStart.y },
+      p2: { x: end.x - alpha * tanEnd.x, y: end.y - alpha * tanEnd.y },
+      p3: end,
+    });
   }
+  // The arc's own declared endpoint is authoritative (avoids compounding float error across segments).
+  out[out.length - 1].p3 = p1;
+  return out;
 }
 
-/** Flattens an SVG path `d` attribute into one or more straight-segment subpaths (absolute points,
- * no transform applied — the caller composes its own ancestor matrix). A `d` with more than one
- * `M` becomes more than one subpath, since `VectorPath` only models a single contour per element —
- * the import step turns each subpath into its own sibling vector layer. Each subpath also carries a
- * parallel `anchors` array marking which points are real command endpoints (M/L/H/V, or a curve's
- * own end) versus a hidden bezier/arc sample that only exists to approximate the curve's shape —
- * see `VectorPath.anchors`. */
-export function flattenPathD(d: string): { points: Point[]; closed: boolean; anchors: boolean[] }[] {
+const EPS = 1e-4;
+
+/** See `VectorPath`/`Joint` in types/index.ts — kept here (not types/index.ts) since it's a plain
+ * geometry value, not a React-aware type. */
+export type RawJoint = { x: number; y: number; handleIn: Point | null; handleOut: Point | null };
+
+/** A control point within `EPS` of its own joint means "no handle on that side" (the spec's own
+ * phrasing) — collapses a degenerate explicit handle down to `null` so downstream code (handle
+ * rendering, mirror-mode inference) only ever sees a real, visible handle or nothing. */
+export function normalizeHandle(h: Point, joint: Point): Point | null {
+  return Math.hypot(h.x - joint.x, h.y - joint.y) < EPS ? null : h;
+}
+
+/**
+ * Parses an SVG path `d` attribute into one or more joint contours (absolute points, no transform
+ * applied — the caller composes its own ancestor matrix). A `d` with more than one `M` becomes more
+ * than one contour, since `VectorPath` only models a single contour per element — the import step
+ * turns each into its own sibling vector layer. Mirror modes aren't set here (callers that care
+ * infer them via `inferMirrorMode` in vector-path.ts, since that's bundled with the rest of the
+ * handle-mode logic); every joint comes back with `mirror: 'sharp'` as a placeholder.
+ */
+export function parsePathDToJoints(d: string): { joints: RawJoint[]; closed: boolean }[] {
   const tokens = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
   let i = 0;
   const next = () => Number(tokens[i++]);
-  const subpaths: { points: Point[]; closed: boolean; anchors: boolean[] }[] = [];
-  let current: Point[] = [];
-  let anchors: boolean[] = [];
+  const contours: { joints: RawJoint[]; closed: boolean }[] = [];
+  let current: RawJoint[] = [];
   let start: Point = { x: 0, y: 0 };
   let cur: Point = { x: 0, y: 0 };
   let prevCmd = '';
   let prevCtrl: Point | null = null; // reflected control point for S/T
 
-  // Pushes a curve/arc's sampled points, marking only the final one (the command's own endpoint) as
-  // a real anchor — every point before it is a hidden shape-defining sample.
-  function pushCurve(pts: Point[]) {
-    for (let k = 0; k < pts.length; k++) {
-      current.push(pts[k]);
-      anchors.push(k === pts.length - 1);
+  function lastJoint(): RawJoint | undefined {
+    return current[current.length - 1];
+  }
+  /** A straight-line (no incoming handle) endpoint — M/L/H/V and a degenerate arc all go through here. */
+  function pushCorner(p: Point) {
+    current.push({ x: p.x, y: p.y, handleIn: null, handleOut: null });
+  }
+  /** A cubic segment from the current point to `seg.p3` — sets the *previous* joint's outgoing handle
+   * and appends the new joint with its incoming handle already set (its own outgoing handle, if any,
+   * comes from whatever segment leaves it next). */
+  function pushCubic(seg: CubicSeg) {
+    const from = lastJoint();
+    if (from) from.handleOut = normalizeHandle(seg.p1, { x: from.x, y: from.y });
+    current.push({ x: seg.p3.x, y: seg.p3.y, handleIn: normalizeHandle(seg.p2, seg.p3), handleOut: null });
+  }
+  function closeContour() {
+    if (current.length > 0) {
+      // "if the last joint equals the contour's start, merge them" — the path already curved back to
+      // its own origin, so the duplicate last joint collapses into the first (carrying over whatever
+      // incoming handle it had, since that's the curve actually arriving at the shared point).
+      if (current.length > 1) {
+        const last = current[current.length - 1];
+        const first = current[0];
+        if (Math.hypot(last.x - first.x, last.y - first.y) < EPS) {
+          first.handleIn = last.handleIn;
+          current.pop();
+        }
+      }
+      contours.push({ joints: current, closed: true });
     }
-  }
-  function closeSubpath() {
-    if (current.length > 0) subpaths.push({ points: current, closed: true, anchors });
     current = [];
-    anchors = [];
   }
-  function openSubpath() {
-    if (current.length > 0) subpaths.push({ points: current, closed: false, anchors });
+  function openContour() {
+    if (current.length > 0) contours.push({ joints: current, closed: false });
     current = [];
-    anchors = [];
   }
 
   let cmd = '';
@@ -183,13 +234,12 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean; anc
     const C = cmd.toUpperCase();
     switch (C) {
       case 'M': {
-        openSubpath();
+        openContour();
         const x = next();
         const y = next();
         cur = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
         start = cur;
-        current.push(cur);
-        anchors.push(true);
+        pushCorner(cur);
         cmd = isRel ? 'l' : 'L'; // subsequent pairs are implicit lineto
         break;
       }
@@ -197,22 +247,19 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean; anc
         const x = next();
         const y = next();
         cur = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
-        current.push(cur);
-        anchors.push(true);
+        pushCorner(cur);
         break;
       }
       case 'H': {
         const x = next();
         cur = { x: isRel ? cur.x + x : x, y: cur.y };
-        current.push(cur);
-        anchors.push(true);
+        pushCorner(cur);
         break;
       }
       case 'V': {
         const y = next();
         cur = { x: cur.x, y: isRel ? cur.y + y : y };
-        current.push(cur);
-        anchors.push(true);
+        pushCorner(cur);
         break;
       }
       case 'C': {
@@ -225,9 +272,7 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean; anc
         const p1 = isRel ? { x: cur.x + x1, y: cur.y + y1 } : { x: x1, y: y1 };
         const p2 = isRel ? { x: cur.x + x2, y: cur.y + y2 } : { x: x2, y: y2 };
         const p3 = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
-        const sampled: Point[] = [];
-        sampleCubic(cur, p1, p2, p3, sampled);
-        pushCurve(sampled);
+        pushCubic({ p1, p2, p3 });
         prevCtrl = p2;
         cur = p3;
         break;
@@ -240,9 +285,7 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean; anc
         const p1 = prevCtrl && /[CS]/.test(prevCmd.toUpperCase()) ? { x: 2 * cur.x - prevCtrl.x, y: 2 * cur.y - prevCtrl.y } : cur;
         const p2 = isRel ? { x: cur.x + x2, y: cur.y + y2 } : { x: x2, y: y2 };
         const p3 = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
-        const sampled: Point[] = [];
-        sampleCubic(cur, p1, p2, p3, sampled);
-        pushCurve(sampled);
+        pushCubic({ p1, p2, p3 });
         prevCtrl = p2;
         cur = p3;
         break;
@@ -252,24 +295,22 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean; anc
           y1 = next(),
           x = next(),
           y = next();
-        const p1 = isRel ? { x: cur.x + x1, y: cur.y + y1 } : { x: x1, y: y1 };
+        const q = isRel ? { x: cur.x + x1, y: cur.y + y1 } : { x: x1, y: y1 };
         const p2 = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
-        const sampled: Point[] = [];
-        sampleQuadratic(cur, p1, p2, sampled);
-        pushCurve(sampled);
-        prevCtrl = p1;
+        const { p1, p2: cp2 } = quadToCubic(cur, q, p2);
+        pushCubic({ p1, p2: cp2, p3: p2 });
+        prevCtrl = q;
         cur = p2;
         break;
       }
       case 'T': {
         const x = next(),
           y = next();
-        const p1 = prevCtrl && /[QT]/.test(prevCmd.toUpperCase()) ? { x: 2 * cur.x - prevCtrl.x, y: 2 * cur.y - prevCtrl.y } : cur;
+        const q = prevCtrl && /[QT]/.test(prevCmd.toUpperCase()) ? { x: 2 * cur.x - prevCtrl.x, y: 2 * cur.y - prevCtrl.y } : cur;
         const p2 = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
-        const sampled: Point[] = [];
-        sampleQuadratic(cur, p1, p2, sampled);
-        pushCurve(sampled);
-        prevCtrl = p1;
+        const { p1, p2: cp2 } = quadToCubic(cur, q, p2);
+        pushCubic({ p1, p2: cp2, p3: p2 });
+        prevCtrl = q;
         cur = p2;
         break;
       }
@@ -282,23 +323,21 @@ export function flattenPathD(d: string): { points: Point[]; closed: boolean; anc
           x = next(),
           y = next();
         const p1 = isRel ? { x: cur.x + x, y: cur.y + y } : { x, y };
-        const sampled: Point[] = [];
-        sampleArc(cur, rx, ry, rot, largeArc, sweep, p1, sampled);
-        pushCurve(sampled);
+        for (const seg of arcToCubicSegments(cur, rx, ry, rot, largeArc, sweep, p1)) pushCubic(seg);
         cur = p1;
         break;
       }
       case 'Z': {
         cur = start;
-        closeSubpath();
+        closeContour();
         break;
       }
     }
     if (C !== 'C' && C !== 'S' && C !== 'Q' && C !== 'T') prevCtrl = null;
     prevCmd = cmd;
   }
-  if (current.length > 0) subpaths.push({ points: current, closed: false, anchors });
-  return subpaths.filter((s) => s.points.length >= 2);
+  openContour(); // flushes a trailing open subpath the same way a fresh `M`/EOF would
+  return contours.filter((c) => c.joints.length >= 2);
 }
 
 export function rectToPoints(x: number, y: number, w: number, h: number): Point[] {
@@ -310,19 +349,26 @@ export function rectToPoints(x: number, y: number, w: number, h: number): Point[
   ];
 }
 
-/** A `<circle>`/`<ellipse>` has no real anchors of its own (no path commands at all) — the 4 cardinal
- * points (the same convention Illustrator/Figma use when converting a circle to a path) are marked
- * as the only visible anchors; every other sampled point stays a hidden curve-shaping point, same as
- * a flattened bezier's interior samples. */
-export function ellipseToPoints(cx: number, cy: number, rx: number, ry: number, segments = 48): { points: Point[]; anchors: boolean[] } {
-  const points: Point[] = [];
-  const anchors: boolean[] = [];
-  for (let i = 0; i < segments; i++) {
-    const t = (i / segments) * Math.PI * 2;
-    points.push({ x: cx + rx * Math.cos(t), y: cy + ry * Math.sin(t) });
-    anchors.push(i % (segments / 4) === 0);
-  }
-  return { points, anchors };
+const CIRCLE_HANDLE_K = 0.5522847498; // 4/3 * (sqrt(2) - 1), the standard 4-bezier circle approximation
+
+/** A `<circle>`/`<ellipse>` has no path commands of its own, so there's nothing to "infer" — these 4
+ * cardinal joints (the same convention Illustrator/Figma use when converting a circle to a path) are
+ * built as an exact 4-bezier approximation, each one a true `mirror` joint: at a cardinal point the
+ * curve's tangent is governed only by the *other* axis's radius, so `handleIn`/`handleOut` are always
+ * exactly opposite and equal length regardless of how different `rx`/`ry` are. */
+export function ellipseToJoints(cx: number, cy: number, rx: number, ry: number): RawJoint[] {
+  const kx = rx * CIRCLE_HANDLE_K;
+  const ky = ry * CIRCLE_HANDLE_K;
+  const right = { x: cx + rx, y: cy };
+  const bottom = { x: cx, y: cy + ry };
+  const left = { x: cx - rx, y: cy };
+  const top = { x: cx, y: cy - ry };
+  return [
+    { ...right, handleIn: { x: right.x, y: right.y - ky }, handleOut: { x: right.x, y: right.y + ky } },
+    { ...bottom, handleIn: { x: bottom.x + kx, y: bottom.y }, handleOut: { x: bottom.x - kx, y: bottom.y } },
+    { ...left, handleIn: { x: left.x, y: left.y + ky }, handleOut: { x: left.x, y: left.y - ky } },
+    { ...top, handleIn: { x: top.x - kx, y: top.y }, handleOut: { x: top.x + kx, y: top.y } },
+  ];
 }
 
 export function parsePointsAttr(attr: string | null | undefined): Point[] {

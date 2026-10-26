@@ -15,21 +15,49 @@
 //   since `VectorPath` models a single contour — each still counts as one XML child for the
 //   "collapse a single-child group" structure rule below, even though it yields several layers.
 
-import type { ElementKind, GroupMeta, LayoutElement, VectorPath } from '@/types';
+import type { ElementKind, GroupMeta, Joint, LayoutElement, VectorPath } from '@/types';
 import { nextId } from './create-layout';
+import { inferMirrorMode } from './vector-path';
 import {
   applyMatrix,
   boundsOf,
-  ellipseToPoints,
-  flattenPathD,
+  ellipseToJoints,
   IDENTITY,
   multiply,
+  parsePathDToJoints,
   parsePointsAttr,
   parseTransformAttr,
   rectToPoints,
   type Matrix,
   type Point,
+  type RawJoint,
 } from './svg-geometry';
+
+/** Applies an affine matrix to a joint's own position *and* its handles (if any) — every joint field
+ * that's a coordinate needs the same transform, not just `x`/`y`. */
+function transformJoint(m: Matrix, j: RawJoint): RawJoint {
+  return { ...applyMatrix(m, j), handleIn: j.handleIn ? applyMatrix(m, j.handleIn) : null, handleOut: j.handleOut ? applyMatrix(m, j.handleOut) : null };
+}
+
+/** A plain corner (no handles) at `p` — every SVG shape kind except `<path>`/`<circle>`/`<ellipse>`
+ * draws a fixed polygon/polyline with no curves of its own. */
+function cornerJoint(p: Point): RawJoint {
+  return { x: p.x, y: p.y, handleIn: null, handleOut: null };
+}
+
+/** Every coordinate a record's own joints (or, for an image, plain corner points) touch — what the
+ * overall-fit scale and each record's own local frame get computed from. A curve's handles must be
+ * included or a bulging curve could get clipped by a frame sized only to its joints. */
+function recordPoints(r: Pick<RawRecord, 'joints' | 'points'>): Point[] {
+  if (r.points) return r.points;
+  const pts: Point[] = [];
+  for (const j of r.joints ?? []) {
+    pts.push({ x: j.x, y: j.y });
+    if (j.handleIn) pts.push(j.handleIn);
+    if (j.handleOut) pts.push(j.handleOut);
+  }
+  return pts;
+}
 
 export const SVG_IMPORT_NAME_DEFAULTS: Record<'vector' | 'group' | 'image', string> = {
   vector: 'Vector',
@@ -91,10 +119,12 @@ function createNumberer() {
 type RawRecord = {
   kind: Exclude<ElementKind, 'text'>;
   name: string; // already numbered/resolved at this point
-  points: Point[]; // absolute (post-transform) SVG user-space points
+  /** `kind === 'vector'` only — absolute (post-transform) SVG user-space joints, mirror modes not
+   * yet inferred (done once, after rescaling to layout space — see `parseSvgToElements`). */
+  joints?: RawJoint[];
+  /** `kind === 'image'` only — its 4 corner points (images have no joints/path of their own). */
+  points?: Point[];
   closed: boolean;
-  /** See `VectorPath.anchors` — absent means every point is a real anchor (a rect's 4 corners, say). */
-  anchors?: boolean[];
   fill?: string;
   strokeColor?: string;
   strokeWidth?: number;
@@ -228,15 +258,14 @@ function walk(
     }
 
     if (tag === 'path') {
-      const subpaths = flattenPathD(child.getAttribute('d') ?? '');
+      const subpaths = parsePathDToJoints(child.getAttribute('d') ?? '');
       const name = originalName(child);
       subpaths.forEach((sp, idx) => {
         out.push({
           kind: 'vector',
           name: numbered('vector', subpaths.length > 1 && name ? `${name} ${idx + 1}` : name),
-          points: sp.points.map((p) => applyMatrix(localM, p)),
+          joints: sp.joints.map((j) => transformJoint(localM, j)),
           closed: sp.closed,
-          anchors: sp.anchors,
           ...style,
           groupId: parentGroupId,
         });
@@ -250,7 +279,8 @@ function walk(
       const w = Number(child.getAttribute('width') ?? 0);
       const h = Number(child.getAttribute('height') ?? 0);
       if (w <= 0 || h <= 0) continue;
-      out.push({ kind: 'vector', name: numbered('vector', originalName(child)), points: rectToPoints(x, y, w, h).map((p) => applyMatrix(localM, p)), closed: true, ...style, groupId: parentGroupId });
+      const joints = rectToPoints(x, y, w, h).map((p) => cornerJoint(applyMatrix(localM, p)));
+      out.push({ kind: 'vector', name: numbered('vector', originalName(child)), joints, closed: true, ...style, groupId: parentGroupId });
       continue;
     }
 
@@ -261,16 +291,8 @@ function walk(
       const rx = Number(child.getAttribute('rx') ?? r);
       const ry = Number(child.getAttribute('ry') ?? r);
       if (rx <= 0 || ry <= 0) continue;
-      const ellipse = ellipseToPoints(cx, cy, rx, ry);
-      out.push({
-        kind: 'vector',
-        name: numbered('vector', originalName(child)),
-        points: ellipse.points.map((p) => applyMatrix(localM, p)),
-        closed: true,
-        anchors: ellipse.anchors,
-        ...style,
-        groupId: parentGroupId,
-      });
+      const joints = ellipseToJoints(cx, cy, rx, ry).map((j) => transformJoint(localM, j));
+      out.push({ kind: 'vector', name: numbered('vector', originalName(child)), joints, closed: true, ...style, groupId: parentGroupId });
       continue;
     }
 
@@ -280,7 +302,7 @@ function walk(
       out.push({
         kind: 'vector',
         name: numbered('vector', originalName(child)),
-        points: [p1, p2].map((p) => applyMatrix(localM, p)),
+        joints: [p1, p2].map((p) => cornerJoint(applyMatrix(localM, p))),
         closed: false,
         fill: undefined,
         strokeColor: style.strokeColor ?? '#000000',
@@ -296,7 +318,7 @@ function walk(
       out.push({
         kind: 'vector',
         name: numbered('vector', originalName(child)),
-        points: pts.map((p) => applyMatrix(localM, p)),
+        joints: pts.map((p) => cornerJoint(applyMatrix(localM, p))),
         closed: tag === 'polygon',
         ...style,
         groupId: parentGroupId,
@@ -318,7 +340,7 @@ function walk(
       out.push({
         kind: 'vector',
         name: numbered('vector', content.length > 40 ? `${content.slice(0, 40)}…` : content),
-        points: rectToPoints(x, y, w, h).map((p) => applyMatrix(localM, p)),
+        joints: rectToPoints(x, y, w, h).map((p) => cornerJoint(applyMatrix(localM, p))),
         closed: true,
         ...style,
         groupId: parentGroupId,
@@ -381,7 +403,7 @@ export async function parseSvgToElements(svgText: string, target: Point, maxDime
   });
   if (records.length === 0) return { elements: [], groupMeta: {}, warning: 'No importable shapes found in this SVG.' };
 
-  const allPoints = records.flatMap((r) => r.points);
+  const allPoints = records.flatMap(recordPoints);
   const overall = boundsOf(allPoints);
   const overallW = Math.max(1e-3, overall.maxX - overall.minX);
   const overallH = Math.max(1e-3, overall.maxY - overall.minY);
@@ -389,21 +411,36 @@ export async function parseSvgToElements(svgText: string, target: Point, maxDime
   const offsetX = target.x - (overallW * scale) / 2;
   const offsetY = target.y - (overallH * scale) / 2;
   const toLayout = (p: Point) => ({ x: offsetX + (p.x - overall.minX) * scale, y: offsetY + (p.y - overall.minY) * scale });
+  const toLayoutJoint = (j: RawJoint): RawJoint => ({ ...toLayout(j), handleIn: j.handleIn ? toLayout(j.handleIn) : null, handleOut: j.handleOut ? toLayout(j.handleOut) : null });
 
   const elements: LayoutElement[] = records.map((r) => {
-    const layoutPoints = r.points.map(toLayout);
-    const bounds = boundsOf(layoutPoints);
+    if (r.kind === 'image') {
+      const layoutPoints = r.points!.map(toLayout);
+      const bounds = boundsOf(layoutPoints);
+      const w = Math.max(1, bounds.maxX - bounds.minX);
+      const h = Math.max(1, bounds.maxY - bounds.minY);
+      return { id: nextId('el'), slot: null, frame: { x: bounds.minX, y: bounds.minY, w, h }, visible: true, groupId: r.groupId, name: r.name, kind: 'image' as const, imageUrl: r.imageUrl, focalPoint: { x: 0.5, y: 0.5 }, style: {} };
+    }
+
+    const layoutJoints = r.joints!.map(toLayoutJoint);
+    const bounds = boundsOf(recordPoints({ joints: layoutJoints }));
     const w = Math.max(1, bounds.maxX - bounds.minX);
     const h = Math.max(1, bounds.maxY - bounds.minY);
-    const local = layoutPoints.map((p) => ({ x: p.x - bounds.minX, y: p.y - bounds.minY }));
+    const shift = (p: Point) => ({ x: p.x - bounds.minX, y: p.y - bounds.minY });
+    const joints: Joint[] = layoutJoints.map((j) => {
+      const handleIn = j.handleIn ? shift(j.handleIn) : null;
+      const handleOut = j.handleOut ? shift(j.handleOut) : null;
+      return { ...shift(j), handleIn, handleOut, mirror: inferMirrorMode({ x: j.x - bounds.minX, y: j.y - bounds.minY, handleIn, handleOut }) };
+    });
 
-    const base = { id: nextId('el'), slot: null, frame: { x: bounds.minX, y: bounds.minY, w, h }, visible: true, groupId: r.groupId, name: r.name } as const;
-
-    if (r.kind === 'image') return { ...base, kind: 'image' as const, imageUrl: r.imageUrl, focalPoint: { x: 0.5, y: 0.5 }, style: {} };
-
-    const path: VectorPath = { points: local, closed: r.closed, anchors: r.anchors };
+    const path: VectorPath = { joints, closed: r.closed };
     return {
-      ...base,
+      id: nextId('el'),
+      slot: null,
+      frame: { x: bounds.minX, y: bounds.minY, w, h },
+      visible: true,
+      groupId: r.groupId,
+      name: r.name,
       kind: 'vector' as const,
       path,
       style: { fill: r.closed ? (r.fill ?? '#000000') : undefined, strokeColor: r.strokeColor, strokeWidth: r.strokeWidth, strokeStyle: r.strokeColor ? 'solid' : undefined },

@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { boxShadowCss, textShadowCss } from '@/lib/shadow';
 import { isGradient } from '@/lib/gradient';
 import { autoLayoutPaddingCss } from '@/lib/text-auto-layout';
-import { arrowPoints, DEFAULT_POLYGON_SIDES, regularPolygonPoints } from '@/lib/vector-path';
+import { arrowPoints, DEFAULT_POLYGON_SIDES, jointsToRoundedPathD, regularPolygonPoints } from '@/lib/vector-path';
 import type { LayoutElement } from '@/types';
 
 /**
@@ -125,15 +125,15 @@ export function ElementRenderer({
 
   if (element.kind === 'vector') {
     const path = element.path;
-    if (!path || path.points.length < 2) return <div onMouseDown={onMouseDown} style={pos} />;
-    const d = path.points.map((p) => `${p.x},${p.y}`).join(' ');
+    if (!path || path.joints.length < 2) return <div onMouseDown={onMouseDown} style={pos} />;
+    const d = jointsToRoundedPathD(path, style.radius ?? 0);
     return (
       <div onMouseDown={onMouseDown} style={{ ...pos, boxShadow: boxShadowCss(style.dropShadow, style.innerShadow) }} className={cn(selected && 'outline outline-[1.5px] outline-button-primary')}>
         <svg viewBox={`0 0 ${frame.w} ${frame.h}`} preserveAspectRatio="none" className="size-full overflow-visible" style={{ opacity: style.opacity !== undefined ? style.opacity / 100 : undefined }}>
           {path.closed ? (
-            <polygon points={d} fill={style.fill ?? 'none'} stroke={style.strokeColor} strokeWidth={style.strokeWidth} />
+            <path d={d} fill={style.fill ?? 'none'} stroke={style.strokeColor} strokeWidth={style.strokeWidth} />
           ) : (
-            <polyline points={d} fill="none" stroke={style.strokeColor ?? style.fill ?? '#000000'} strokeWidth={style.strokeWidth ?? 2} strokeLinecap="round" strokeLinejoin="round" />
+            <path d={d} fill="none" stroke={style.strokeColor ?? style.fill ?? '#000000'} strokeWidth={style.strokeWidth ?? 2} strokeLinecap="round" strokeLinejoin="round" />
           )}
         </svg>
       </div>

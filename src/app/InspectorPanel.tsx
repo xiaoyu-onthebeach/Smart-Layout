@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 import { TextEditorPanel } from '@/features/editor/artboard/TextEditorPanel';
 import { ShapeEditorPanel } from '@/features/editor/artboard/ShapeEditorPanel';
+import { VectorPathPanel } from '@/features/editor/artboard/VectorPathPanel';
 import { ImageEditorPanel } from '@/features/editor/artboard/ImageEditorPanel';
 import { SceneEditorPanel } from '@/features/editor/artboard/SceneEditorPanel';
 import { CombinedEditorPanel } from '@/features/editor/artboard/CombinedEditorPanel';
@@ -21,6 +22,7 @@ export function InspectorPanel() {
   // it's open (non-null for its whole lifetime, cleared the instant it closes) this panel steps
   // aside entirely instead of rendering underneath/behind it.
   const pickingFocusForLayoutId = useAppStore((s) => s.pickingFocusForLayoutId);
+  const editingVectorElementId = useAppStore((s) => s.editingVectorElementId);
   // Mirrors the header's own ruler-driven push-down (see TopBar/Shell) so the gap between the
   // header's bottom edge and this panel's own top edge never changes — a plain `top` offset here
   // (not a transform) is fine, unlike the sidebar: this panel is `absolute` within the canvas's
@@ -48,10 +50,16 @@ export function InspectorPanel() {
       content = <CombinedEditorPanel targets={targets} />;
     } else if (targets[0].element.kind === 'text') {
       content = <TextEditorPanel targets={targets} />;
+    } else if (targets[0].element.kind === 'vector' && editingVectorElementId === targets[0].element.id) {
+      // Double-clicked into joint-editing mode (VectorEditOverlay) — a wholly different panel, with
+      // per-joint controls (align the selection, each joint's own position, Curve/mirroring) instead
+      // of whole-element ones. Selected-but-not-editing still falls through to the branch below.
+      content = <VectorPathPanel targets={targets} />;
     } else if (targets[0].element.kind === 'shape' || targets[0].element.kind === 'vector') {
-      // A converted/imported/drawn vector gets the exact same panel a shape does — same style
-      // fields apply either way, and the "Count" row inside it only shows up for a polygon or any
-      // vector (see ShapeEditorPanel's own `showsCornerCount`).
+      // A converted/imported/drawn vector gets the exact same panel a shape does whenever it's just
+      // selected (not actively being joint-edited) — same style fields apply either way, and the
+      // "Count" row inside it only shows up for a polygon or any vector (see ShapeEditorPanel's own
+      // `showsCornerCount`).
       content = <ShapeEditorPanel targets={targets} />;
     } else if (targets[0].element.kind === 'image') {
       content = <ImageEditorPanel targets={targets} />;
