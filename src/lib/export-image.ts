@@ -169,7 +169,7 @@ function wrapTextLines(text: string, style: LayoutElement['style'], maxWidth: nu
 /** Builds a self-contained, pure-SVG rendering of `layout` (no `foreignObject` — browsers taint any
  * canvas rasterized from an SVG containing one, even for entirely same-origin content), so it
  * doubles as both the ".svg" export and the source image for the ".png" rasterization path. */
-function buildSvgMarkup(layout: Layout): string {
+export function buildSvgMarkup(layout: Layout): string {
   const { width, height } = layout.size;
   const defs: string[] = [];
   const background = fillRef(layout.backgroundColor, '#131316', defs);
