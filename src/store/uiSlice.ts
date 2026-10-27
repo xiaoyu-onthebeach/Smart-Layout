@@ -29,8 +29,6 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   revealPageId: null,
   uploadedAssetUrls: [],
   activeCanvasRootId: null,
-  pickingFocusForLayoutId: null,
-  focusPickConfirmed: false,
   matchSelectEnabled: false,
   showRulers: false,
   canvasDotBackground: null,
@@ -154,9 +152,6 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   requestRevealPage: (pageId) => set({ revealPageId: pageId }),
   clearRevealPage: () => set({ revealPageId: null }),
   setActiveCanvas: (rootId) => set({ activeCanvasRootId: rootId }),
-  startPickingFocus: (layoutId) => set({ pickingFocusForLayoutId: layoutId, focusPickConfirmed: false }),
-  stopPickingFocus: () => set({ pickingFocusForLayoutId: null, focusPickConfirmed: false }),
-  confirmFocusPick: () => set({ focusPickConfirmed: true }),
   addUploadedAsset: (url) => set((state) => ({ uploadedAssetUrls: [url, ...state.uploadedAssetUrls] })),
   enableMatchSelect: () =>
     set((state) => {

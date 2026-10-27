@@ -77,8 +77,6 @@ export const ja: Record<string, string> = {
   'and adapt to different sizes.': 'さまざまなサイズに合わせて調整しましょう。',
   'or drag images from your computer': 'または、コンピューターから画像をドラッグ',
   'Selection area': '選択範囲',
-  'Confirm focus area': 'フォーカス範囲を確定',
-  'Move or resize to set the focus area': 'ドラッグまたはリサイズしてフォーカス範囲を設定',
   'New Banner': '新しいバナー',
 
   // Image dialogs
@@ -146,13 +144,7 @@ export const ja: Record<string, string> = {
   'Insert new image': '新しい画像を挿入',
   'Delete layer': 'レイヤーを削除',
   'Search sizes': 'サイズを検索',
-  'Select focus area': 'フォーカス範囲を選択',
   'Select sizes': 'サイズを選択',
-  'Image expands around your selected area.': '選択した範囲を中心に画像が拡張されます。',
-  'Scene focus': 'シーンのフォーカス',
-  Change: '変更',
-  'Pick the scene focus': 'シーンのフォーカスを選択',
-  Pick: '選択',
   'Add custom size': 'カスタムサイズを追加',
 
   // Inspector / layers / export

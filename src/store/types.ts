@@ -20,6 +20,7 @@ export type SelectedElementRef = { layoutId: string; elementId: string };
 export type UiSlice = {
   step: AppStep;
   sizeSelectOpen: boolean;
+  /** The "Add more sizes" panel (QuickSizeMenu) is open — the inspector panel hides meanwhile. */
   addSizesOpen: boolean;
   bulkProductsOpen: boolean;
   generating: boolean;
@@ -77,16 +78,6 @@ export type UiSlice = {
    * unlike `focusPageId`, never changes zoom; used after duplicating a scene, where the new copy
    * should just scroll into view rather than the whole canvas zooming out to fit everything. */
   revealPageId: string | null;
-  /** The layout (if any) currently in "draw the scene focus rectangle" mode — set by the "Pick" button in the add-sizes panel. */
-  pickingFocusForLayoutId: string | null;
-  /**
-   * Whether the current picking session has confirmed a rect at least once — separates the
-   * "just entered, show the instructional pop-up" state from "confirmed, just show the settled
-   * rect" preview (which otherwise look identical: both have no in-progress drag rect). Reset to
-   * false by startPickingFocus, so re-entering via "Change" always shows the pop-up again even if
-   * a focusRect already exists from a previous session.
-   */
-  focusPickConfirmed: boolean;
   /**
    * Which top-level page or group is the currently visible "canvas" — the view-all canvas renders
    * only this one's content, so switching it hides everything else (a different banner set never
@@ -151,11 +142,6 @@ export type UiSlice = {
   clearRevealPage: () => void;
   /** Switches which top-level page/group's canvas is visible in the view-all canvas. */
   setActiveCanvas: (rootId: string | null) => void;
-  /** Enters/exits "draw the scene focus rectangle" mode for a layout. */
-  startPickingFocus: (layoutId: string) => void;
-  stopPickingFocus: () => void;
-  /** Marks the current picking session's rect as confirmed — see focusPickConfirmed. */
-  confirmFocusPick: () => void;
   addUploadedAsset: (url: string) => void;
   /** Turns match-select back on — also immediately expands the current selection to every match in the group, so toggling it doesn't wait for the next click. */
   enableMatchSelect: () => void;
@@ -239,7 +225,7 @@ export type LayoutsSlice = {
   /** Patches the frame's own background/border, independent of any element on it. */
   updateLayoutStyle: (
     layoutId: string,
-    patch: Partial<Pick<Layout, 'backgroundColor' | 'borderColor' | 'borderWidth' | 'borderStyle' | 'radius' | 'hidden' | 'focusRect'>>,
+    patch: Partial<Pick<Layout, 'backgroundColor' | 'borderColor' | 'borderWidth' | 'borderStyle' | 'radius' | 'hidden'>>,
   ) => void;
   /**
    * Cascades the primary page's current state to every sibling in its group. 'full' re-derives

@@ -42,34 +42,25 @@ export const GROUPS = buildGroups();
 export function QuickSizeMenu({
   onConfirm,
   onOpenChange,
-  sourceLayoutId,
   children,
 }: {
   onConfirm: (results: QuickSizeResult[]) => void;
   onOpenChange?: (open: boolean) => void;
-  /** The scene this size-picker was opened from — used by "Pick" to draw a scene-focus rect on it. */
-  sourceLayoutId: string;
   children: ReactElement<{ onClick?: (e: ReactMouseEvent) => void }>;
 }) {
   const t = useT();
   const language = useAppStore((s) => s.language);
-  const startPickingFocus = useAppStore((s) => s.startPickingFocus);
-  const stopPickingFocus = useAppStore((s) => s.stopPickingFocus);
-  const confirmFocusPick = useAppStore((s) => s.confirmFocusPick);
-  const pickingFocusForLayoutId = useAppStore((s) => s.pickingFocusForLayoutId);
-  const focusPickConfirmed = useAppStore((s) => s.focusPickConfirmed);
-  // True while the on-scene pop-up is showing or the user is still dragging the rect — disables
-  // the Pick/Change button below so it can't be re-triggered mid-pick. Once confirmed (or not
-  // picking at all), it's enabled again.
-  const isPicking = pickingFocusForLayoutId === sourceLayoutId && !focusPickConfirmed;
-  const sourceLayout = useAppStore((s) => s.layoutsById[sourceLayoutId]);
-  const focusRect = sourceLayout?.focusRect;
-  const sourceImageUrl = sourceLayout?.elements.find((el) => el.kind === 'image' && el.imageUrl)?.imageUrl;
-  const focusThumbPosition = focusRect
-    ? `${((focusRect.x + focusRect.w / 2) / sourceLayout!.size.width) * 100}% ${((focusRect.y + focusRect.h / 2) / sourceLayout!.size.height) * 100}%`
-    : '50% 50%';
 
   const [open, setOpen] = useState(false);
+  // Tells the inspector panel (which sits in this same top-right corner) to step aside while this
+  // panel is open — cleared again on close, or if the panel unmounts while still open.
+  const openAddSizes = useAppStore((s) => s.openAddSizes);
+  const closeAddSizes = useAppStore((s) => s.closeAddSizes);
+  useEffect(() => {
+    if (!open) return;
+    openAddSizes();
+    return closeAddSizes;
+  }, [open, openAddSizes, closeAddSizes]);
   const [query, setQuery] = useState('');
   const [customMode, setCustomMode] = useState(false);
   const [customWidth, setCustomWidth] = useState('');
@@ -106,24 +97,14 @@ export function QuickSizeMenu({
     setOpen(false);
     onOpenChange?.(false);
     reset();
-    // Leaving the panel any other way than finishing the focus-rect drag (Cancel, outside-click,
-    // or confirming sizes mid-pick) must not leave the picking overlay stuck on top of this scene
-    // forever, silently swallowing every future click/double-click aimed at it.
-    if (pickingFocusForLayoutId === sourceLayoutId) stopPickingFocus();
   }
 
   // Outside-click-to-dismiss, since this now renders as a fixed panel rather than an anchored popover.
-  // A click landing on the on-canvas focus-pick overlay (drawing/redrawing the rect) is *also*
-  // technically "outside the panel", but is a legitimate interaction with this same menu's own
-  // "Pick" feature, not a dismiss attempt — that one spot is the only thing excluded here. Anywhere
-  // else outside the panel (another scene, empty canvas, the toolbar, ...) closes it normally, even
-  // while picking is active — only that single overlay gets a pass.
   useEffect(() => {
     if (!open) return;
     function onDocMouseDown(e: MouseEvent) {
       const target = e.target as Node;
       if (panelRef.current?.contains(target)) return;
-      if ((target as Element).closest?.('[data-focus-pick-overlay]')) return;
       closePanel();
     }
     document.addEventListener('mousedown', onDocMouseDown);
@@ -208,16 +189,6 @@ export function QuickSizeMenu({
       setOpen(next);
       onOpenChange?.(next);
       if (!next) reset();
-      // Opening the panel always re-shows the focus box, on-canvas — a scene with no focus point
-      // picked yet starts it straight in the editable state (no separate "Pick" click needed for
-      // the guided first-time flow); one that already has a confirmed pick shows it settled
-      // (lighter, non-interactive) instead, same as it looked when last confirmed — clicking it,
-      // same as "Change", is what re-opens it for editing.
-      else if (!focusRect) startPickingFocus(sourceLayoutId);
-      else {
-        startPickingFocus(sourceLayoutId);
-        confirmFocusPick();
-      }
     },
   });
 
@@ -236,46 +207,6 @@ export function QuickSizeMenu({
           <span className="shrink-0 px-1 text-[11px] font-semibold tracking-[-0.01em] text-white/45 uppercase">{t('Add more sizes')}</span>
 
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1 pt-2">
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-col gap-1">
-                <span className="text-[13px] font-semibold text-white">{t('Select focus area')}</span>
-                <span className="text-[13px] text-white/45">{t('Image expands around your selected area.')}</span>
-              </div>
-              {focusRect ? (
-                <div className="flex items-center gap-2 rounded-lg py-2">
-                  <div
-                    className="size-10 shrink-0 rounded-lg border bg-cover"
-                    style={{ borderColor: '#40404A', backgroundImage: sourceImageUrl ? `url(${sourceImageUrl})` : undefined, backgroundPosition: focusThumbPosition }}
-                  />
-                  <span className="min-w-0 flex-1 truncate text-sm text-white">{t('Scene focus')}</span>
-                  <button
-                    type="button"
-                    disabled={isPicking}
-                    onClick={() => startPickingFocus(sourceLayoutId)}
-                    className="flex h-8 shrink-0 items-center justify-center rounded-lg px-3 text-sm text-white transition-colors hover:bg-white/5 disabled:pointer-events-none disabled:opacity-40"
-                    style={{ background: '#26262C', border: '1px solid #40404A' }}
-                  >
-                    {t('Change')}
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 rounded-lg py-2">
-                  <img src="/icons/select_area.svg" alt="" className="size-10 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate text-sm text-white">{t('Pick the scene focus')}</span>
-                  <button
-                    type="button"
-                    disabled={isPicking}
-                    onClick={() => startPickingFocus(sourceLayoutId)}
-                    className="flex h-8 shrink-0 items-center justify-center rounded-lg bg-button-primary px-3 text-sm text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)] transition-colors hover:brightness-110 disabled:pointer-events-none disabled:opacity-40"
-                  >
-                    {t('Pick')}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div className="h-px w-full shrink-0" style={{ background: '#40404A' }} />
-
             <div className="flex flex-col gap-2">
               <span className="text-[13px] font-semibold text-white">{t('Select sizes')}</span>
 

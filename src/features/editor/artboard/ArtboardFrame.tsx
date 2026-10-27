@@ -22,21 +22,9 @@ import { ImagePickerDialog } from './ImagePickerDialog';
 import { ImageBox } from './ImageBox';
 import { LayerContextMenu } from './LayerContextMenu';
 import { MultiLayerContextMenu } from './MultiLayerContextMenu';
-import { RESIZE_HANDLES, type ResizeHandle } from './useElementDrag';
 import { PaddingHighlight } from './PaddingHighlight';
 import { computeGroupAutoLayout, framesBounds, pendingGroupAutoLayoutChanges } from '@/lib/group-auto-layout';
 import { boxContainsPoint, boxFromFrame, computeMeasureLines, resolvePillCollisions, rotatedBoundingBox, roundForDisplay, unionBoxes, type Box, type MeasureLine, type PillSpec } from '@/lib/measure';
-
-/** The focus-pick box always starts at this size (clamped to the frame itself, for a tiny scene),
- * centered — there's no more empty "draw it yourself" state to size it from scratch. */
-const DEFAULT_FOCUS_RECT_SIZE = 300;
-const FOCUS_RECT_MIN_SIZE = 24;
-
-// Same 8-handle layout as SelectionBoundingBox, but invisible — the focus box keeps its own plain
-// solid blue border (not SelectionBoundingBox's thinner outline-only look) with drag-to-resize
-// still working underneath via these bare hit zones, cursor-only, no visible squares. Edge zones
-// span the whole side (not just a short strip at the middle) so any point along the border drags.
-const FOCUS_HANDLE_HIT = 12;
 
 // Pen tool's custom "Default" cursor (svg import & edit spec, Part 3) — a preview joint sitting
 // right at the pen nib's own tip, so the two have to be two separately positioned images rather
@@ -70,173 +58,6 @@ function PenToolCursor({ x, y, pressed }: { x: number; y: number; pressed: boole
         style={{ left: x - PEN_CURSOR_ICON.tip.x, top: y - PEN_CURSOR_ICON.tip.y, width: PEN_CURSOR_ICON.w, height: PEN_CURSOR_ICON.h }}
       />
     </>
-  );
-}
-
-function focusHandleCursor(handle: ResizeHandle): string {
-  return handle === 'nw' || handle === 'se' ? 'nwse-resize' : handle === 'ne' || handle === 'sw' ? 'nesw-resize' : handle === 'n' || handle === 's' ? 'ns-resize' : 'ew-resize';
-}
-
-function focusHandleStyle(handle: ResizeHandle): CSSProperties {
-  const isCorner = handle.length === 2;
-  const half = FOCUS_HANDLE_HIT / 2;
-  const style: CSSProperties = { position: 'absolute', cursor: focusHandleCursor(handle) };
-  if (isCorner) {
-    style.width = FOCUS_HANDLE_HIT;
-    style.height = FOCUS_HANDLE_HIT;
-  } else if (handle === 'n' || handle === 's') {
-    style.left = FOCUS_HANDLE_HIT;
-    style.right = FOCUS_HANDLE_HIT;
-    style.height = FOCUS_HANDLE_HIT;
-  } else {
-    style.top = FOCUS_HANDLE_HIT;
-    style.bottom = FOCUS_HANDLE_HIT;
-    style.width = FOCUS_HANDLE_HIT;
-  }
-  if (handle.includes('n')) style.top = -half;
-  if (handle.includes('s')) style.bottom = -half;
-  if (handle.includes('w')) style.left = -half;
-  if (handle.includes('e')) style.right = -half;
-  return style;
-}
-
-// The focus box's own corner-bracket outline — idle, only these 4 short arms show; hovering the
-// box (or, for the editable one, actively dragging it) grows them out past the midpoint of their
-// own edge (a small overlap, not an exact 50/50 split — see FOCUS_STROKE_OVERLAP) and thins down to
-// FOCUS_STROKE_THICKNESS_EXPANDED, closing into one continuous, evenly-toned full border.
-const FOCUS_STROKE_THICKNESS_IDLE = 6;
-const FOCUS_STROKE_THICKNESS_EXPANDED = 2;
-// Total reach from the corner, curve included — the straight arm beyond the curve piece is this
-// minus FOCUS_BOX_RADIUS (see focusArmSegmentStyle), so this needs to clear that by a real margin
-// or the "arm" all but disappears into the curve itself.
-const FOCUS_STROKE_ARM_LENGTH = 'min(52px, 45%)';
-// Deliberately past the true 50% midpoint — the matching arm growing in from the neighboring
-// corner overlaps it by a couple px rather than meeting it edge-to-edge, so a sub-pixel rounding
-// gap can never open up between them right as they close into a full border.
-const FOCUS_STROKE_OVERLAP = 'calc(50% + 2px)';
-const FOCUS_STROKE_COLOR = '#ffffff';
-// This box's own established stroke tone is 80%-white, not pure white — applied here as `opacity`
-// on the *group* (see FocusRectCorners) rather than baked into each segment's own color, precisely
-// so the two segments overlapping at each corner (and again at each edge's midpoint, once expanded)
-// don't stack into a visibly higher-opacity seam the way two individually-translucent layers would.
-const FOCUS_STROKE_OPACITY = 0.8;
-const FOCUS_STROKE_GLOW = 'drop-shadow(0 0 8px rgba(255,255,255,0.25))';
-const FOCUS_STROKE_TRANSITION = 'all 200ms ease';
-// Soft shadow the selection box itself casts, independent of the corner-bracket stroke's own small
-// glow above — applied to the box's own background/dim layer in both its states (see the two
-// `boxShadow` usages below), not to `FocusRectCorners`.
-const FOCUS_BOX_SHADOW = '0 4px 24px rgba(64,64,74,0.15)'; // #40404A at 15%
-const FOCUS_CORNERS = ['nw', 'ne', 'sw', 'se'] as const;
-// Same radius as the box itself (see the two `borderRadius: FOCUS_BOX_RADIUS` container styles
-// below) — the stroke's own corner piece traces an actual quarter-circle at this radius, rather
-// than just rounding a thin bar's own small end-cap, so it reads as part of the same rounded-rect
-// shape instead of a slightly-off approximation of it.
-const FOCUS_BOX_RADIUS = 24;
-
-/**
- * The curved piece of one corner's own bracket. Built as a 24x24 window (`overflow: hidden`) onto a
- * 48x48 square that's fully rounded (all four corners, uniform border on all four sides) and offset
- * so only *this* corner's own quarter peeks through the window — that quarter is a real quarter-
- * circle stroke, not a straight bar with a rounded end.
- *
- * Deliberately NOT built from one 24x24 box with two of its four border-sides colored and the other
- * two left `transparent` (which is what this looked like at first) — a single element mixing a
- * colored and a transparent border side leaves a faint miter seam where the two meet, visible once
- * the whole group gets `opacity`/`drop-shadow` applied (see FocusRectCorners). Giving every side of
- * the underlying square the *same* color and clipping away the sides we don't want, instead of
- * coloring only the sides we do, has no such seam to begin with.
- */
-function FocusCornerCurve({ corner, expanded }: { corner: (typeof FOCUS_CORNERS)[number]; expanded: boolean }) {
-  const thickness = expanded ? FOCUS_STROKE_THICKNESS_EXPANDED : FOCUS_STROKE_THICKNESS_IDLE;
-  const isNorth = corner.includes('n');
-  const isWest = corner.includes('w');
-  const size = FOCUS_BOX_RADIUS * 2;
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        width: FOCUS_BOX_RADIUS,
-        height: FOCUS_BOX_RADIUS,
-        top: isNorth ? 0 : undefined,
-        bottom: !isNorth ? 0 : undefined,
-        left: isWest ? 0 : undefined,
-        right: !isWest ? 0 : undefined,
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          width: size,
-          height: size,
-          top: isNorth ? 0 : undefined,
-          bottom: !isNorth ? 0 : undefined,
-          left: isWest ? 0 : undefined,
-          right: !isWest ? 0 : undefined,
-          boxSizing: 'border-box',
-          border: `${thickness}px solid ${FOCUS_STROKE_COLOR}`,
-          borderRadius: FOCUS_BOX_RADIUS,
-          transition: FOCUS_STROKE_TRANSITION,
-        }}
-      />
-    </div>
-  );
-}
-
-/** The straight arm continuing on from one corner's own curve piece, along one of its two edges —
- * starts exactly `FOCUS_BOX_RADIUS` away from the true corner (right where the curve piece's own
- * reach ends) so the two meet with no gap or overlap, and grows from there the same way the layer
- * selection box's own (straight, uncurved) corner arms do. */
-function focusArmSegmentStyle(axis: 'h' | 'v', corner: (typeof FOCUS_CORNERS)[number], expanded: boolean): CSSProperties {
-  const thickness = expanded ? FOCUS_STROKE_THICKNESS_EXPANDED : FOCUS_STROKE_THICKNESS_IDLE;
-  const reach = expanded ? FOCUS_STROKE_OVERLAP : FOCUS_STROKE_ARM_LENGTH;
-  // The straight run beyond the curve piece — whatever's left of the arm's own total reach from the
-  // corner once the curve's own FOCUS_BOX_RADIUS is subtracted, floored at 0 so a box too small for
-  // the curve to fit twice over never goes negative.
-  const armLength = `max(0px, calc(${reach} - ${FOCUS_BOX_RADIUS}px))`;
-  const style: CSSProperties = { position: 'absolute', background: FOCUS_STROKE_COLOR, transition: FOCUS_STROKE_TRANSITION };
-  // Flush against the box's own edge (0 to `thickness`, not straddling it via a `-half` offset) —
-  // a border can never straddle its own box's edge, so the curve piece's stroke (see
-  // FocusCornerCurve) is unavoidably flush like this; the arm has to match that same convention or
-  // the two pieces' centerlines land half a stroke-width apart, opening a visible split right where
-  // they're supposed to meet. Square at both ends (no border-radius at all) — the connecting end
-  // for the same flush-join reason, and the free end deliberately squared off too, per the
-  // reference design's flat-cut bracket ends rather than a rounded/pill-shaped cap.
-  if (axis === 'h') {
-    style.top = corner.includes('n') ? 0 : undefined;
-    style.bottom = corner.includes('s') ? 0 : undefined;
-    style.height = thickness;
-    style.width = armLength;
-    if (corner.includes('w')) style.left = FOCUS_BOX_RADIUS;
-    else style.right = FOCUS_BOX_RADIUS;
-  } else {
-    style.left = corner.includes('w') ? 0 : undefined;
-    style.right = corner.includes('e') ? 0 : undefined;
-    style.width = thickness;
-    style.height = armLength;
-    if (corner.includes('n')) style.top = FOCUS_BOX_RADIUS;
-    else style.bottom = FOCUS_BOX_RADIUS;
-  }
-  return style;
-}
-
-/** Shared by both the confirmed and editable focus-box states — the only difference between them
- * is what `expanded` gets computed from (plain hover for the confirmed box; hover-or-dragging,
- * with the release-suppresses-hover behavior, for the editable one). The 80%-white tone and the
- * soft glow are both applied here, once, to the whole group — see FOCUS_STROKE_OPACITY/_GLOW's own
- * comments for why that (rather than per-piece) is what keeps overlapping pieces from reading as a
- * darker/brighter seam. */
-function FocusRectCorners({ expanded }: { expanded: boolean }) {
-  return (
-    <div className="pointer-events-none absolute inset-0" style={{ opacity: FOCUS_STROKE_OPACITY, filter: FOCUS_STROKE_GLOW }}>
-      {FOCUS_CORNERS.map((corner) => (
-        <div key={corner}>
-          <FocusCornerCurve corner={corner} expanded={expanded} />
-          <div style={focusArmSegmentStyle('h', corner, expanded)} />
-          <div style={focusArmSegmentStyle('v', corner, expanded)} />
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -457,68 +278,12 @@ function ArtboardFrameImpl({
       selectScene(layout.setId);
     };
   }
-  const pickingFocusForLayoutId = useAppStore((s) => s.pickingFocusForLayoutId);
-  const focusPickConfirmed = useAppStore((s) => s.focusPickConfirmed);
-  const confirmFocusPick = useAppStore((s) => s.confirmFocusPick);
-  const startPickingFocus = useAppStore((s) => s.startPickingFocus);
-  const updateLayoutStyle = useAppStore((s) => s.updateLayoutStyle);
 
   const frameRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const addUploadedAsset = useAppStore((s) => s.addUploadedAsset);
   const [drawRect, setDrawRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [expandingElementId, setExpandingElementId] = useState<string | null>(null);
-  const [focusDrawRect, setFocusDrawRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  // Whether the focus box has actually been moved or resized from wherever it started this
-  // session — the checkmark to confirm only shows once there's something to confirm; before that,
-  // the instructional hint sits in its place instead.
-  const [focusRectDirty, setFocusRectDirty] = useState(false);
-  // True only for the duration of an actual move/resize drag (mousedown to mouseup) — the
-  // checkmark hides while this is true so it doesn't sit in the way (or visually lag behind) the
-  // box while it's still being adjusted, then reappears the instant the mouse is released.
-  const [focusRectDragging, setFocusRectDragging] = useState(false);
-  const isPickingFocus = pickingFocusForLayoutId === layoutId;
-
-  // Drives the focus box's own corner-brackets-vs-full-border look — hovering either box state (or
-  // actively dragging the editable one) grows its corner strokes into a full border; releasing a
-  // drag always snaps back to corners-only, even if the cursor is still sitting on the box, via
-  // `suppressFocusHover` blocking the ordinary hover state from immediately re-expanding it until
-  // the cursor actually leaves and re-enters (same technique the layer selection box's own hover-
-  // vs-drag corner brackets use).
-  const [focusRectHovered, setFocusRectHovered] = useState(false);
-  const [confirmedRectHovered, setConfirmedRectHovered] = useState(false);
-  const [suppressFocusHover, setSuppressFocusHover] = useState(false);
-  useEffect(() => {
-    if (!focusRectHovered) setSuppressFocusHover(false);
-  }, [focusRectHovered]);
-  const focusRectExpanded = focusRectDragging || (focusRectHovered && !suppressFocusHover);
-
-  // Entering picking mode seeds the box immediately — a fresh centered DEFAULT_FOCUS_RECT_SIZE
-  // square, or the existing focusRect if one's already set (so "Change" edits it in place instead
-  // of starting over). There's no more empty state waiting for a drag-to-draw gesture. Keyed on
-  // focusPickConfirmed too, not just isPickingFocus — "Change" on a scene that's already confirmed
-  // this same session (pickingFocusForLayoutId never left this layout) only flips
-  // focusPickConfirmed back to false, so isPickingFocus alone wouldn't change and this wouldn't
-  // otherwise re-fire.
-  useEffect(() => {
-    if (!isPickingFocus) return;
-    // Skipped mid-drag — a resize/move started directly from the confirmed box's own hover state
-    // (see focusHandleStyle's onMouseDown below) flips isPickingFocus true in the same tick it also
-    // sets focusRectDirty/focusRectDragging true, and this effect would otherwise fire right after
-    // and stomp both back to false before the user's even moved the mouse.
-    if (focusRectDragging) return;
-    const existing = layout.focusRect;
-    if (existing) {
-      setFocusDrawRect(existing);
-    } else {
-      const w = Math.min(DEFAULT_FOCUS_RECT_SIZE, nativeWidth);
-      const h = Math.min(DEFAULT_FOCUS_RECT_SIZE, nativeHeight);
-      setFocusDrawRect({ x: (nativeWidth - w) / 2, y: (nativeHeight - h) / 2, w, h });
-    }
-    setFocusRectDirty(false);
-    setFocusRectDragging(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPickingFocus, focusPickConfirmed]);
   const [layerContextMenu, setLayerContextMenu] = useState<
     | { kind: 'single'; x: number; y: number; elementId: string }
     | { kind: 'multi'; x: number; y: number; elementIds: string[]; groupId?: string }
@@ -689,13 +454,10 @@ function ArtboardFrameImpl({
   // frame-gap grid, etc. — everywhere else the overlap was pixel-identical enough to go unnoticed).
   const extraElements = layout.elements.filter((el) => el.slot === null && el.visible && !(hasImage && el.id === imageElement?.id));
 
-  // The "background image" to keep visible while every other layer hides during a focus-rect
-  // drag: the real hero slot if it's filled, otherwise whichever image-kind decorative layer was
-  // added first — a scene built entirely from double-click-dropped samples has no filled hero
-  // slot, so that first drop is standing in for the background instead.
+  // The scene's "background image": the real hero slot if it's filled, otherwise whichever
+  // image-kind decorative layer was added first — a scene built entirely from double-click-dropped
+  // samples has no filled hero slot, so that first drop is standing in for the background instead.
   const backgroundElementId = hasImage ? imageElement?.id : extraElements.find((el) => el.kind === 'image' && el.imageUrl)?.id;
-  // See `backgroundElementId`'s own comment — this is the actual hide, applied per-element below.
-  const isHiddenDuringFocusDrag = (elementId: string) => focusRectDragging && elementId !== backgroundElementId;
 
   // Any selected layer — image, text, or shape — whose frame spills past the artboard's own bounds
   // gets a preview of the overflowing part — hidden again the moment it's deselected. Gated on
@@ -958,122 +720,6 @@ function ArtboardFrameImpl({
   function nativePointFromEvent(e: { clientX: number; clientY: number }) {
     const rect = frameRef.current!.getBoundingClientRect();
     return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale };
-  }
-
-  // "Scene focus point" picking: the box seeded on entry (see the effect above) is directly
-  // draggable/resizable, committed to layout.focusRect only once the user clicks the confirm
-  // checkmark — moving/resizing it never touches the store on its own, just local state.
-  function startFocusRectMove(e: ReactMouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!focusDrawRect) return;
-    // Destructured to plain numbers, not the object itself — TS can't carry a null-check's
-    // narrowing into these nested closures for an object binding, but primitives close over fine.
-    const { x: startRectX, y: startRectY, w, h } = focusDrawRect;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    // `focusDrawRect` state itself is stale inside this closure — onMove keeps this in sync with
-    // every intermediate position so onUp can commit wherever the box actually ended up, not
-    // wherever it was when the drag started.
-    let latestRect = focusDrawRect;
-    setFocusRectDirty(true);
-    setFocusRectDragging(true);
-    function onMove(ev: globalThis.MouseEvent) {
-      const dx = (ev.clientX - startX) / scale;
-      const dy = (ev.clientY - startY) / scale;
-      latestRect = {
-        x: Math.max(0, Math.min(nativeWidth - w, startRectX + dx)),
-        y: Math.max(0, Math.min(nativeHeight - h, startRectY + dy)),
-        w,
-        h,
-      };
-      setFocusDrawRect(latestRect);
-    }
-    function onUp() {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      setFocusRectDragging(false);
-      setSuppressFocusHover(true);
-      // Moving the box already is the deliberate "I'm placing this" gesture — commit it right here
-      // instead of leaving the "Change" button disabled until some separate confirming click lands
-      // elsewhere in the frame.
-      commitFocusRect(latestRect);
-    }
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }
-
-  // Same corner/edge handle math as useElementDrag's startResize, but clamped to the frame's own
-  // bounds (0..nativeWidth/Height) instead of growing freely, and writing to local focusDrawRect
-  // state instead of an element's frame. `initialRect` defaults to the in-progress focusDrawRect,
-  // but the confirmed box's own handles (see below) pass layout.focusRect directly instead — they
-  // fire in the same tick as startPickingFocus, before focusDrawRect has actually been seeded yet.
-  function startFocusRectResize(handle: ResizeHandle, e: ReactMouseEvent, initialRect?: { x: number; y: number; w: number; h: number }) {
-    e.preventDefault();
-    e.stopPropagation();
-    const startRect = initialRect ?? focusDrawRect;
-    if (!startRect) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    // See startFocusRectMove's own copy of this — onUp needs wherever the box actually ended up,
-    // not the stale value `focusDrawRect` still holds inside this closure.
-    let latestRect = startRect;
-    setFocusRectDirty(true);
-    setFocusRectDragging(true);
-    function onMove(ev: globalThis.MouseEvent) {
-      const dx = (ev.clientX - startX) / scale;
-      const dy = (ev.clientY - startY) / scale;
-      let x = startRect.x;
-      let y = startRect.y;
-      let w = startRect.w;
-      let h = startRect.h;
-      if (handle.includes('e')) w = Math.max(FOCUS_RECT_MIN_SIZE, Math.min(nativeWidth - startRect.x, startRect.w + dx));
-      if (handle.includes('s')) h = Math.max(FOCUS_RECT_MIN_SIZE, Math.min(nativeHeight - startRect.y, startRect.h + dy));
-      if (handle.includes('w')) {
-        w = Math.max(FOCUS_RECT_MIN_SIZE, Math.min(startRect.x + startRect.w, startRect.w - dx));
-        x = startRect.x + startRect.w - w;
-      }
-      if (handle.includes('n')) {
-        h = Math.max(FOCUS_RECT_MIN_SIZE, Math.min(startRect.y + startRect.h, startRect.h - dy));
-        y = startRect.y + startRect.h - h;
-      }
-      latestRect = { x, y, w, h };
-      setFocusDrawRect(latestRect);
-    }
-    function onUp() {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      setFocusRectDragging(false);
-      setSuppressFocusHover(true);
-      // Resizing already is the deliberate "I'm placing this" gesture — commit it right here
-      // instead of leaving the "Change" button disabled until some separate confirming click lands
-      // elsewhere in the frame.
-      commitFocusRect(latestRect);
-    }
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }
-
-  // Saves `rect` as the layout's real, committed focusRect and marks this picking session
-  // confirmed — shared by the click-catcher's own explicit confirm below and by a move/resize
-  // drag's own release (see startFocusRectMove/startFocusRectResize), so finishing either kind of
-  // adjustment is itself enough to confirm, with no separate click required afterward.
-  function commitFocusRect(rect: { x: number; y: number; w: number; h: number }) {
-    updateLayoutStyle(layoutId, { focusRect: rect });
-    confirmFocusPick();
-    // Stays in picking mode rather than exiting outright — clearing focusDrawRect (with
-    // focusPickConfirmed now true) switches the overlay below into its "confirmed" display: the
-    // picked rect stays outlined, with no more buttons in the way, so it reads as a settled result
-    // rather than a still-open prompt. Leaving picking mode only happens when the "Add more
-    // sizes" panel itself closes (see QuickSizeMenu's closePanel) or "Change" re-enters it.
-    setFocusDrawRect(null);
-  }
-
-  function confirmFocusRect(e: ReactMouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!focusDrawRect) return;
-    commitFocusRect(focusDrawRect);
   }
 
   function handleFrameMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
@@ -1569,7 +1215,7 @@ function ArtboardFrameImpl({
         />
 
         {imageElement && hasImage && (
-          <div data-hero-image style={{ display: isHiddenDuringFocusDrag(imageElement.id) ? 'none' : 'contents' }}>
+          <div data-hero-image style={{ display: 'contents' }}>
             {active ? (
               <DraggableImageElement
                 element={imageElement}
@@ -1641,114 +1287,112 @@ function ArtboardFrameImpl({
           </div>
         )}
 
-        {extraElements
-          .filter((el) => !isHiddenDuringFocusDrag(el.id))
-          .map((el) => {
-            if (!active) {
-              return (
-                <ElementRenderer
-                  key={el.id}
-                  element={el}
-                  layoutWidth={nativeWidth}
-                  layoutHeight={nativeHeight}
-                  selected={showsBoundsBox(el.id)}
-                />
-              );
-            }
+        {extraElements.map((el) => {
+          if (!active) {
+            return (
+              <ElementRenderer
+                key={el.id}
+                element={el}
+                layoutWidth={nativeWidth}
+                layoutHeight={nativeHeight}
+                selected={showsBoundsBox(el.id)}
+              />
+            );
+          }
 
-            if (el.kind === 'text') {
-              return (
-                <EditableTextElement
-                  key={el.id}
-                  element={el}
-                  layoutId={layoutId}
-                  layoutWidth={nativeWidth}
-                  layoutHeight={nativeHeight}
-                  scale={scale}
-                  activeTool={activeTool}
-                  selected={showsBoundsBox(el.id)}
-                  altKeyDown={altKeyDown}
-                  isEditing={editingTextElementId === el.id}
-                  onSelect={makeOnSelect(el)}
-                  onStartEditing={() => setEditingTextElement(el.id)}
-                  onContextMenu={handleLayerContextMenu(el.id)}
-                  onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
-                  onStartAltDuplicate={startAltDuplicate}
-                />
-              );
-            }
+          if (el.kind === 'text') {
+            return (
+              <EditableTextElement
+                key={el.id}
+                element={el}
+                layoutId={layoutId}
+                layoutWidth={nativeWidth}
+                layoutHeight={nativeHeight}
+                scale={scale}
+                activeTool={activeTool}
+                selected={showsBoundsBox(el.id)}
+                altKeyDown={altKeyDown}
+                isEditing={editingTextElementId === el.id}
+                onSelect={makeOnSelect(el)}
+                onStartEditing={() => setEditingTextElement(el.id)}
+                onContextMenu={handleLayerContextMenu(el.id)}
+                onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
+                onStartAltDuplicate={startAltDuplicate}
+              />
+            );
+          }
 
-            if (el.kind === 'vector') {
-              return (
-                <SelectableVectorElement
-                  key={el.id}
-                  element={el}
-                  layoutId={layoutId}
-                  layoutWidth={nativeWidth}
-                  layoutHeight={nativeHeight}
-                  scale={scale}
-                  activeTool={activeTool}
-                  selected={showsBoundsBox(el.id)}
-                  isEditing={editingVectorElementId === el.id}
-                  altKeyDown={altKeyDown}
-                  onSelect={makeOnSelect(el)}
-                  onStartEditing={() => setEditingVectorElement(el.id)}
-                  onContextMenu={handleLayerContextMenu(el.id)}
-                  onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
-                  onStartAltDuplicate={startAltDuplicate}
-                />
-              );
-            }
+          if (el.kind === 'vector') {
+            return (
+              <SelectableVectorElement
+                key={el.id}
+                element={el}
+                layoutId={layoutId}
+                layoutWidth={nativeWidth}
+                layoutHeight={nativeHeight}
+                scale={scale}
+                activeTool={activeTool}
+                selected={showsBoundsBox(el.id)}
+                isEditing={editingVectorElementId === el.id}
+                altKeyDown={altKeyDown}
+                onSelect={makeOnSelect(el)}
+                onStartEditing={() => setEditingVectorElement(el.id)}
+                onContextMenu={handleLayerContextMenu(el.id)}
+                onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
+                onStartAltDuplicate={startAltDuplicate}
+              />
+            );
+          }
 
-            if (el.kind === 'shape') {
-              return (
-                <SelectableShapeElement
-                  key={el.id}
-                  element={el}
-                  layoutId={layoutId}
-                  layoutWidth={nativeWidth}
-                  layoutHeight={nativeHeight}
-                  scale={scale}
-                  activeTool={activeTool}
-                  selected={showsBoundsBox(el.id)}
-                  isEditing={editingVectorElementId === el.id}
-                  altKeyDown={altKeyDown}
-                  onSelect={makeOnSelect(el)}
-                  onConvertAndEdit={() => convertShapeToVectorAndEdit(el)}
-                  onEnterEllipseEdit={() => setEditingVectorElement(el.id)}
-                  onContextMenu={handleLayerContextMenu(el.id)}
-                  onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
-                  onStartAltDuplicate={startAltDuplicate}
-                />
-              );
-            }
+          if (el.kind === 'shape') {
+            return (
+              <SelectableShapeElement
+                key={el.id}
+                element={el}
+                layoutId={layoutId}
+                layoutWidth={nativeWidth}
+                layoutHeight={nativeHeight}
+                scale={scale}
+                activeTool={activeTool}
+                selected={showsBoundsBox(el.id)}
+                isEditing={editingVectorElementId === el.id}
+                altKeyDown={altKeyDown}
+                onSelect={makeOnSelect(el)}
+                onConvertAndEdit={() => convertShapeToVectorAndEdit(el)}
+                onEnterEllipseEdit={() => setEditingVectorElement(el.id)}
+                onContextMenu={handleLayerContextMenu(el.id)}
+                onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
+                onStartAltDuplicate={startAltDuplicate}
+              />
+            );
+          }
 
-            if (el.kind === 'image') {
-              return (
-                <DraggableImageElement
-                  key={el.id}
-                  element={el}
-                  layoutId={layoutId}
-                  layoutWidth={nativeWidth}
-                  layoutHeight={nativeHeight}
-                  scale={scale}
-                  activeTool={activeTool}
-                  selected={showsBoundsBox(el.id)}
-                  altKeyDown={altKeyDown}
-                  expanding={expandingElementId === el.id}
-                  onExpandToFrameClick={handleExpandToFrameClick(el)}
-                  isBackgroundImage={el.id === backgroundElementId}
-                  sceneHasBackgroundColor={Boolean(layout.backgroundColor)}
-                  onSelect={makeOnSelect(el)}
-                  onContextMenu={handleLayerContextMenu(el.id)}
-                  onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
-                  onStartAltDuplicate={startAltDuplicate}
-                />
-              );
-            }
+          if (el.kind === 'image') {
+            return (
+              <DraggableImageElement
+                key={el.id}
+                element={el}
+                layoutId={layoutId}
+                layoutWidth={nativeWidth}
+                layoutHeight={nativeHeight}
+                scale={scale}
+                activeTool={activeTool}
+                selected={showsBoundsBox(el.id)}
+                altKeyDown={altKeyDown}
+                expanding={expandingElementId === el.id}
+                onExpandToFrameClick={handleExpandToFrameClick(el)}
+                isBackgroundImage={el.id === backgroundElementId}
+                sceneHasBackgroundColor={Boolean(layout.backgroundColor)}
+                onSelect={makeOnSelect(el)}
+                onContextMenu={handleLayerContextMenu(el.id)}
+                onEnterGroup={el.groupId && el.groupId !== enteredGroupId ? makeOnEnterGroup(el) : undefined}
+                onStartAltDuplicate={startAltDuplicate}
+              />
+            );
+          }
 
-            return <ElementRenderer key={el.id} element={el} layoutWidth={nativeWidth} layoutHeight={nativeHeight} />;
-          })}
+          return <ElementRenderer key={el.id} element={el} layoutWidth={nativeWidth} layoutHeight={nativeHeight} />;
+        })}
 
         {active && drawRect && (
           <div
@@ -1816,128 +1460,7 @@ function ArtboardFrameImpl({
             )}
       </div>
 
-      {isPickingFocus && (
-        <>
-          <div data-focus-pick-overlay className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
-            {focusPickConfirmed && layout.focusRect ? (
-              // Confirmed this session — the picked rect just stays outlined on top, no dimming, but
-              // its own resize handles are live right away on hover (no click-to-enter-editing first
-              // — see each handle's onMouseDown below), and the box itself is still clickable too:
-              // that re-runs startPickingFocus (resetting focusPickConfirmed, same as "Change"),
-              // which switches this back into the fully editable state below.
-              <div
-                className="group/focus-rect-confirmed pointer-events-auto absolute cursor-pointer"
-                onClick={() => startPickingFocus(layoutId)}
-                onMouseEnter={() => setConfirmedRectHovered(true)}
-                onMouseLeave={() => setConfirmedRectHovered(false)}
-                style={{
-                  left: `${(layout.focusRect.x / nativeWidth) * 100}%`,
-                  top: `${(layout.focusRect.y / nativeHeight) * 100}%`,
-                  width: `${(layout.focusRect.w / nativeWidth) * 100}%`,
-                  height: `${(layout.focusRect.h / nativeHeight) * 100}%`,
-                  background: 'rgba(255,255,255,0.1)',
-                  borderRadius: FOCUS_BOX_RADIUS,
-                  boxShadow: FOCUS_BOX_SHADOW,
-                }}
-              >
-                {/* Hover affordance so the box still reads as clickable (re-opens editing) even
-                    once it's already settled, not just while it's mid-edit. */}
-                <div className="absolute inset-0 rounded-[inherit] bg-white/0 transition-colors group-hover/focus-rect-confirmed:bg-white/10" />
-                <FocusRectCorners expanded={confirmedRectHovered} />
-                {RESIZE_HANDLES.map((handle) => (
-                  <div
-                    key={handle}
-                    style={focusHandleStyle(handle)}
-                    onMouseDown={(e) => {
-                      startPickingFocus(layoutId);
-                      startFocusRectResize(handle, e, layout.focusRect);
-                    }}
-                  />
-                ))}
-              </div>
-            ) : (
-              focusDrawRect && (
-                <>
-                  {/* A full-size, invisible click-catcher *behind* the box (rendered first, so the
-                      box itself — rendered after, on top — still gets first pick of any click that
-                      lands on it) — clicking anywhere else in the frame while editing commits the
-                      box in place, same as the checkmark, rather than leaving it open indefinitely
-                      with no way to dismiss it except that one small button. */}
-                  <div className="pointer-events-auto absolute inset-0" onClick={confirmFocusRect} />
-                  <div
-                    className="group/focus-rect pointer-events-auto absolute cursor-move transition-colors"
-                    style={{
-                      left: `${(focusDrawRect.x / nativeWidth) * 100}%`,
-                      top: `${(focusDrawRect.y / nativeHeight) * 100}%`,
-                      width: `${(focusDrawRect.w / nativeWidth) * 100}%`,
-                      height: `${(focusDrawRect.h / nativeHeight) * 100}%`,
-                      // A "spotlight": an enormous, non-blurred shadow spread fills the entire
-                      // rest of the (clipped, `overflow-hidden`) overlay with the dim color, while
-                      // the box's own background stays fully transparent — so only the area inside
-                      // reads at full clarity, everything outside it dims, without a second overlay
-                      // element (and its own separate cutout) to keep in sync with the box. Shown
-                      // up front (before the box has ever been touched) and again while actively
-                      // dragging, but dropped the instant a drag ends (no transition on box-shadow)
-                      // — once you've adjusted it at least once you've already seen where it sits,
-                      // so the dim doesn't need to keep reminding you on every subsequent hover.
-                      // Layered together with the box's own persistent drop shadow (comma-separated
-                      // — CSS box-shadow takes a list, painted in the order given) rather than one
-                      // replacing the other.
-                      boxShadow: [focusRectDragging || !focusRectDirty ? '0 0 0 9999px rgba(38,38,44,0.5)' : null, FOCUS_BOX_SHADOW]
-                        .filter(Boolean)
-                        .join(', '),
-                      borderRadius: FOCUS_BOX_RADIUS,
-                    }}
-                    onMouseDown={startFocusRectMove}
-                    onMouseEnter={() => setFocusRectHovered(true)}
-                    onMouseLeave={() => setFocusRectHovered(false)}
-                  >
-                    {/* Hover affordance while the box is just sitting there waiting to be adjusted —
-                        a subtle white wash. Plain `focusRectHovered` before the box has ever been
-                        dragged (so it comes and goes with the cursor, same as any other hover
-                        affordance) — but once `focusRectDirty` (it's been moved/resized at least
-                        once this session), it stays on for good, cursor or no cursor, rather than
-                        blinking off the moment the mouse happens to leave right after a release. */}
-                    <div
-                      className={cn('absolute inset-0 rounded-[inherit] transition-colors', focusRectHovered || focusRectDirty ? 'bg-white/10' : 'bg-white/0')}
-                    />
-                    <FocusRectCorners expanded={focusRectExpanded} />
-                    {RESIZE_HANDLES.map((handle) => (
-                      <div key={handle} style={focusHandleStyle(handle)} onMouseDown={(e) => startFocusRectResize(handle, e)} />
-                    ))}
-                  </div>
-                </>
-              )
-            )}
-          </div>
-
-          {/* Rendered *outside* the overlay's own overflow-hidden box (a sibling, not a descendant) —
-              so the confirm checkmark and the instructional hint never clip at a frame edge when
-              the box sits flush against one. */}
-          {focusDrawRect && !focusPickConfirmed && (
-            <>
-              {!focusRectDirty && (
-                <div
-                  className="pointer-events-none absolute z-30 flex w-max shrink-0 items-center justify-center gap-2 rounded-[12px] px-4 py-[12px] text-bg whitespace-nowrap text-white"
-                  style={{
-                    left: `${((focusDrawRect.x + focusDrawRect.w / 2) / nativeWidth) * 100}%`,
-                    top: `${((focusDrawRect.y + focusDrawRect.h) / nativeHeight) * 100}%`,
-                    transform: 'translate(-50%, 12px)',
-                    background: 'rgba(38,38,44,0.88)',
-                    boxShadow: '0px 1px 2px rgba(0,0,0,0.03), 0px 1px 6px -1px rgba(0,0,0,0.02), 0px 2px 4px rgba(0,0,0,0.02)',
-                  }}
-                >
-                  <img src="/icons/visual-pick-center.svg" alt="" className="size-6 shrink-0" />
-                  <span>{t('Move or resize to set the focus area')}</span>
-                </div>
-              )}
-            </>
-          )}
-        </>
-      )}
-
-      {/* Measurement overlay — rendered as a sibling of the clipped frame (same pattern as the
-          focus-rect hint above) so a measurement to an element that spills past the frame's own
+      {/* Measurement overlay — rendered as a sibling of the clipped frame so a measurement to an element that spills past the frame's own
           bounds isn't clipped either (spec edge case 3). Purely visual: no pointer events, so it
           never swallows a click/drag happening underneath it. */}
       {measureSourceBox && (
@@ -2007,6 +1530,7 @@ function ArtboardFrameImpl({
     </div>
   );
 }
+
 /**
  * Memoized: on a canvas with many sizes, a drag on one banner otherwise re-renders every banner's
  * frame on each mouse move. A banner whose own `layout` object (and other props) didn't change

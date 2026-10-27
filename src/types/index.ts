@@ -243,8 +243,6 @@ export type Layout = {
   radius?: number;
   /** Hides the scene from export — purely a stored flag, doesn't affect canvas rendering. */
   hidden?: boolean;
-  /** User-drawn "scene focus" — absolute px in layout space, kept unaffected by ratio-adaptation. */
-  focusRect?: { x: number; y: number; w: number; h: number };
 };
 
 // A saved template is a Layout with placeholder content and no set

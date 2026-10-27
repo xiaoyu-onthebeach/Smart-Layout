@@ -264,7 +264,7 @@ function UnifiedAllSizesHeader({
               />
             )}
             <div className="pointer-events-auto absolute" style={{ left: icon.x - ADD_ICON_SIZE / 2, top: -ADD_ICON_SIZE / 2 }}>
-              <QuickSizeMenu onConfirm={icon.onConfirm} sourceLayoutId={icon.entry.layout.id}>
+              <QuickSizeMenu onConfirm={icon.onConfirm}>
                 <AddSizeIconButton onHoverChange={(v) => setHoveredIndex(v ? i : null)} onClick={icon.onFocusPrimary} />
               </QuickSizeMenu>
             </div>
@@ -291,7 +291,7 @@ function UnifiedAllSizesHeader({
 /** The hotspot below a scene card that offers to adapt it to another size — see `AddMoreSizesButton`
  * for the pill itself. (A twin hotspot used to sit on the right edge too, with a small circular "+"
  * instead of this pill; removed since the "ALL SIZES" divider's own "+" already covers that.) */
-function AddPageHotspot({ sourceLayoutId, onConfirm }: { sourceLayoutId: string; onConfirm: (results: QuickSizeResult[]) => void }) {
+function AddPageHotspot({ onConfirm }: { onConfirm: (results: QuickSizeResult[]) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
     <div
@@ -305,7 +305,7 @@ function AddPageHotspot({ sourceLayoutId, onConfirm }: { sourceLayoutId: string;
         menuOpen ? 'opacity-100' : 'opacity-0 group-hover/card:opacity-100',
       )}
     >
-      <QuickSizeMenu onConfirm={onConfirm} onOpenChange={setMenuOpen} sourceLayoutId={sourceLayoutId}>
+      <QuickSizeMenu onConfirm={onConfirm} onOpenChange={setMenuOpen}>
         <AddMoreSizesButton />
       </QuickSizeMenu>
     </div>
@@ -433,7 +433,7 @@ function PageCard({
           a still-empty primary shows no affordance at all here, not even on hover. Persistent at
           every zoom level once it does — unlike the old scale >= 0.4 gate, unmounting this on zoom
           out would also close an already-open QuickSizeMenu panel along with it. */}
-      {!isLoading && showBottomAdd && layoutHasContent(layout) && <AddPageHotspot sourceLayoutId={layout.id} onConfirm={(r) => onAddAdjacent('bottom', r)} />}
+      {!isLoading && showBottomAdd && layoutHasContent(layout) && <AddPageHotspot onConfirm={(r) => onAddAdjacent('bottom', r)} />}
     </div>
   );
 }

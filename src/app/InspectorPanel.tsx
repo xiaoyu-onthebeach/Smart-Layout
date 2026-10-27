@@ -19,9 +19,8 @@ export function InspectorPanel() {
   const selectedElements = useAppStore((s) => s.selectedElements);
   const selectedSceneIds = useAppStore((s) => s.selectedSceneIds);
   // The "Add more sizes" popup (QuickSizeMenu) sits in this exact same top-right corner — while
-  // it's open (non-null for its whole lifetime, cleared the instant it closes) this panel steps
-  // aside entirely instead of rendering underneath/behind it.
-  const pickingFocusForLayoutId = useAppStore((s) => s.pickingFocusForLayoutId);
+  // it's open this panel steps aside entirely instead of rendering underneath/behind it.
+  const addSizesOpen = useAppStore((s) => s.addSizesOpen);
   const editingVectorElementId = useAppStore((s) => s.editingVectorElementId);
   // Mirrors the header's own ruler-driven push-down (see TopBar/Shell) so the gap between the
   // header's bottom edge and this panel's own top edge never changes — a plain `top` offset here
@@ -73,7 +72,7 @@ export function InspectorPanel() {
     if (layout) content = <SceneEditorPanel layout={layout} setId={setId} />;
   }
 
-  if (!content || pickingFocusForLayoutId) return null;
+  if (!content || addSizesOpen) return null;
 
   return (
     <div

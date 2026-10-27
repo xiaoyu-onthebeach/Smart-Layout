@@ -85,7 +85,7 @@ export function ImageBox({
   expanding?: boolean;
   /** Fills the moved-image gap left against the frame's own corner. */
   onExpandToFrameClick?: (e: ReactMouseEvent) => void;
-  /** Whether this is "the" background image — the real hero slot if it's filled, otherwise whichever decorative image is standing in for it (same rule ArtboardFrame uses to decide what stays visible during focus-picking). Gates the automatic frame-gap grid/button below, so a small logo or badge dragged off-canvas doesn't grow the same affordance around itself. */
+  /** Whether this is "the" background image — the real hero slot if it's filled, otherwise whichever decorative image is standing in for it (same rule as ArtboardFrame's own `backgroundElementId`). Gates the automatic frame-gap grid/button below, so a small logo or badge dragged off-canvas doesn't grow the same affordance around itself. */
   isBackgroundImage?: boolean;
   /** True during an active move/resize drag and for a short settle delay after — hides the frame-gap grid/button so they don't flicker in mid-drag. */
   suppressFrameGapAffordance?: boolean;
