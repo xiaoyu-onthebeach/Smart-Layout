@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
 import { cn } from '@/lib/utils';
+import { useLatestCallback } from '@/hooks/useLatestCallback';
 import { useT } from '@/lib/i18n';
 import { useAppStore } from '@/store/useAppStore';
 import { nextId, createAdaptedLayout, layoutHasContent } from '@/lib/create-layout';
@@ -376,6 +377,11 @@ function PageCard({
 }) {
   const { set: bannerSet, layout } = entry;
   const [isHovered, setIsHovered] = useState(false);
+  // The canvas creates these handlers fresh on every render — stable wrappers keep that from
+  // defeating ArtboardFrame's memo, while still always calling the latest version.
+  const stableActivate = useLatestCallback(onActivate);
+  const stableStartDrag = useLatestCallback(onStartDrag);
+  const stableSceneContextMenu = useLatestCallback(onSceneContextMenu);
   return (
     <div
       className={cn('group/card absolute', reflowing ? 'transition-[opacity,left,top] duration-150' : 'transition-opacity')}
@@ -415,9 +421,9 @@ function PageCard({
           width={width}
           height={height}
           active={entered}
-          onActivate={onActivate}
-          onSceneMouseDown={onStartDrag}
-          onSceneContextMenu={onSceneContextMenu}
+          onActivate={stableActivate}
+          onSceneMouseDown={stableStartDrag}
+          onSceneContextMenu={stableSceneContextMenu}
           showEmptyStateHint={scale >= 0.2}
           className="absolute inset-0"
         />

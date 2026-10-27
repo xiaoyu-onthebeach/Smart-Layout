@@ -1,5 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '@/store/useAppStore';
+import { useLatestCallback } from '@/hooks/useLatestCallback';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { nextId, layoutHasContent, isRealLayer } from '@/lib/create-layout';
@@ -329,7 +331,7 @@ function MeasurePill({ x, y, nativeWidth, nativeHeight, value, background }: { x
  * scene rather than any layer, since layers aren't individually interactive
  * until activation has already landed.
  */
-export function ArtboardFrame({
+function ArtboardFrameImpl({
   layout,
   scale,
   width,
@@ -380,7 +382,9 @@ export function ArtboardFrame({
   const shapeToolKind = useAppStore((s) => s.shapeToolKind);
   const selectedElements = useAppStore((s) => s.selectedElements);
   const autoMatchedElements = useAppStore((s) => s.autoMatchedElements);
-  const activeGuides = useAppStore((s) => s.activeGuides);
+  // Only this banner's own guides — subscribing to the whole list would re-render every banner on
+  // the canvas each time a drag anywhere updates it.
+  const activeGuides = useAppStore(useShallow((s) => s.activeGuides.filter((g) => g.layoutId === layout.id)));
   const editingTextElementId = useAppStore((s) => s.editingTextElementId);
   const selectElement = useAppStore((s) => s.selectElement);
   const setSelectedElements = useAppStore((s) => s.setSelectedElements);
@@ -555,11 +559,25 @@ export function ArtboardFrame({
     };
   }, [active]);
 
-  // Tracked continuously while active (not just while the ⌘ overlay is showing) so the position is
-  // already known the instant ⌘ goes down — entering should be instant, not wait for the next move.
+  // The cursor is tracked continuously while active (not just while the Option overlay is showing)
+  // so its position is already known the instant Option goes down — entering should be instant,
+  // not wait for the next move. It's only kept in a ref though, and copied into state (which
+  // re-renders this whole frame) only while Option is actually held — otherwise merely hovering
+  // the banner re-rendered it on every mouse move for an overlay nobody was looking at.
   const [measurePoint, setMeasurePoint] = useState<{ x: number; y: number } | null>(null);
   const measureRafRef = useRef<number | null>(null);
   const measureLastClientRef = useRef<{ x: number; y: number } | null>(null);
+  const altKeyDownRef = useRef(altKeyDown);
+  const updateMeasurePoint = useLatestCallback(() => {
+    const p = measureLastClientRef.current;
+    const rect = frameRef.current?.getBoundingClientRect();
+    if (!p || !rect) return;
+    setMeasurePoint({ x: (p.x - rect.left) / scale, y: (p.y - rect.top) / scale });
+  });
+  useEffect(() => {
+    altKeyDownRef.current = altKeyDown;
+    if (altKeyDown) updateMeasurePoint();
+  }, [altKeyDown, updateMeasurePoint]);
   useEffect(() => {
     if (!active) {
       setMeasurePoint(null);
@@ -567,13 +585,10 @@ export function ArtboardFrame({
     }
     function onMove(e: globalThis.MouseEvent) {
       measureLastClientRef.current = { x: e.clientX, y: e.clientY };
-      if (measureRafRef.current != null) return;
+      if (!altKeyDownRef.current || measureRafRef.current != null) return;
       measureRafRef.current = requestAnimationFrame(() => {
         measureRafRef.current = null;
-        const p = measureLastClientRef.current;
-        const rect = frameRef.current?.getBoundingClientRect();
-        if (!p || !rect) return;
-        setMeasurePoint({ x: (p.x - rect.left) / scale, y: (p.y - rect.top) / scale });
+        updateMeasurePoint();
       });
     }
     // Cursor leaving the browser window entirely (not just this frame) should clear the target per
@@ -588,7 +603,7 @@ export function ArtboardFrame({
       document.removeEventListener('mouseout', onDocumentMouseOut);
       if (measureRafRef.current != null) cancelAnimationFrame(measureRafRef.current);
     };
-  }, [active, scale]);
+  }, [active, updateMeasurePoint]);
 
   // Source = current selection's own (rotation-aware) union box, scoped to this scene only — a
   // selection living in a sibling scene never measures against this one (spec edge case 10). Also
@@ -1992,3 +2007,10 @@ export function ArtboardFrame({
     </div>
   );
 }
+/**
+ * Memoized: on a canvas with many sizes, a drag on one banner otherwise re-renders every banner's
+ * frame on each mouse move. A banner whose own `layout` object (and other props) didn't change
+ * skips re-rendering — the store keeps an untouched layout's object identity across updates. Its
+ * own store subscriptions still re-render it whenever something it reads changes.
+ */
+export const ArtboardFrame = memo(ArtboardFrameImpl);
