@@ -104,7 +104,7 @@ export function SelectableVectorElement({
         selected && (
           <>
             <SelectionBoundingBox
-              onResizeStart={(handle, e) => startResize(e, handle, frame)}
+              onResizeStart={(handle, e) => startResize(e, handle, frame, style)}
               onRotateStart={(_handle, e) => {
                 const boxEl = (e.target as HTMLElement).closest('[data-resize-box]') as HTMLElement | null;
                 if (boxEl) startRotate(e, boxEl, element.rotation ?? 0);

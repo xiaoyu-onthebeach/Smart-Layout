@@ -145,13 +145,17 @@ export function ElementRenderer({
     // Arrow is a stroke-only open line+arrowhead (see `arrowPoints`) — not CSS-rect-shaped and not
     // filled, unlike every other shape kind.
     if (element.shape === 'arrow') {
-      const d = arrowPoints(frame.w, frame.h)
+      // Inset by the same stroke width the polyline actually paints with — SVG strokes are center-
+      // aligned, so without this the round caps/joins bleed `strokeWidth / 2` past the frame's own
+      // edge on every side (see `arrowPoints`'s own doc comment).
+      const arrowStrokeWidth = style.strokeWidth ?? 4;
+      const d = arrowPoints(frame.w, frame.h, arrowStrokeWidth)
         .map((p) => `${p.x},${p.y}`)
         .join(' ');
       return (
         <div onMouseDown={onMouseDown} style={{ ...pos, boxShadow: boxShadowCss(style.dropShadow, style.innerShadow) }} className={cn(selected && 'outline outline-[1.5px] outline-button-primary')}>
           <svg viewBox={`0 0 ${frame.w} ${frame.h}`} preserveAspectRatio="none" className="size-full overflow-visible" style={{ opacity: style.opacity !== undefined ? style.opacity / 100 : undefined }}>
-            <polyline points={d} fill="none" stroke={style.strokeColor ?? '#ffffff'} strokeWidth={style.strokeWidth ?? 4} strokeLinecap="round" strokeLinejoin="round" />
+            <polyline points={d} fill="none" stroke={style.strokeColor ?? '#ffffff'} strokeWidth={arrowStrokeWidth} strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
       );

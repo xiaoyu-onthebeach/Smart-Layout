@@ -53,7 +53,7 @@ export function DraggableImageElement({
 }) {
   const updateElement = useAppStore((s) => s.updateElement);
   const { startResize, startRotate } = useElementDrag(layoutId, element.id, scale);
-  const { frame } = element;
+  const { frame, style } = element;
 
   // Suppresses the frame-gap grid/expand-button for the duration of a move or resize drag, plus a
   // short settle delay after release — otherwise they'd flicker in and out mid-drag every time the
@@ -247,7 +247,7 @@ export function DraggableImageElement({
         <SelectionBoundingBox
           onResizeStart={(handle, e) => {
             beginPositioning();
-            startResize(e, handle, frame);
+            startResize(e, handle, frame, style);
             function onUp() {
               window.removeEventListener('mouseup', onUp);
               endPositioning();

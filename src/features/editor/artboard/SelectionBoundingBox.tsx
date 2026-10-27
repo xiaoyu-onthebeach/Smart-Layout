@@ -66,25 +66,67 @@ function rotateZoneStyle(handle: ResizeHandle): CSSProperties {
   return style;
 }
 
+function lineEndpointHandleStyle(side: 'tail' | 'tip'): CSSProperties {
+  const half = CORNER_SIZE / 2;
+  return {
+    position: 'absolute',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    width: CORNER_SIZE,
+    height: CORNER_SIZE,
+    background: '#ffffff',
+    border: '1.5px solid var(--color-button-primary)',
+    borderRadius: 2,
+    boxSizing: 'border-box',
+    pointerEvents: 'auto',
+    // Free-direction, not a 1-axis resize — any cursor would misleadingly imply a constrained drag.
+    cursor: 'move',
+    ...(side === 'tail' ? { left: -half } : { right: -half }),
+  };
+}
+
+/** Replaces `SelectionBoundingBox` for a 'line'/'arrow' shape: just its own two end-point handles
+ * (the stroke's real tail and tip) joined by a single straight line — no surrounding box, since
+ * neither shape has a real second dimension of its own to show a boundary around (their "height" is
+ * just the stroke's own thickness). Each handle can be dragged freely in any direction — not a 1-axis
+ * resize — repositioning that one end while the other stays put, which changes the shaft's length
+ * *and* angle together (see `startEndpointDrag`). */
+export function LineEndpointHandles({ onEndpointDragStart }: { onEndpointDragStart: (side: 'tail' | 'tip', e: ReactMouseEvent) => void }) {
+  return (
+    <>
+      <div className="pointer-events-none absolute top-1/2 right-0 left-0 h-[1.5px] -translate-y-1/2 bg-button-primary" />
+      <div style={lineEndpointHandleStyle('tail')} onMouseDown={(e) => onEndpointDragStart('tail', e)} />
+      <div style={lineEndpointHandleStyle('tip')} onMouseDown={(e) => onEndpointDragStart('tip', e)} />
+    </>
+  );
+}
+
 /** Blue outline + 8 resize handles, shared by every selectable element kind (image/text/shape).
  * Corners also get a slightly larger rotate zone sitting behind (in paint order) their own resize
  * handle — see rotateZoneStyle. `onRotateStart` is optional so callers that don't support rotation
- * yet just skip rendering those zones instead of wiring a no-op. */
+ * yet just skip rendering those zones instead of wiring a no-op. `hiddenHandles` drops specific
+ * handles entirely (not just visually — no hit area either) for a shape where dragging that edge
+ * alone has nothing sensible to do, e.g. 'line'/'arrow's own 'n'/'s': their "height" is just the
+ * shaft's stroke thickness, which only ever changes as a side effect of a proportional corner
+ * scale (see `startResize`), never as an independent dimension of its own to grab and drag. */
 export function SelectionBoundingBox({
   onResizeStart,
   onRotateStart,
+  hiddenHandles,
 }: {
   onResizeStart: (handle: ResizeHandle, e: ReactMouseEvent) => void;
   onRotateStart?: (handle: ResizeHandle, e: ReactMouseEvent) => void;
+  hiddenHandles?: ResizeHandle[];
 }) {
+  const handles = hiddenHandles ? RESIZE_HANDLES.filter((h) => !hiddenHandles.includes(h)) : RESIZE_HANDLES;
   return (
     <>
       <div className="pointer-events-none absolute inset-0 outline outline-[1.5px] outline-button-primary" />
       {onRotateStart &&
-        RESIZE_HANDLES.filter((h) => h.length === 2).map((handle) => (
-          <div key={`rotate-${handle}`} style={rotateZoneStyle(handle)} onMouseDown={(e) => onRotateStart(handle, e)} />
-        ))}
-      {RESIZE_HANDLES.map((handle) => (
+        handles
+          .filter((h) => h.length === 2)
+          .map((handle) => <div key={`rotate-${handle}`} style={rotateZoneStyle(handle)} onMouseDown={(e) => onRotateStart(handle, e)} />)}
+      {handles.map((handle) => (
         <div key={handle} style={handleStyle(handle)} onMouseDown={(e) => onResizeStart(handle, e)} />
       ))}
     </>

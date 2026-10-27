@@ -89,17 +89,19 @@ export function useElementDrag(layoutId: string, elementId: string, scale: numbe
     window.addEventListener('mouseup', onUp);
   }
 
-  function startResize(e: ReactMouseEvent, corner: ResizeHandle, startFrame: LayoutElement['frame']) {
+  function startResize(e: ReactMouseEvent, corner: ResizeHandle, startFrame: LayoutElement['frame'], startStyle?: LayoutElement['style']) {
     e.stopPropagation();
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
     const isCorner = corner.length === 2;
+    const startStrokeWidth = startStyle?.strokeWidth;
 
     function onMove(ev: globalThis.MouseEvent) {
       const dx = (ev.clientX - startX) / scale;
       const dy = (ev.clientY - startY) / scale;
       let { x, y, w, h } = startFrame;
+      let strokeWidth = startStrokeWidth;
 
       if (isCorner) {
         // A corner drag scales both axes together (locking the original aspect ratio) instead of
@@ -109,15 +111,25 @@ export function useElementDrag(layoutId: string, elementId: string, scale: numbe
         const signedDy = corner.includes('n') ? -dy : dy;
         const scaleW = (startFrame.w + signedDx) / startFrame.w;
         const scaleH = (startFrame.h + signedDy) / startFrame.h;
-        // Whichever axis the user is actually dragging further (relatively) wins, so the resize
-        // tracks the mouse naturally regardless of which direction they lead with.
-        let scale2 = Math.abs(scaleW - 1) > Math.abs(scaleH - 1) ? scaleW : scaleH;
-        // Clamping the scale itself (not each dimension separately) keeps the aspect ratio intact
-        // even once one axis hits the floor — clamping w/h independently would let a thin/wide
-        // shape's short axis hit MIN_SIZE while the long axis kept shrinking, warping the ratio.
-        scale2 = Math.max(scale2, MIN_SIZE / startFrame.w, MIN_SIZE / startFrame.h);
+        // Whichever axis the cursor actually moved further in absolute terms wins — NOT whichever
+        // axis changed more as a *percentage* of its own starting size. A `line` shape starts at
+        // h≈1, so even a few px of vertical slack would be a massive relative change there and
+        // always win under a percentage comparison, making the resize balloon wildly off a drag
+        // that barely moved — a tiny absolute dy driving a huge scale2 that then multiplies w too.
+        let scale2 = Math.abs(signedDx) > Math.abs(signedDy) ? scaleW : scaleH;
+        // Floors scale2 so neither axis shrinks below MIN_SIZE — but only for an axis that started
+        // at/above MIN_SIZE already; one that starts below it on purpose (a `line`'s own h≈1) has
+        // nothing to "protect" and would otherwise force scale2 up to whatever absurd ratio closes
+        // that gap, even on a drag that barely moved. Clamping the scale itself (not w/h separately)
+        // keeps the aspect ratio intact once the protected axis does hit its floor.
+        if (startFrame.w >= MIN_SIZE) scale2 = Math.max(scale2, MIN_SIZE / startFrame.w);
+        if (startFrame.h >= MIN_SIZE) scale2 = Math.max(scale2, MIN_SIZE / startFrame.h);
         w = startFrame.w * scale2;
         h = startFrame.h * scale2;
+        // A proportional (corner) scale carries the stroke weight along with it, same as Figma's own
+        // "Scale" resize — an edge-only drag (the branch below) stays a pure 1-axis stretch, so the
+        // stroke stays exactly as drawn.
+        if (startStrokeWidth !== undefined) strokeWidth = Math.max(0, startStrokeWidth * scale2);
       } else {
         if (corner.includes('e')) w = Math.max(MIN_SIZE, startFrame.w + dx);
         if (corner.includes('s')) h = Math.max(MIN_SIZE, startFrame.h + dy);
@@ -126,7 +138,60 @@ export function useElementDrag(layoutId: string, elementId: string, scale: numbe
       }
       if (corner.includes('w')) x = startFrame.x + (startFrame.w - w);
       if (corner.includes('n')) y = startFrame.y + (startFrame.h - h);
-      updateElement(layoutId, elementId, { frame: { x, y, w, h } });
+      const patch: Partial<LayoutElement> = { frame: { x, y, w, h } };
+      if (strokeWidth !== undefined) patch.style = { ...startStyle, strokeWidth };
+      updateElement(layoutId, elementId, patch);
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  /** A 'line'/'arrow' endpoint handle (see `LineEndpointHandles`) isn't a resize at all — dragging
+   * it freely repositions that one end anywhere on the canvas while the OTHER end stays exactly
+   * where it was, which simultaneously changes the shaft's length *and* its angle (`rotation`) in
+   * one continuous gesture, the way a real line/arrow tool works. `startResize`'s own 'w'/'e' handles
+   * only ever stretch along the frame's existing local x-axis, with no way to change its angle.
+   *
+   * Converts both endpoints to world space using the frame's current rotation (rotation pivots
+   * around the frame's own center — same convention `transform: rotate()`/`startRotate` already
+   * use), keeps the other endpoint's world position fixed as the anchor, and re-derives the frame +
+   * rotation a cursor delta away from the dragged endpoint's own starting world position. */
+  function startEndpointDrag(e: ReactMouseEvent, side: 'tail' | 'tip', startFrame: LayoutElement['frame'], startRotation: number) {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    const rad = (startRotation * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const center = { x: startFrame.x + startFrame.w / 2, y: startFrame.y + startFrame.h / 2 };
+    // Half the shaft's own local length, rotated into world space — the vector from center out to
+    // the tip; the tail is the same vector negated.
+    const halfVec = { x: (startFrame.w / 2) * cos, y: (startFrame.w / 2) * sin };
+    const tipStart = { x: center.x + halfVec.x, y: center.y + halfVec.y };
+    const tailStart = { x: center.x - halfVec.x, y: center.y - halfVec.y };
+    const anchor = side === 'tip' ? tailStart : tipStart; // the end NOT being dragged — stays fixed
+    const draggedStart = side === 'tip' ? tipStart : tailStart;
+
+    function onMove(ev: globalThis.MouseEvent) {
+      const dx = (ev.clientX - startX) / scale;
+      const dy = (ev.clientY - startY) / scale;
+      const dragged = { x: draggedStart.x + dx, y: draggedStart.y + dy };
+      const newCenter = { x: (anchor.x + dragged.x) / 2, y: (anchor.y + dragged.y) / 2 };
+      // Tail→tip direction either way, so `rotation` always means the same thing regardless of
+      // which end is the one actually being dragged right now.
+      const tailToTip = side === 'tip' ? { x: dragged.x - anchor.x, y: dragged.y - anchor.y } : { x: anchor.x - dragged.x, y: anchor.y - dragged.y };
+      const newW = Math.max(1, Math.hypot(tailToTip.x, tailToTip.y));
+      const newRotation = (Math.atan2(tailToTip.y, tailToTip.x) * 180) / Math.PI;
+      updateElement(layoutId, elementId, {
+        frame: { x: newCenter.x - newW / 2, y: newCenter.y - startFrame.h / 2, w: newW, h: startFrame.h },
+        rotation: newRotation,
+      });
     }
     function onUp() {
       window.removeEventListener('mousemove', onMove);
@@ -215,5 +280,5 @@ export function useElementDrag(layoutId: string, elementId: string, scale: numbe
     window.addEventListener('mouseup', onUp);
   }
 
-  return { startDrag, startResize, startRotate, startDragOrDeferredSelect };
+  return { startDrag, startResize, startRotate, startEndpointDrag, startDragOrDeferredSelect };
 }

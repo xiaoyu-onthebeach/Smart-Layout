@@ -440,10 +440,10 @@ export function cornerJoints(points: Point[]): Joint[] {
  * flat-point vector; see SelectableShapeElement's own ellipse-specific resize-handles-as-joints
  * overlay instead.
  */
-export function shapeKindToVectorPath(shape: ShapeKind, w: number, h: number, polygonSides?: number): VectorPath {
+export function shapeKindToVectorPath(shape: ShapeKind, w: number, h: number, polygonSides?: number, strokeWidth = 0): VectorPath {
   switch (shape) {
     case 'arrow':
-      return { joints: cornerJoints(arrowPoints(w, h)), closed: false };
+      return { joints: cornerJoints(arrowPoints(w, h, strokeWidth)), closed: false };
     case 'polygon':
       return { joints: cornerJoints(regularPolygonPoints(polygonSides ?? DEFAULT_POLYGON_SIDES, w, h)), closed: true };
     case 'rect':
@@ -464,30 +464,52 @@ export function defaultShapeStyle(shape: ShapeKind): { fill?: string; radius?: n
   return { fill: '#d9d9d9', radius: 28, strokeWidth: 0 };
 }
 
-/** Arrowhead wing length — a fixed constant, deliberately *not* scaled with the frame's own `w`/`h`:
- * as the frame grows (dragging to create it, or resizing it after), only the shaft — the straight
- * run from tail to tip — should visibly grow longer; the two wing lines stay exactly this long the
- * whole time ("the 2 side arrow lines [stay] the same length from the beginning to the end, only the
- * middle line is growing"). */
+/** Arrowhead wing length at the default creation height (`ARROW_MIN_HEIGHT`) — `arrowPoints` scales
+ * the real wing length with the frame's own current `h` (see there), so this is only the reference
+ * point `ARROW_HEAD_RATIO` is derived from, not a literal size used anywhere at render time. */
 export const ARROW_HEAD_LENGTH = 24;
+// The arrowhead's two wings sit at `±headLen * 0.6` from center, so a frame shorter than their full
+// span would have its bounding box not actually contain the wingtips it's drawing. Shape-tool drag
+// creation clamps to at least this height so a freshly-drawn arrow's box always encloses the whole
+// glyph from the start, and reads as a comfortably-sized arrowhead rather than a sliver.
+export const ARROW_MIN_HEIGHT = ARROW_HEAD_LENGTH * 1.2;
+// Wing length as a fraction of the frame's own `h`, calibrated so a freshly-created arrow (at
+// exactly `ARROW_MIN_HEIGHT`) still gets the original fixed `ARROW_HEAD_LENGTH` wings. Tying it to
+// `h` (rather than a fixed constant) is what makes a *corner* drag's proportional w+h scale actually
+// scale the whole glyph — shaft and arrowhead together — instead of just stretching the shaft while
+// the arrowhead stays a fixed pixel size. An edge-only horizontal drag never touches `h`, so the
+// original "only the shaft grows, the wings stay exactly as long as they started" behavior for that
+// case is unaffected by this.
+const ARROW_HEAD_RATIO = ARROW_HEAD_LENGTH / ARROW_MIN_HEIGHT;
 
 /** A simple rightward shaft with an open "V" arrowhead at its tip, sized to its own `w`×`h` frame —
  * drawn with `stroke` only (see `defaultShapeStyle`), the same convention Figma/Sketch use for an
  * Arrow tool, unlike every other shape kind's solid `fill` silhouette. One open contour — shaft tail
  * → tip → back along one wing → tip → back along the other — so the whole glyph still fits
  * `VectorPath`'s single-contour model without a second `moveto`; retracing the tip is invisible for a
- * stroked (not filled) line. */
-export function arrowPoints(w: number, h: number): { x: number; y: number }[] {
-  const cy = h / 2;
-  // Always the fixed length, even for a just-clicked, still-zero-width shaft — the wings show up at
-  // full size immediately instead of sizing up from 0 as the shaft grows.
-  const headLen = ARROW_HEAD_LENGTH;
+ * stroked (not filled) line.
+ *
+ * `strokeWidth` insets every point by half of it on all 4 sides (default 0 = no inset, the exact
+ * original coordinates). SVG strokes are center-aligned, so with round caps/joins the actual painted
+ * ink is this path's own bounding box expanded by `strokeWidth / 2` in every direction (a round cap/
+ * join never reaches further than that from the nearest path point) — insetting first is what makes
+ * that final expansion land exactly on the `w`×`h` frame instead of bleeding past it. Callers
+ * rendering the glyph for real pass the element's actual `style.strokeWidth`; `shapeKindToVectorPath`
+ * only passes one at the moment of shape→vector conversion, to avoid a visual jump right then. */
+export function arrowPoints(w: number, h: number, strokeWidth = 0): { x: number; y: number }[] {
+  const inset = strokeWidth / 2;
+  const innerW = Math.max(w - strokeWidth, 0);
+  const innerH = Math.max(h - strokeWidth, 0);
+  const cy = inset + innerH / 2;
+  const headLen = innerH * ARROW_HEAD_RATIO;
+  const left = inset;
+  const right = inset + innerW;
   return [
-    { x: 0, y: cy },
-    { x: w, y: cy },
-    { x: w - headLen, y: cy - headLen * 0.6 },
-    { x: w, y: cy },
-    { x: w - headLen, y: cy + headLen * 0.6 },
+    { x: left, y: cy },
+    { x: right, y: cy },
+    { x: right - headLen, y: cy - headLen * 0.6 },
+    { x: right, y: cy },
+    { x: right - headLen, y: cy + headLen * 0.6 },
   ];
 }
 

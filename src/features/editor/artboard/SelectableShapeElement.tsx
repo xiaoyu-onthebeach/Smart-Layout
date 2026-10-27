@@ -4,7 +4,7 @@ import type { Tool } from '@/store/types';
 import { boxShadowCss } from '@/lib/shadow';
 import { arrowPoints, DEFAULT_POLYGON_SIDES, regularPolygonPoints } from '@/lib/vector-path';
 import { useElementDrag, DUPLICATE_CURSOR } from './useElementDrag';
-import { SelectionBoundingBox } from './SelectionBoundingBox';
+import { LineEndpointHandles, SelectionBoundingBox } from './SelectionBoundingBox';
 import { EllipseEditOverlay } from './EllipseEditOverlay';
 
 /** A user-placed shape — selectable, draggable, and resizable via 8 handles, same as the image layer.
@@ -53,7 +53,7 @@ export function SelectableShapeElement({
    * callback to fire once the drag ends — see ArtboardFrame's own `startAltDuplicate`. */
   onStartAltDuplicate: (element: LayoutElement) => { newId: string; onDragEnd: () => void };
 }) {
-  const { startDrag, startDragOrDeferredSelect, startResize, startRotate } = useElementDrag(layoutId, element.id, scale);
+  const { startDrag, startDragOrDeferredSelect, startResize, startRotate, startEndpointDrag } = useElementDrag(layoutId, element.id, scale);
   const { frame, style } = element;
   const isLine = element.shape === 'line';
   const isArrow = element.shape === 'arrow';
@@ -105,7 +105,7 @@ export function SelectableShapeElement({
           style={{ opacity: style.opacity !== undefined ? style.opacity / 100 : undefined, boxShadow: boxShadowCss(style.dropShadow, style.innerShadow) }}
         >
           <polyline
-            points={arrowPoints(frame.w, frame.h)
+            points={arrowPoints(frame.w, frame.h, style.strokeWidth ?? 4)
               .map((p) => `${p.x},${p.y}`)
               .join(' ')}
             fill="none"
@@ -147,17 +147,20 @@ export function SelectableShapeElement({
         </div>
       )}
       {isEditing ? (
-        <EllipseEditOverlay onResizeStart={(handle, e) => startResize(e, handle, frame)} />
+        <EllipseEditOverlay onResizeStart={(handle, e) => startResize(e, handle, frame, style)} />
       ) : (
-        selected && (
+        selected &&
+        (isLine || isArrow ? (
+          <LineEndpointHandles onEndpointDragStart={(side, e) => startEndpointDrag(e, side, frame, element.rotation ?? 0)} />
+        ) : (
           <SelectionBoundingBox
-            onResizeStart={(handle, e) => startResize(e, handle, frame)}
+            onResizeStart={(handle, e) => startResize(e, handle, frame, style)}
             onRotateStart={(_handle, e) => {
               const boxEl = (e.target as HTMLElement).closest('[data-resize-box]') as HTMLElement | null;
               if (boxEl) startRotate(e, boxEl, element.rotation ?? 0);
             }}
           />
-        )
+        ))
       )}
     </div>
   );

@@ -8,7 +8,7 @@ import { useApplyImage } from '@/hooks/useApplyImage';
 import type { GroupAutoLayout, Joint, Layout, LayoutElement, ShapeKind } from '@/types';
 import { parseSvgToElements } from '@/lib/svg-import';
 import { readPasteableClipboardContent } from '@/lib/clipboard-import';
-import { allControlPoints, defaultShapeStyle, JOINT_ICON, PEN_DEFAULT_FILL, PEN_DEFAULT_STROKE_COLOR, PEN_DEFAULT_STROKE_WIDTH, shapeKindToVectorPath } from '@/lib/vector-path';
+import { allControlPoints, ARROW_MIN_HEIGHT, defaultShapeStyle, JOINT_ICON, PEN_DEFAULT_FILL, PEN_DEFAULT_STROKE_COLOR, PEN_DEFAULT_STROKE_WIDTH, shapeKindToVectorPath } from '@/lib/vector-path';
 import { boundsOf } from '@/lib/svg-geometry';
 import { isWithinClosePathRadius, PenDrawingOverlay } from './PenDrawingOverlay';
 import { ElementRenderer } from './ElementRenderer';
@@ -259,7 +259,13 @@ function shapeDragFrame(kind: ShapeKind, start: { x: number; y: number }, curren
     return { x: (start.x + current.x) / 2 - 0.5, y: Math.min(start.y, current.y), w: 1, h: Math.max(dragH, 1) };
   }
   if (kind === 'arrow') {
-    return { x: Math.min(start.x, current.x), y: Math.min(start.y, current.y), w: Math.max(dragW, 1), h: Math.max(dragH, 1) };
+    // A typical arrow drag is nearly horizontal, so `dragH` alone is usually far short of what the
+    // fixed-size arrowhead actually needs (`ARROW_MIN_HEIGHT`) — clamped up to that, and centered on
+    // the drag's own vertical midpoint (not just anchored to its top) so the glyph lands centered on
+    // the line actually dragged instead of sagging below it.
+    const h = Math.max(dragH, ARROW_MIN_HEIGHT);
+    const centerY = (start.y + current.y) / 2;
+    return { x: Math.min(start.x, current.x), y: centerY - h / 2, w: Math.max(dragW, 1), h };
   }
   const size = Math.max(dragW, dragH);
   return {
@@ -846,7 +852,7 @@ export function ArtboardFrame({
     // converts (layerName() falls back to a kind-based default when nothing's set) — captured
     // before the kind change so it reads exactly the same before and after.
     const name = layerName(element);
-    const path = shapeKindToVectorPath(element.shape ?? 'rect', element.frame.w, element.frame.h, element.style.polygonSides);
+    const path = shapeKindToVectorPath(element.shape ?? 'rect', element.frame.w, element.frame.h, element.style.polygonSides, element.style.strokeWidth ?? 0);
     updateElement(layoutId, element.id, { kind: 'vector', path, shape: undefined, name });
     setEditingVectorElement(element.id);
   }
@@ -1135,7 +1141,10 @@ export function ArtboardFrame({
           shapeToolKind === 'line'
             ? { x: start.x - nativeWidth * 0.15, y: start.y - nativeHeight * 0.01, w: nativeWidth * 0.3, h: nativeHeight * 0.02 }
             : shapeToolKind === 'arrow'
-              ? { x: start.x - nativeWidth * 0.15, y: start.y - nativeHeight * 0.04, w: nativeWidth * 0.3, h: nativeHeight * 0.08 }
+              ? (() => {
+                  const h = Math.max(nativeHeight * 0.08, ARROW_MIN_HEIGHT);
+                  return { x: start.x - nativeWidth * 0.15, y: start.y - h / 2, w: nativeWidth * 0.3, h };
+                })()
               : { x: start.x - nativeWidth * 0.1, y: start.y - nativeHeight * 0.1, w: nativeWidth * 0.2, h: nativeHeight * 0.2 };
         const frame = small ? smallFrame : shapeDragFrame(shapeToolKind, start, current);
         const element: LayoutElement = {
