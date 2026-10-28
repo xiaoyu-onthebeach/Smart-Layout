@@ -56,6 +56,33 @@ export type UiSlice = {
    * tree). `referenceSide` is "the handle most recently dragged in this session; `'out'` if neither
    * has been" — the spec's own rule for which handle a mirror-mode switch keeps fixed. */
   editingVectorJoint: { layoutId: string; elementId: string; jointIndices: number[]; referenceSide: 'in' | 'out' } | null;
+  /** What the pen tool's own cursor (`ArtboardFrame`'s `PenToolCursor`, a DOM-tracked overlay, not a
+   * native CSS `cursor`) should show right now while the cursor is over one of `VectorEditOverlay`'s
+   * own joints/midpoints — 'add' while hovering a segment's midpoint-insert affordance, 'remove'
+   * while Alt is held over an existing joint, `null` otherwise (plain pen-nib default). Mirrored up
+   * from VectorEditOverlay the same way `editingVectorJoint` is, so the SAME single tracked cursor
+   * position can swap which icon it shows — a native `cursor` set directly on the joint/midpoint
+   * would fight this (whichever is more DOM-specific wins, showing both at once with no shared
+   * position), so joints/midpoints don't set their own `cursor` at all while the pen tool is active. */
+  penCursorHint: 'add' | 'remove' | null;
+  /** The pen tool's own in-progress drawing session's active joint (the one just placed, or being
+   * dragged/shaped right now) — `ArtboardFrame`'s `penDraw` is purely local state (there's no
+   * committed `LayoutElement` to point `editingVectorElementId` at until the path is finished), so
+   * this is the one piece of it `InspectorPanel` needs mirrored up to show a live Position readout
+   * while drawing from scratch, same spirit as `editingVectorJoint` bridging an already-committed
+   * vector's own selection. Coordinates are already absolute/native (what `penDraw.joints` itself
+   * stores), not frame-relative — there's no frame yet to be relative to. `null` whenever the pen
+   * tool isn't actively drawing (including coexisting with an already-editing vector, which already
+   * has its own real `editingVectorJoint` to show instead). */
+  penDrawingPosition: { layoutId: string; x: number; y: number } | null;
+  /** Style for `PenDrawingPanel` (Fill/Radius/Border) while the pen tool is drawing a brand-new path,
+   * before anything's committed — merging it on top of `finishDrawing`'s own stroke-only base style
+   * (`{...base, ...penDrawStyle}`) is what actually determines the finished element's style. Starts
+   * (and resets back to, both when a fresh drawing session begins and right after one commits) at
+   * `PEN_DRAW_STYLE_DEFAULT` — a visible stroke, no fill — so the panel always previews exactly what
+   * finishing right now would produce; picking a real Fill color is what makes a closed path end up
+   * filled instead. Never carries over between separate paths. */
+  penDrawStyle: Partial<LayoutElement['style']>;
   /** The plain-text character range (start/end offsets into that element's own `content`) currently
    * highlighted inside a text element's contentEditable while it's being edited — lets
    * TextEditorPanel's Spacing/Stretch fields apply a change to just that substring. See
@@ -126,6 +153,12 @@ export type UiSlice = {
   setEditingTextElement: (id: string | null) => void;
   setEditingVectorElement: (id: string | null) => void;
   setEditingVectorJoint: (joint: UiSlice['editingVectorJoint']) => void;
+  setPenCursorHint: (hint: UiSlice['penCursorHint']) => void;
+  setPenDrawingPosition: (pos: UiSlice['penDrawingPosition']) => void;
+  /** Merges into `penDrawStyle` (not a replace) — the same `patchStyle`-style convention every other
+   * panel's style fields already use. */
+  setPenDrawStyle: (patch: Partial<LayoutElement['style']>) => void;
+  resetPenDrawStyle: () => void;
   /** Updates (or clears, with `null`) the live in-progress text-range selection. */
   setTextRangeSelection: (sel: { layoutId: string; elementId: string; start: number; end: number } | null) => void;
   setActiveTool: (tool: Tool) => void;

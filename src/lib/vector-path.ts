@@ -30,7 +30,24 @@ export const JOINT_HOVER_ICON = { src: '/icons/SVGs/joint-hover.svg', w: 14, h: 
 export const JOINT_SELECTED_ICON = { src: '/icons/SVGs/joint-clicked.svg', w: 12, h: 12, center: { x: 6, y: 6 } };
 export const MIDPOINT_ICON = { src: '/icons/SVGs/joint-midpoint.svg', w: 8, h: 8, center: { x: 4, y: 4 } };
 export const RADIUS_HANDLE_ICON = { src: '/icons/SVGs/radius handler.svg', w: 16, h: 16, center: { x: 8, y: 6 } };
-export const PEN_ADD_CURSOR = "url('/icons/SVGs/pen cursor-add 24.svg') 2 2, auto";
+// Both exported as a structured icon (for `ArtboardFrame`'s `PenToolCursor`, which renders them as
+// a plain tracked `<img>` at the SAME position its default pen-nib combo uses, so swapping between
+// them is a same-spot icon change, never a jump) *and* as the equivalent native CSS `cursor` string
+// (for everywhere else a joint/midpoint sets its own `cursor` directly, outside the pen tool).
+//
+// `hotspot` is the pen nib's own tip — the exact point `PEN_CURSOR_ICON`'s `tip` already names in
+// the plain default cursor (compare its path's own `M3.87024 3.87066`) — not an arbitrary round
+// number. These two badge variants' nib is drawn 3px left / 2px down from that default (room for the
+// badge within the same 24×24 canvas: compare their path's own `M0.870244 5.87072`), so the nib
+// only lands back at the tracked cursor position, matching the default exactly with no visible jump,
+// once the hotspot is shifted by that same amount.
+export const PEN_ADD_CURSOR_ICON = { src: '/icons/SVGs/pen cursor-add 24.svg', w: 24, h: 24, hotspot: { x: 0.87, y: 5.87 } };
+export const PEN_ADD_CURSOR = `url('${PEN_ADD_CURSOR_ICON.src}') ${PEN_ADD_CURSOR_ICON.hotspot.x} ${PEN_ADD_CURSOR_ICON.hotspot.y}, auto`;
+// Shown on a joint while Option/Alt is held, previewing that a click there removes it instead of
+// selecting/dragging it (see `VectorEditOverlay`'s own `deleteJoints`). Same nib position as the add
+// cursor above (identical path data, badge aside) — see that one's own comment for the hotspot math.
+export const PEN_REMOVE_CURSOR_ICON = { src: '/icons/SVGs/pen cursor-remove 24.svg', w: 24, h: 24, hotspot: { x: 0.87, y: 5.87 } };
+export const PEN_REMOVE_CURSOR = `url('${PEN_REMOVE_CURSOR_ICON.src}') ${PEN_REMOVE_CURSOR_ICON.hotspot.x} ${PEN_REMOVE_CURSOR_ICON.hotspot.y}, auto`;
 
 /** Scales a joint icon so its own *visible circle* (not the icon's whole drop-shadow-padded box,
  * which is bigger than the circle it actually draws) ends up `targetDiameter` px — scaling the box
@@ -50,11 +67,11 @@ function scaledJointIcon(icon: typeof JOINT_ICON, nativeCircleDiameter: number, 
 export const HANDLE_JOINT_ICON = scaledJointIcon(JOINT_ICON, 9, 10); // joint-default.svg's own outer ring is r=4.5 (⌀9)
 export const HANDLE_JOINT_SELECTED_ICON = scaledJointIcon(JOINT_SELECTED_ICON, 11, 10); // joint-clicked.svg's own circle is r=5.5 (⌀11)
 
-// Part 3 (pen tool) — "Default style for new vectors... final values TBD by design". Matches the
-// rest of this app's own shape defaults (`#d9d9d9` is the Shape tool's own default fill) for a
-// closed path; an open path's default stroke is the same white-45%-opacity gray every other
-// "editing chrome" line in this app uses (see `NEUTRAL_OUTLINE_COLOR`), at a readable 2px.
-export const PEN_DEFAULT_FILL = '#D9D9D9';
+// Part 3 (pen tool) — "Default style for new vectors... final values TBD by design". A freshly
+// drawn path defaults to a stroke-only line (no fill at all, closed or not) — the same white-45%-
+// opacity gray every other "editing chrome" line in this app uses (see `NEUTRAL_OUTLINE_COLOR`), at
+// a readable 2px. `PenDrawingPanel`'s own Fill field lets the user pick a real color instead while
+// still drawing, which (via `penDrawStyle`) is what actually makes a closed shape end up filled.
 export const PEN_DEFAULT_STROKE_COLOR = 'rgba(255, 255, 255, 0.45)';
 export const PEN_DEFAULT_STROKE_WIDTH = 2;
 // Screen px — how close a click needs to land on the first joint to close the path instead of
@@ -355,6 +372,20 @@ export function alignJoints(path: VectorPath, indices: number[], mode: JointAlig
     return isX ? translateJoint(j, target - j.x, 0) : translateJoint(j, 0, target - j.y);
   });
   return { ...path, joints };
+}
+
+/** Removes the given joints (by index) from a path — e.g. selecting a joint in the editing overlay
+ * and pressing Delete. Filters rather than splicing by index so later joints' indices shift down
+ * correctly in one pass. A "closed" path with only 2 joints left is a degenerate zero-area loop
+ * (and inconsistent with `segments()`'s own `n > 2` closed-guard), so this flips `closed` to `false`
+ * once removal would leave fewer than 3 — the caller is still responsible for refusing a removal
+ * that would leave fewer than 2 (the minimum a path can render at all, same floor `jointsToPathD`
+ * and friends already enforce), since below that there's no path left to flip anything on. */
+export function removeJoints(path: VectorPath, indices: number[]): VectorPath {
+  const toRemove = new Set(indices);
+  const joints = path.joints.filter((_, i) => !toRemove.has(i));
+  const closed = joints.length < 3 ? false : path.closed;
+  return { ...path, joints, closed };
 }
 
 /**

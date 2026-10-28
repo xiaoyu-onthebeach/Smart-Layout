@@ -139,25 +139,32 @@ export function VectorPathPanel({ targets }: { targets: EditorTarget[] }) {
             <IconSlot />
           </div>
         </div>
-
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[9px] leading-4 text-white/65">{t('Curve')}</span>
-          <div className="flex items-center gap-2">
-            <div className={cn('min-w-0 flex-1 transition-opacity', !curveJoint && 'pointer-events-none opacity-40')}>
-              <SegmentedControl
-                options={(['sharp', 'mirror', 'nomirror'] as const).map((value) => ({
-                  value,
-                  label: t(MIRROR_MODE_LABELS[value]),
-                  icon: <img src={MIRROR_MODE_ICONS[value]} alt="" className="size-4" />,
-                }))}
-                value={curveJoint?.mirror ?? 'sharp'}
-                onChange={handleMirrorModeChange}
-              />
-            </div>
-            <IconSlot />
-          </div>
-        </div>
       </div>
+
+      {jointIndices.length > 0 && (
+        <>
+          <PanelDivider />
+          <PanelSection label={t('Path')}>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[9px] leading-4 text-white/65">{t('Curve type')}</span>
+              <div className="flex items-center gap-2">
+                <div className={cn('min-w-0 flex-1 transition-opacity', !curveJoint && 'pointer-events-none opacity-40')}>
+                  <SegmentedControl
+                    options={(['sharp', 'mirror', 'nomirror'] as const).map((value) => ({
+                      value,
+                      label: t(MIRROR_MODE_LABELS[value]),
+                      icon: <img src={MIRROR_MODE_ICONS[value]} alt="" className="size-4" />,
+                    }))}
+                    value={curveJoint?.mirror ?? 'sharp'}
+                    onChange={handleMirrorModeChange}
+                  />
+                </div>
+                <IconSlot />
+              </div>
+            </div>
+          </PanelSection>
+        </>
+      )}
 
       <PanelDivider />
 
@@ -165,9 +172,14 @@ export function VectorPathPanel({ targets }: { targets: EditorTarget[] }) {
         <div className="flex flex-col gap-1.5">
           <span className="text-[9px] leading-4 text-white/65">{t('Fill')}</span>
           <div className="flex items-center gap-2">
+            {/* No `?? '#d9d9d9'` fallback — a vector can genuinely have no fill at all (a pen-drawn
+                stroke-only path, say), and showing a fake default color there would lie about what's
+                actually rendered (plain `fill="none"`). See `ShapeEditorPanel`'s identical fix for
+                the same field in its own non-editing panel. */}
             <InlineColorField
-              color={primary.style.fill ?? '#d9d9d9'}
+              color={primary.style.fill}
               onChange={(fill) => patchStyle({ fill })}
+              onClear={() => patchStyle({ fill: undefined })}
               width="flex-1"
               compact={false}
               opacity={primary.style.opacity ?? 100}

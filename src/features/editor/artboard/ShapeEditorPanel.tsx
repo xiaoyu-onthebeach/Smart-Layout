@@ -134,7 +134,14 @@ export function ShapeEditorPanel({ targets }: { targets: EditorTarget[] }) {
         <div className="flex flex-col gap-1.5">
           <span className="text-[9px] leading-4 text-white/65">{t('Fill')}</span>
           <div className="flex items-center gap-2">
-            <InlineColorField color={primary.style.fill ?? '#d9d9d9'} onChange={(fill) => patchStyle({ fill })} width="flex-1" compact={false} />
+            {/* No `?? '#d9d9d9'` fallback — every plain shape kind always has a real fill from
+                `defaultShapeStyle` at creation and never offers a way to clear it, so this never
+                actually mattered for them; a vector (a pen-drawn stroke-only path, say) can
+                genuinely have no fill at all, and showing a fake default color there would lie
+                about what's actually rendered (plain `fill="none"`). `onClear` lets it go back to
+                that real no-fill state after picking a color, same as `PenDrawingPanel`'s own
+                Fill field already does for the exact same shape before it's even committed. */}
+            <InlineColorField color={primary.style.fill} onChange={(fill) => patchStyle({ fill })} onClear={() => patchStyle({ fill: undefined })} width="flex-1" compact={false} />
             <IconSlot />
           </div>
         </div>

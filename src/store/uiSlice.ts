@@ -1,7 +1,15 @@
 import type { Slice, UiSlice } from './types';
 import { findMatchingRefsAcrossGroup } from '@/lib/match-select';
+import { PEN_DEFAULT_STROKE_COLOR, PEN_DEFAULT_STROKE_WIDTH } from '@/lib/vector-path';
 
 const PAGE_LOADING_DURATION_MS = 5000;
+
+// A fresh pen drawing always starts previewing (and, unless the user picks a real Fill color from
+// `PenDrawingPanel` before finishing, actually becomes) a stroke-only line — no fill at all, closed
+// or not — same default `ArtboardFrame`'s own `finishDrawing` falls back to. Pre-populating
+// `strokeWidth` here (rather than leaving it unset) is also what makes `BorderSection`'s own
+// default-expand check (`(style.strokeWidth ?? 0) > 0`) true from the very first render.
+const PEN_DRAW_STYLE_DEFAULT: UiSlice['penDrawStyle'] = { strokeColor: PEN_DEFAULT_STROKE_COLOR, strokeWidth: PEN_DEFAULT_STROKE_WIDTH, strokeStyle: 'solid' };
 
 export const createUiSlice: Slice<UiSlice> = (set) => ({
   step: 'playgrounds',
@@ -18,6 +26,9 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   editingTextElementId: null,
   editingVectorElementId: null,
   editingVectorJoint: null,
+  penCursorHint: null,
+  penDrawingPosition: null,
+  penDrawStyle: PEN_DRAW_STYLE_DEFAULT,
   textRangeSelection: null,
   activeTool: 'select',
   shapeToolKind: 'rect',
@@ -105,8 +116,12 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   // from whatever was last selected inside this or another text element.
   setEditingTextElement: (id) => set({ editingTextElementId: id, editingVectorElementId: null, textRangeSelection: null }),
   // Mirrors setEditingTextElement — entering one edit mode always leaves the other.
-  setEditingVectorElement: (id) => set({ editingVectorElementId: id, editingTextElementId: null, editingVectorJoint: null }),
+  setEditingVectorElement: (id) => set({ editingVectorElementId: id, editingTextElementId: null, editingVectorJoint: null, penCursorHint: null }),
   setEditingVectorJoint: (joint) => set({ editingVectorJoint: joint }),
+  setPenCursorHint: (hint) => set({ penCursorHint: hint }),
+  setPenDrawingPosition: (pos) => set({ penDrawingPosition: pos }),
+  setPenDrawStyle: (patch) => set((state) => ({ penDrawStyle: { ...state.penDrawStyle, ...patch } })),
+  resetPenDrawStyle: () => set({ penDrawStyle: PEN_DRAW_STYLE_DEFAULT }),
   // Updated live while typing/selecting inside a text element's contentEditable (see
   // EditableTextElement's selectionchange listener) — read by TextEditorPanel's Spacing/Stretch
   // fields to scope a change to just the highlighted substring instead of the whole layer. Not
@@ -117,11 +132,17 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   // already selected — clear that selection right on the toolbar click, rather than leaving the
   // old layer's selection box showing on canvas until the new element gets placed and takes over.
   setActiveTool: (tool) =>
-    set(
-      tool === 'text' || tool === 'shape' || tool === 'pen'
+    set((state) => {
+      // The one exception: arming the pen tool while a vector is already in joint-editing mode
+      // doesn't kick the user out of it — VectorEditOverlay's own select/insert/remove-joint
+      // gestures work the same regardless of `activeTool`, so the pen tool just becomes an
+      // alternate way to reach the same joints/segments (its own cursor, same underlying overlay)
+      // instead of forcing a trip back through double-click to resume editing.
+      if (tool === 'pen' && state.editingVectorElementId) return { activeTool: tool };
+      return tool === 'text' || tool === 'shape' || tool === 'pen'
         ? { activeTool: tool, selectedElements: [], autoMatchedElements: [], editingTextElementId: null, editingVectorElementId: null, textRangeSelection: null }
-        : { activeTool: tool },
-    ),
+        : { activeTool: tool };
+    }),
   setShapeToolKind: (kind) => set({ shapeToolKind: kind }),
   // Entering edit mode on a view-all page card should immediately show it as selected (the white
   // outline) — otherwise it silently takes a second click before any selection feedback appears.

@@ -148,6 +148,12 @@ export function Shell() {
       // handler falls through to deleting the whole page out from under the user.
       if (useAppStore.getState().activeTool === 'pen') return;
 
+      // A vector in joint-editing mode (VectorEditOverlay) owns this keypress too — it removes
+      // whichever joint(s) are selected. The vector *element* itself stays in `selectedElements`
+      // the whole time joint-editing is active, so without this guard this handler would fall
+      // through and delete the entire layer out from under an in-progress joint edit.
+      if (editingVectorElementId) return;
+
       if (selectedElements.length > 0) {
         e.preventDefault();
         for (const ref of selectedElements) removeElement(ref.layoutId, ref.elementId);

@@ -3,6 +3,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { TextEditorPanel } from '@/features/editor/artboard/TextEditorPanel';
 import { ShapeEditorPanel } from '@/features/editor/artboard/ShapeEditorPanel';
 import { VectorPathPanel } from '@/features/editor/artboard/VectorPathPanel';
+import { PenDrawingPanel } from '@/features/editor/artboard/PenDrawingPanel';
 import { ImageEditorPanel } from '@/features/editor/artboard/ImageEditorPanel';
 import { SceneEditorPanel } from '@/features/editor/artboard/SceneEditorPanel';
 import { CombinedEditorPanel } from '@/features/editor/artboard/CombinedEditorPanel';
@@ -22,6 +23,9 @@ export function InspectorPanel() {
   // it's open this panel steps aside entirely instead of rendering underneath/behind it.
   const addSizesOpen = useAppStore((s) => s.addSizesOpen);
   const editingVectorElementId = useAppStore((s) => s.editingVectorElementId);
+  // Pen tool drawing a brand-new path from scratch — no committed element yet, so this is mirrored
+  // up separately from `editingVectorJoint` (see its own doc comment in store/types.ts).
+  const penDrawingPosition = useAppStore((s) => s.penDrawingPosition);
   // Mirrors the header's own ruler-driven push-down (see TopBar/Shell) so the gap between the
   // header's bottom edge and this panel's own top edge never changes — a plain `top` offset here
   // (not a transform) is fine, unlike the sidebar: this panel is `absolute` within the canvas's
@@ -41,7 +45,9 @@ export function InspectorPanel() {
 
   let content: ReactNode = null;
 
-  if (wholeGroup) {
+  if (penDrawingPosition) {
+    content = <PenDrawingPanel x={penDrawingPosition.x} y={penDrawingPosition.y} />;
+  } else if (wholeGroup) {
     content = <GroupEditorPanel layoutId={wholeGroup.layoutId} groupId={wholeGroup.groupId} />;
   } else if (targets.length > 0) {
     const kinds = new Set(targets.map((t) => t.element.kind));

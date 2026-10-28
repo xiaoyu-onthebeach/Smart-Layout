@@ -19,7 +19,9 @@ import {
   NEUTRAL_OUTLINE_COLOR,
   OUTLINE_STROKE,
   PEN_ADD_CURSOR,
+  PEN_REMOVE_CURSOR,
   rebaseVectorFrame,
+  removeJoints,
   sampleSegment,
   segmentMidpoint,
   segments,
@@ -95,7 +97,12 @@ function JointIcon({
  */
 export function VectorEditOverlay({ layoutId, element }: { layoutId: string; element: LayoutElement }) {
   const updateElement = useAppStore((s) => s.updateElement);
+  const removeElement = useAppStore((s) => s.removeElement);
+  const selectElement = useAppStore((s) => s.selectElement);
+  const setEditingVectorElement = useAppStore((s) => s.setEditingVectorElement);
   const setEditingVectorJoint = useAppStore((s) => s.setEditingVectorJoint);
+  const activeTool = useAppStore((s) => s.activeTool);
+  const setPenCursorHint = useAppStore((s) => s.setPenCursorHint);
   const path = element.path;
   const [hoveredJoint, setHoveredJoint] = useState<number | null>(null);
   // Multiple joints at once — shift-click toggles one in/out, a marquee drag replaces (or, held with
@@ -121,6 +128,36 @@ export function VectorEditOverlay({ layoutId, element }: { layoutId: string; ele
   const [draggingHandle, setDraggingHandle] = useState<{ joint: number; side: 'in' | 'out' } | null>(null);
   // Frame-local (0..frame.w, 0..frame.h) rectangle while marquee-selecting, null otherwise.
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  // Tracked purely to preview the "Option-click removes this joint" gesture on a joint's own cursor
+  // (`PEN_REMOVE_CURSOR`) the instant Alt goes down/up, without waiting for the mouse to move again.
+  const [altHeld, setAltHeld] = useState(false);
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Alt') setAltHeld(true);
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.key === 'Alt') setAltHeld(false);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
+
+  // Mirrors which pen-cursor icon (if any) should show right now up to the store, while the pen
+  // tool is active — `ArtboardFrame`'s own `PenToolCursor` reads this to swap its single tracked
+  // overlay's icon instead of joints/midpoints setting a native `cursor` of their own (see
+  // `penCursorHint`'s doc comment for why those would otherwise show at once, out of sync). `hint`
+  // matches the exact same moment a native `cursor={PEN_ADD_CURSOR}` on the midpoint icon would have
+  // taken effect (`hoveredMidpoint`, not the wider `hoveredSegment` that only makes that icon appear)
+  // and the Option-held-over-a-joint case the icon's own `cursor` already previews below.
+  useEffect(() => {
+    if (activeTool !== 'pen') return;
+    setPenCursorHint(hoveredMidpoint !== null ? 'add' : hoveredJoint !== null && altHeld ? 'remove' : null);
+    return () => setPenCursorHint(null);
+  }, [activeTool, hoveredJoint, hoveredMidpoint, altHeld, setPenCursorHint]);
 
   // Mirrors the local selection up to the store — `VectorPathPanel` lives outside this component's
   // tree entirely and has no other way to know which joints are selected (for aligning them / showing
@@ -131,6 +168,25 @@ export function VectorEditOverlay({ layoutId, element }: { layoutId: string; ele
     return () => setEditingVectorJoint(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedJoints, lastDraggedSide, layoutId, element.id]);
+
+  // Delete/Backspace removes every currently-selected joint in one shot (see `deleteJoints`) — a
+  // structural edit like insert/convert, not a drag, so it goes straight through `patchPath` rather
+  // than the live-update-then-commit pattern a drag uses. Shell.tsx's own global Delete/Backspace
+  // (which deletes the whole selected *layer* too, just unconditionally) steps aside while a vector
+  // is in joint-editing mode, so this is the only handler that fires here.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      const target = e.target as HTMLElement | null;
+      if (target?.isContentEditable || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return;
+      if (selectedJoints.size === 0) return;
+      e.preventDefault();
+      deleteJoints([...selectedJoints]);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, selectedJoints, element.frame, layoutId, element.id]);
 
   if (!path) return null;
   const { frame } = element;
@@ -164,9 +220,36 @@ export function VectorEditOverlay({ layoutId, element }: { layoutId: string; ele
     updateElement(layoutId, element.id, { frame: nextFrame, path: rebased });
   }
 
+  // Shared by Delete/Backspace (every selected joint at once) and Option-click on a single joint
+  // (the pen tool's own "remove this anchor" gesture) — removing a joint never needs any special-
+  // casing for *where* it sits: a middle joint's removal already reconnects its former neighbors
+  // into one new segment without "breaking" the path, and an end joint's removal already just
+  // shortens it by its one adjoining segment, both purely as a consequence of `removeJoints`
+  // filtering the array (see its own doc comment — `jointsToPathD` draws whatever's left as a plain
+  // sequence of adjacent pairs either way). Fewer than 2 joints left is the one real special case:
+  // nothing left to render, so this deletes the whole layer instead of leaving an unrenderable stub.
+  function deleteJoints(indices: number[]) {
+    if (!path || indices.length === 0) return;
+    if (path.joints.length - indices.length < 2) {
+      removeElement(layoutId, element.id);
+      setEditingVectorElement(null);
+      selectElement(null);
+      return;
+    }
+    patchPath(removeJoints(path, indices));
+    setSelectedJoints(new Set());
+  }
+
   function startJointDrag(e: ReactMouseEvent, index: number, startJointOverride?: Joint) {
     e.stopPropagation();
     e.preventDefault();
+    if (e.altKey) {
+      // The pen tool's own "remove this anchor" gesture — Option/Alt-click a joint to delete it
+      // outright instead of selecting/dragging it. Cursor already previews this via `PEN_REMOVE_CURSOR`
+      // on the joint icon itself (see `JointIcon`'s `cursor` prop below).
+      deleteJoints([index]);
+      return;
+    }
 
     let dragIndices: number[];
     if (e.shiftKey) {
@@ -381,7 +464,12 @@ export function VectorEditOverlay({ layoutId, element }: { layoutId: string; ele
                   stroke="transparent"
                   strokeWidth={12}
                   vectorEffect="non-scaling-stroke"
-                  style={{ pointerEvents: 'stroke', cursor: 'default' }}
+                  // 'none' while the pen tool's active (its own PenToolCursor takes over, same reason
+                  // the joint/midpoint icons go 'none' there too) — this hit area has no icon of its
+                  // own to swap in for, but a plain hovered segment doesn't change the cursor hint
+                  // anyway (only reaching the midpoint icon itself does), so there's nothing to show
+                  // here besides whatever the pen tool's own default combo already is.
+                  style={{ pointerEvents: 'stroke', cursor: activeTool === 'pen' ? 'none' : 'default' }}
                   onMouseEnter={() => setHoveredSegment(i)}
                   onMouseLeave={() => setHoveredSegment((cur) => (cur === i ? null : cur))}
                 />
@@ -424,7 +512,12 @@ export function VectorEditOverlay({ layoutId, element }: { layoutId: string; ele
               icon={enlarged ? JOINT_SELECTED_ICON : MIDPOINT_ICON}
               x={(mid.x / frame.w) * 100}
               y={(mid.y / frame.h) * 100}
-              cursor={PEN_ADD_CURSOR}
+              // While the pen tool's active, its own PenToolCursor (reading `penCursorHint` above)
+              // shows this instead — 'none' (not just omitting this prop) since `JointIcon` itself
+              // otherwise falls back to a plain 'default' for any icon with an `onMouseDown`, which
+              // would reveal the native system arrow alongside the custom one just as surely as
+              // leaving `PEN_ADD_CURSOR` on would.
+              cursor={activeTool === 'pen' ? 'none' : PEN_ADD_CURSOR}
               onMouseEnter={() => {
                 setHoveredMidpoint(i);
                 setHoveredSegment(i);
@@ -451,6 +544,10 @@ export function VectorEditOverlay({ layoutId, element }: { layoutId: string; ele
                 icon={focused ? HANDLE_JOINT_SELECTED_ICON : HANDLE_JOINT_ICON}
                 x={(h.x / frame.w) * 100}
                 y={(h.y / frame.h) * 100}
+                // Same reasoning as the joint/midpoint icons above — without this, `JointIcon`'s own
+                // default-to-'default' (it has an `onMouseDown`) would reveal the native system arrow
+                // next to the pen tool's own custom cursor.
+                cursor={activeTool === 'pen' ? 'none' : undefined}
                 onMouseDown={(e) => startHandleDrag(e, idx, side)}
               />,
             );
@@ -466,6 +563,10 @@ export function VectorEditOverlay({ layoutId, element }: { layoutId: string; ele
               icon={icon}
               x={(j.x / frame.w) * 100}
               y={(j.y / frame.h) * 100}
+              // Same split as the midpoint icon above (including the explicit 'none', not just
+              // omitting the prop — see its own comment for why): the pen tool's own cursor takes
+              // over via `penCursorHint` instead of this native one, so the two never show at once.
+              cursor={activeTool === 'pen' ? 'none' : altHeld && hoveredJoint === i ? PEN_REMOVE_CURSOR : undefined}
               onMouseEnter={() => setHoveredJoint(i)}
               onMouseLeave={() => setHoveredJoint((cur) => (cur === i ? null : cur))}
               onMouseDown={(e) => startJointDrag(e, i)}

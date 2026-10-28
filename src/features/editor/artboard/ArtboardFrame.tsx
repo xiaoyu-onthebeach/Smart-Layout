@@ -10,7 +10,17 @@ import { useApplyImage } from '@/hooks/useApplyImage';
 import type { GroupAutoLayout, Joint, Layout, LayoutElement, ShapeKind } from '@/types';
 import { parseSvgToElements } from '@/lib/svg-import';
 import { readPasteableClipboardContent } from '@/lib/clipboard-import';
-import { allControlPoints, ARROW_MIN_HEIGHT, defaultShapeStyle, JOINT_ICON, PEN_DEFAULT_FILL, PEN_DEFAULT_STROKE_COLOR, PEN_DEFAULT_STROKE_WIDTH, shapeKindToVectorPath } from '@/lib/vector-path';
+import {
+  allControlPoints,
+  ARROW_MIN_HEIGHT,
+  defaultShapeStyle,
+  JOINT_ICON,
+  PEN_ADD_CURSOR_ICON,
+  PEN_DEFAULT_STROKE_COLOR,
+  PEN_DEFAULT_STROKE_WIDTH,
+  PEN_REMOVE_CURSOR_ICON,
+  shapeKindToVectorPath,
+} from '@/lib/vector-path';
 import { boundsOf } from '@/lib/svg-geometry';
 import { isWithinClosePathRadius, PenDrawingOverlay } from './PenDrawingOverlay';
 import { ElementRenderer } from './ElementRenderer';
@@ -34,8 +44,23 @@ import { boxContainsPoint, boxFromFrame, computeMeasureLines, resolvePillCollisi
 const PEN_CURSOR_ICON = { src: '/icons/SVGs/pen cursor 24.svg', w: 24, h: 24, tip: { x: 3.87, y: 3.87 } };
 /** `pressed` — mouse currently held down (svg import & edit spec, Part 3 "Pressed": "the preview
  * joint switches to the selected style") — swaps the default joint for the selected one; everything
- * else about the cursor stays the same. */
-function PenToolCursor({ x, y, pressed }: { x: number; y: number; pressed: boolean }) {
+ * else about the cursor stays the same. `hint` — the cursor is over one of an already-editing
+ * vector's own joints/midpoints (see `penCursorHint`'s own doc comment) — swaps the whole default
+ * pen-nib+preview-joint combo for the single matching icon instead, at this exact same tracked `x,y`
+ * (just a different icon, same position, never a jump) so a joint/midpoint never also shows its own
+ * native `cursor` on top of this at the same time. */
+function PenToolCursor({ x, y, pressed, hint }: { x: number; y: number; pressed: boolean; hint: 'add' | 'remove' | null }) {
+  if (hint) {
+    const icon = hint === 'add' ? PEN_ADD_CURSOR_ICON : PEN_REMOVE_CURSOR_ICON;
+    return (
+      <img
+        src={icon.src}
+        alt=""
+        className="pointer-events-none fixed z-50"
+        style={{ left: x - icon.hotspot.x, top: y - icon.hotspot.y, width: icon.w, height: icon.h }}
+      />
+    );
+  }
   return (
     <>
       {/* Painted first (behind) — the pen nib itself sits in front of the preview joint, not the
@@ -197,6 +222,9 @@ function ArtboardFrameImpl({
   const mergeGroupMeta = useAppStore((s) => s.mergeGroupMeta);
   const setEditingTextElement = useAppStore((s) => s.setEditingTextElement);
   const editingVectorElementId = useAppStore((s) => s.editingVectorElementId);
+  const penCursorHint = useAppStore((s) => s.penCursorHint);
+  const setPenDrawingPosition = useAppStore((s) => s.setPenDrawingPosition);
+  const resetPenDrawStyle = useAppStore((s) => s.resetPenDrawStyle);
   const setEditingVectorElement = useAppStore((s) => s.setEditingVectorElement);
   const activeTool = useAppStore((s) => s.activeTool);
   const setActiveTool = useAppStore((s) => s.setActiveTool);
@@ -380,6 +408,10 @@ function ArtboardFrameImpl({
     .map((r) => layout.elements.find((el) => el.id === r.elementId))
     .filter((el): el is LayoutElement => Boolean(el));
   const measureSourceBox: Box | null = (() => {
+    // A vector mid joint-edit (VectorEditOverlay) reuses Option itself for a different gesture
+    // (hold it to preview/commit removing a joint — see `deleteJoints`), so the measurement overlay
+    // steps aside entirely while that's active rather than drawing red guides underneath it.
+    if (editingVectorElementId) return null;
     if (!altKeyDown && !altDuplicateOriginalId) return null;
     const boxes = measureSourceElements.map((el) => rotatedBoundingBox(el.frame, el.rotation ?? 0));
     return boxes.length > 0 ? unionBoxes(boxes) : null;
@@ -862,6 +894,22 @@ function ArtboardFrameImpl({
   const penDrawRef = useRef<PenDrawState | null>(null);
   penDrawRef.current = penDraw;
 
+  // Mirrors the in-progress session's own active joint (the one just placed, or being dragged/
+  // shaped right now) up to the store — `InspectorPanel` has no other way to show a live Position
+  // readout while drawing from scratch, since there's no committed `LayoutElement` yet to route a
+  // real panel off of (see `penDrawingPosition`'s own doc comment). Steps aside once a vector is
+  // *also* in real joint-editing mode (the pen-tool-coexists case) — that already has its own
+  // `editingVectorJoint`-driven panel to show instead, with real Position/Curve/Style controls.
+  useEffect(() => {
+    if (!active || activeTool !== 'pen' || editingVectorElementId) {
+      setPenDrawingPosition(null);
+      return;
+    }
+    const activeJoint = penDraw && penDraw.joints.length > 0 ? penDraw.joints[penDraw.joints.length - 1] : null;
+    setPenDrawingPosition(activeJoint ? { layoutId, x: activeJoint.x, y: activeJoint.y } : null);
+    return () => setPenDrawingPosition(null);
+  }, [active, activeTool, editingVectorElementId, penDraw, layoutId, setPenDrawingPosition]);
+
   // "Vector N" scoped per frame (not per import, which has its own counter — see svg-import.ts):
   // never resets across drawing sessions, continues from whatever's already in this layout (import
   // or earlier pen drawings alike), never renumbers existing ones since it only ever reads names.
@@ -894,6 +942,11 @@ function ArtboardFrameImpl({
     const h = Math.max(1, bounds.maxY - bounds.minY);
     const shift = (p: { x: number; y: number }) => ({ x: p.x - bounds.minX, y: p.y - bounds.minY });
     const joints: Joint[] = session.joints.map((j) => ({ ...j, ...shift(j), handleIn: j.handleIn ? shift(j.handleIn) : null, handleOut: j.handleOut ? shift(j.handleOut) : null }));
+    // A fresh path always defaults to a stroke-only line — no fill, closed or not — unless the user
+    // picked a real Fill color from `PenDrawingPanel` while still drawing (`penDrawStyle`, reset to
+    // this exact same base at the start of every session, so closing the loop never silently fills
+    // it behind the user's back — see that reset's own comment).
+    const baseStyle: LayoutElement['style'] = { fill: undefined, strokeColor: PEN_DEFAULT_STROKE_COLOR, strokeWidth: PEN_DEFAULT_STROKE_WIDTH, strokeStyle: 'solid' };
     const element: LayoutElement = {
       id: nextId('el'),
       kind: 'vector',
@@ -902,13 +955,12 @@ function ArtboardFrameImpl({
       visible: true,
       name: nextPenVectorName(),
       path: { joints, closed },
-      style: closed
-        ? { fill: PEN_DEFAULT_FILL, strokeWidth: undefined }
-        : { fill: undefined, strokeColor: PEN_DEFAULT_STROKE_COLOR, strokeWidth: PEN_DEFAULT_STROKE_WIDTH, strokeStyle: 'solid' },
+      style: { ...baseStyle, ...useAppStore.getState().penDrawStyle },
     };
     addElement(layoutId, element);
     selectScene(layout.setId);
     selectElement({ layoutId, elementId: element.id });
+    resetPenDrawStyle();
   }
 
   // Entering the tool starts a fresh session; leaving it (switching tools, including back to
@@ -918,6 +970,7 @@ function ArtboardFrameImpl({
   useEffect(() => {
     if (activeTool !== 'pen') return;
     setPenDraw({ joints: [], cursor: null, pressed: false });
+    resetPenDrawStyle();
     return () => {
       if (penDrawRef.current) finishDrawing(false);
     };
@@ -1195,7 +1248,7 @@ function ArtboardFrameImpl({
             nativeHeight={nativeHeight}
           />
         )}
-        {activeTool === 'pen' && penCursorPos && <PenToolCursor x={penCursorPos.x} y={penCursorPos.y} pressed={penDraw?.pressed ?? false} />}
+        {activeTool === 'pen' && penCursorPos && <PenToolCursor x={penCursorPos.x} y={penCursorPos.y} pressed={penDraw?.pressed ?? false} hint={penCursorHint} />}
         <input
           ref={fileInputRef}
           type="file"
