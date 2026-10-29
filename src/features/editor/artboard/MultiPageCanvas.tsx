@@ -4,7 +4,7 @@ import { DOT_SPACING, dotGridStyle } from '@/lib/canvas-dots';
 import { useLatestCallback } from '@/hooks/useLatestCallback';
 import { useT } from '@/lib/i18n';
 import { useAppStore } from '@/store/useAppStore';
-import { nextId, layoutHasContent } from '@/lib/create-layout';
+import { layoutHasContent } from '@/lib/create-layout';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import type { BannerSet, Layout } from '@/types';
 import type { PagePosition } from '@/store/types';
@@ -15,6 +15,7 @@ import { RulerOverlay } from './RulerOverlay';
 import { PageTitleBar } from './PageTitleBar';
 import { QuickSizeMenu, type QuickSizeResult } from './QuickSizeMenu';
 import { addSizesTo } from './add-sizes';
+import { duplicateBanner } from './duplicate-banner';
 import { SceneContextMenu } from './SceneContextMenu';
 import {
   canvasRootOf,
@@ -465,9 +466,6 @@ export function MultiPageCanvas() {
   const canvasRootOrder = useAppStore((s) => s.canvasRootOrder);
   const reorderCanvasRoot = useAppStore((s) => s.reorderCanvasRoot);
   const loadingPageIds = useAppStore((s) => s.loadingPageIds);
-  const upsertLayout = useAppStore((s) => s.upsertLayout);
-  const loadSet = useAppStore((s) => s.loadSet);
-  const groupPagesWith = useAppStore((s) => s.groupPagesWith);
   const reorderGroupSiblings = useAppStore((s) => s.reorderGroupSiblings);
   const renamePage = useAppStore((s) => s.renamePage);
   const updateLayoutStyle = useAppStore((s) => s.updateLayoutStyle);
@@ -482,7 +480,6 @@ export function MultiPageCanvas() {
   const clearRevealPage = useAppStore((s) => s.clearRevealPage);
   const selectGroup = useAppStore((s) => s.selectGroup);
   const activeCanvasRootId = useAppStore((s) => s.activeCanvasRootId);
-  const setActiveCanvas = useAppStore((s) => s.setActiveCanvas);
   const activeTool = useAppStore((s) => s.activeTool);
   // The Bulk edit view shows this same canvas as a preview: pan and zoom, and select banners (click,
   // shift-click or a selection box) — but banners can't be moved, renamed, right-clicked or added
@@ -1264,53 +1261,19 @@ export function MultiPageCanvas() {
   // if the source isn't grouped yet, becomes the primary of a brand-new 2-member group with it —
   // never a standalone page off to the side.
   function handleDuplicateScene(entry: PageEntry) {
-    const source = entry.layout;
-    const newLayoutId = nextId('layout');
-    const newSetId = nextId('set');
-    const newProductId = nextId('product');
-    const newLayout: Layout = {
-      ...source,
-      id: newLayoutId,
-      setId: newSetId,
-      productId: newProductId,
-      elements: source.elements.map((el) => ({ ...el, id: nextId('el') })),
-      isSource: true,
-      detached: false,
-      adaptationNotes: [],
-    };
-    const newSet: BannerSet = { id: newSetId, name: entry.set.name, sourceLayoutId: newLayoutId, layoutIds: [newLayoutId], productIds: [] };
-    const rootId = pageGroupIdByPage[entry.id] ?? entry.id;
-    const group = pageGroups[rootId];
-    const sourcePageId = group ? group.memberIds[0] : rootId;
-    upsertLayout(newLayout);
-    loadSet(newSet, { x: entry.pos.x, y: entry.pos.y + source.size.height + PAGE_GAP });
-    groupPagesWith(sourcePageId, [newSetId], setsById[sourcePageId]?.name ?? source.size.label);
-    // groupPagesWith always appends the new sibling at the very end of the pack order — slot it in
-    // right after the specific size that was actually duplicated instead, so it visually lands
-    // directly below what was right-clicked (the pack stacks siblings vertically in member order),
-    // regardless of where that happened to sit in a larger group.
-    const groupIdAfter = useAppStore.getState().pageGroupIdByPage[sourcePageId];
-    const groupAfter = groupIdAfter ? useAppStore.getState().pageGroups[groupIdAfter] : undefined;
-    if (groupAfter) {
-      const siblingIds = groupAfter.memberIds.slice(1).filter((id) => id !== newSetId);
-      const insertAfterIndex = entry.id === groupAfter.memberIds[0] ? -1 : siblingIds.indexOf(entry.id);
-      const nextSiblingIds =
-        insertAfterIndex === -1
-          ? [newSetId, ...siblingIds]
-          : [...siblingIds.slice(0, insertAfterIndex + 1), newSetId, ...siblingIds.slice(insertAfterIndex + 1)];
-      reorderGroupSiblings(groupIdAfter, nextSiblingIds);
-    }
+    const newSetId = duplicateBanner(entry.id);
+    if (!newSetId) return;
+    const state = useAppStore.getState();
+    const nextRootId = canvasRootOf(state, newSetId);
     // The general auto-fit effect keys on `entries.length` and would otherwise zoom out to frame
     // the whole (now one-bigger) set the instant this lands — pre-seed its key with what that
     // effect will compute next render so it sees no change and skips, then separately request a
     // plain pan (current zoom kept as-is) to bring just the new copy into view.
-    const nextRootId = canvasRootOf(useAppStore.getState(), sourcePageId);
     fitKeyRef.current = `${nextRootId}:${entries.length + 1}:${viewport.width}:${viewport.height}`;
     requestRevealPage(newSetId);
     selectElement(null);
     selectScene(newSetId);
-    setActiveCanvas(nextRootId);
-    setActiveLayout(newLayoutId);
+    setActiveLayout(state.setsById[newSetId].sourceLayoutId);
   }
 
   function handleDeleteScene(entry: PageEntry) {
@@ -1459,7 +1422,7 @@ export function MultiPageCanvas() {
                 entered={entry.id === viewAllActivePageId}
                 isLoading={Boolean(loadingPageIds[entry.id])}
                 isPrimary={isPrimaryPage({ pageGroupIdByPage, pageGroups }, entry.id)}
-                showCascadeToolbar={pageGroups[pageGroupIdByPage[entry.id]]?.memberIds[0] === entry.id && Boolean(pendingCascadeSetIds[entry.id])}
+                showCascadeToolbar={!readOnly && pageGroups[pageGroupIdByPage[entry.id]]?.memberIds[0] === entry.id && Boolean(pendingCascadeSetIds[entry.id])}
                 dimmed={
                   !isMultiSceneElementSelection &&
                   selectedSceneIds.length > 0 &&

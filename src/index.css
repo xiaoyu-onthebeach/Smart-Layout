@@ -228,6 +228,22 @@
     animation: shimmer 2.5s infinite;
   }
 
+  /* One short, soft light band crossing a table cell once, left to right, after it took a new value
+     (Replace view's fill handle). A single non-repeating band, a bit narrower than half the cell. */
+  .cell-glimmer {
+    background-image: linear-gradient(100deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0) 100%);
+    background-repeat: no-repeat;
+    background-size: 40% 100%;
+    background-position: -70% 0;
+    animation: cell-glimmer 0.6s ease-in-out forwards;
+  }
+
+  @keyframes cell-glimmer {
+    to {
+      background-position: 170% 0;
+    }
+  }
+
   @keyframes shimmer {
     0% {
       background-position:

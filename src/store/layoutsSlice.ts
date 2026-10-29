@@ -8,9 +8,11 @@ const CASCADE_LOADING_DURATION_MS = 3000;
 /**
  * If `layoutId` belongs to the *primary* page of a group that actually has siblings, returns
  * that page's (BannerSet) id — the one "Apply changes to all sizes" would act on. Edits to a
- * sibling page (or a page with no group) never produce a pending cascade.
+ * sibling page (or a page with no group) never produce a pending cascade, and neither do edits
+ * made in the Replace view, which already says exactly which banners each edit goes to.
  */
 function primarySetIdWithSiblings(state: AppState, layoutId: string): string | null {
+  if (state.workspaceView !== 'edit') return null;
   const ownerSetId = Object.values(state.setsById).find((s) => s.sourceLayoutId === layoutId)?.id;
   if (!ownerSetId) return null;
   const groupId = state.pageGroupIdByPage[ownerSetId];

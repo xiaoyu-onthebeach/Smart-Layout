@@ -15,17 +15,21 @@ import { GROUPS, type ListItem, type QuickSizeResult } from '@/features/editor/a
 import { Button } from '@/components/ui/button';
 import { addSizesTo } from '@/features/editor/artboard/add-sizes';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { duplicateBanner } from '@/features/editor/artboard/duplicate-banner';
+import { canvasRootOf } from '@/lib/canvas-layout';
 import type { Layout, LayoutElement } from '@/types';
 
 const BORDER = '#40404A';
 /** The table's own lines — its outer frame and the grid between cells. */
 const TABLE_BORDER = '#2A2A2C';
+/** How long the glimmer on freshly filled cells plays — matches `.cell-glimmer` in index.css. */
+const GLIMMER_MS = 600;
 /** Narrowest a Format/content column gets before the table scrolls sideways instead. */
 const MIN_COLUMN_WIDTH = 120;
 const CHECKBOX_COLUMN_WIDTH = 33;
 /** The pinned row-actions column on the right. */
 const ACTIONS_COLUMN_WIDTH = 40;
-const ADD_SIZE_ROW_HEIGHT = 48;
 /** The floating header's height — the top fade over the scrolling content is solid this far down… */
 const HEADER_FADE_SOLID = 56;
 /** …then fades out over this many px. */
@@ -98,6 +102,7 @@ function Cell({
   cellKey,
   pinned,
   onFillHandleMouseDown,
+  glimmer,
 }: {
   children?: ReactNode;
   className?: string;
@@ -112,6 +117,8 @@ function Cell({
   pinned?: 'left' | 'right';
   /** Shows the fill handle on this cell while it's the active one (see BannerGroupTable's `fill`). */
   onFillHandleMouseDown?: (e: React.MouseEvent) => void;
+  /** Set to a new value to play the "value just changed" glimmer once (see BannerGroupTable's `fill`). */
+  glimmer?: number;
 }) {
   return (
     <td
@@ -137,6 +144,7 @@ function Cell({
       style={{ borderColor: TABLE_BORDER }}
     >
       {editable ? children : <div className="flex h-full min-w-0 items-center gap-2">{children}</div>}
+      {glimmer !== undefined && <span key={glimmer} aria-hidden className="cell-glimmer pointer-events-none absolute inset-0" />}
       {onFillHandleMouseDown && (
         <span
           aria-hidden
@@ -259,7 +267,7 @@ function SizeCheckbox({ checked }: { checked: boolean }) {
  * "Add more sizes" panel, searchable, plus any WxH typed into the search — where any number of
  * sizes can be ticked, then added to the group together.
  */
-function AddSizeRow({ colSpan, onAdd }: { colSpan: number; onAdd: (sizes: QuickSizeResult[]) => void }) {
+function AddSizeRow({ onAdd }: { onAdd: (sizes: QuickSizeResult[]) => void }) {
   const t = useT();
   const language = useAppStore((s) => s.language);
   const [open, setOpen] = useState(false);
@@ -319,123 +327,179 @@ function AddSizeRow({ colSpan, onAdd }: { colSpan: number; onAdd: (sizes: QuickS
   }
 
   return (
-    <tr>
-      <td colSpan={colSpan} className="h-12 p-0" style={{ background: ROW_BG }}>
-        <Popover
-          open={open}
-          onOpenChange={(next) => {
-            setOpen(next);
-            if (!next) reset();
-          }}
+    // Outside the sideways-scrolling part (so its scrollbar sits right under the rows), but
+    // inside the table's frame, ruled off like one more row.
+    <div className="h-12 border-t" style={{ background: ROW_BG, borderColor: TABLE_BORDER }}>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) reset();
+        }}
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className={cn('group/add flex h-12 items-center gap-2 px-3 text-[13px] tracking-[-0.01em] outline-none transition-colors hover:text-white', open ? 'text-white' : 'text-white/65')}
+          >
+            {/* Same icon and label as the canvas's own "Add more sizes" buttons in Create. */}
+            <img src="/icons/Button%2040/More-size.svg" alt="" className={cn('size-4 shrink-0 transition-opacity group-hover/add:opacity-100', open ? 'opacity-100' : 'opacity-65')} />
+            {t('Add more sizes')}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="flex max-h-[420px] w-[300px] flex-col gap-1 rounded-xl border-[0.5px] p-2 text-white"
+          style={{ background: ROW_BG, borderColor: '#26262C' }}
         >
-          <PopoverTrigger asChild>
-            {/* Stays at the table's left edge while the columns scroll sideways. */}
+          <div className="flex h-8 shrink-0 items-center gap-2 rounded-full border border-chrome-border bg-chrome-border-subtle px-3">
+            <Search className="size-4 shrink-0 text-white/70" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addTyped()}
+              placeholder={t('Search sizes')}
+              className="w-full min-w-0 bg-transparent text-[13px] placeholder:text-white/25 outline-none"
+            />
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-1">
+            {typed && !customs.some((c) => c.width === typed.width && c.height === typed.height) && (
+              <button type="button" onClick={addTyped} className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-white/10">
+                <Plus className="size-4 shrink-0" />
+                <span className="shrink-0 text-[13px]">
+                  {typed.width}x{typed.height}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{t('Custom size')}</span>
+              </button>
+            )}
+            {customs.map((custom) => (
+              <button
+                key={custom.id}
+                type="button"
+                onClick={() => toggle(custom.id, custom)}
+                className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-white/10"
+              >
+                <SizeCheckbox checked={selected.has(custom.id)} />
+                <RatioIcon width={custom.width} height={custom.height} />
+                <span className="shrink-0 text-[13px]">
+                  {custom.width}x{custom.height}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{t('Custom size')}</span>
+              </button>
+            ))}
+            {groups.map((group) => (
+              <div key={group.id} className="flex flex-col">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.items)}
+                  className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-2 text-left text-[11px] font-semibold tracking-[-0.01em] text-white/45 uppercase transition-colors hover:bg-white/5"
+                >
+                  <SizeCheckbox checked={group.items.every((item) => selected.has(item.id))} />
+                  {group.id !== 'other' && <img src={`/icons/ec-platform-icon/${group.id}.svg`} alt="" className="size-4 shrink-0 rounded" />}
+                  <span className="truncate">{group.id === 'other' ? t('All sizes') : group.name}</span>
+                </button>
+                {group.items.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => toggle(item.id, resultOf(item))}
+                    className="flex h-9 shrink-0 items-center gap-2 rounded-lg py-2 pr-2 pl-8 text-left transition-colors hover:bg-white/10"
+                  >
+                    <SizeCheckbox checked={selected.has(item.id)} />
+                    <RatioIcon width={item.width} height={item.height} />
+                    <span className="shrink-0 text-[13px]">
+                      {item.width}x{item.height}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+            {groups.length === 0 && !typed && customs.length === 0 && <div className="px-2 py-4 text-center text-[13px] text-white/45">{t('No sizes match')}</div>}
+          </div>
+          <div className="flex shrink-0 items-center gap-2 pt-1">
             <button
               type="button"
-              className={cn('sticky left-0 flex h-12 items-center gap-2 px-2 text-[13px] tracking-[-0.01em] outline-none transition-colors hover:text-white', open ? 'text-white' : 'text-white/65')}
+              onClick={() => {
+                setOpen(false);
+                reset();
+              }}
+              className="flex h-8 shrink-0 items-center justify-center rounded-full bg-chrome-border-subtle px-6 text-[13px] font-semibold text-white transition-colors hover:bg-white/10"
             >
-              <span className="flex size-4 items-center justify-center">
-                <Plus className="size-4" />
-              </span>
-              {t('Add size')}
+              {t('Cancel')}
             </button>
-          </PopoverTrigger>
-          <PopoverContent
-            align="start"
-            className="flex max-h-[420px] w-[300px] flex-col gap-1 rounded-xl border-[0.5px] p-2 text-white"
-            style={{ background: ROW_BG, borderColor: '#26262C' }}
-          >
-            <div className="flex h-8 shrink-0 items-center gap-2 rounded-full border border-chrome-border bg-chrome-border-subtle px-3">
-              <Search className="size-4 shrink-0 text-white/70" />
-              <input
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addTyped()}
-                placeholder={t('Search sizes')}
-                className="w-full min-w-0 bg-transparent text-[13px] placeholder:text-white/25 outline-none"
-              />
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-1">
-              {typed && !customs.some((c) => c.width === typed.width && c.height === typed.height) && (
-                <button type="button" onClick={addTyped} className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-white/10">
-                  <Plus className="size-4 shrink-0" />
-                  <span className="shrink-0 text-[13px]">
-                    {typed.width}x{typed.height}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{t('Custom size')}</span>
-                </button>
-              )}
-              {customs.map((custom) => (
-                <button
-                  key={custom.id}
-                  type="button"
-                  onClick={() => toggle(custom.id, custom)}
-                  className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-white/10"
-                >
-                  <SizeCheckbox checked={selected.has(custom.id)} />
-                  <RatioIcon width={custom.width} height={custom.height} />
-                  <span className="shrink-0 text-[13px]">
-                    {custom.width}x{custom.height}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{t('Custom size')}</span>
-                </button>
-              ))}
-              {groups.map((group) => (
-                <div key={group.id} className="flex flex-col">
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup(group.items)}
-                    className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-2 text-left text-[11px] font-semibold tracking-[-0.01em] text-white/45 uppercase transition-colors hover:bg-white/5"
-                  >
-                    <SizeCheckbox checked={group.items.every((item) => selected.has(item.id))} />
-                    {group.id !== 'other' && <img src={`/icons/ec-platform-icon/${group.id}.svg`} alt="" className="size-4 shrink-0 rounded" />}
-                    <span className="truncate">{group.id === 'other' ? t('All sizes') : group.name}</span>
-                  </button>
-                  {group.items.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => toggle(item.id, resultOf(item))}
-                      className="flex h-9 shrink-0 items-center gap-2 rounded-lg py-2 pr-2 pl-8 text-left transition-colors hover:bg-white/10"
-                    >
-                      <SizeCheckbox checked={selected.has(item.id)} />
-                      <RatioIcon width={item.width} height={item.height} />
-                      <span className="shrink-0 text-[13px]">
-                        {item.width}x{item.height}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{item.label}</span>
-                    </button>
-                  ))}
-                </div>
-              ))}
-              {groups.length === 0 && !typed && customs.length === 0 && <div className="px-2 py-4 text-center text-[13px] text-white/45">{t('No sizes match')}</div>}
-            </div>
-            <div className="flex shrink-0 items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  reset();
-                }}
-                className="flex h-8 shrink-0 items-center justify-center rounded-full bg-chrome-border-subtle px-6 text-[13px] font-semibold text-white transition-colors hover:bg-white/10"
-              >
-                {t('Cancel')}
-              </button>
-              <Button size="sm" onClick={confirm} disabled={selected.size === 0} className="min-w-0 flex-1 text-[13px] font-semibold">
-                {language === 'ja' ? `${selected.size}件のサイズを追加` : `Add ${selected.size} size${selected.size === 1 ? '' : 's'}`}
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
-      </td>
-    </tr>
+            <Button size="sm" onClick={confirm} disabled={selected.size === 0} className="min-w-0 flex-1 text-[13px] font-semibold">
+              {language === 'ja' ? `${selected.size}件のサイズを追加` : `Add ${selected.size} size${selected.size === 1 ? '' : 's'}`}
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }
 
 /** A content cell's stand-in while its banner is still being generated. */
 function LoadingCell() {
   return <span className="block h-3 w-full max-w-[96px] animate-pulse rounded-full bg-white/10" />;
+}
+
+const ROW_MENU_ITEM = 'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-3 text-[13px] text-white outline-none focus:bg-white/10 data-[highlighted]:bg-white/10';
+
+/** A row's ⋮ menu: open that banner in the Create view, duplicate it, or delete it. */
+function RowMenu({ setId }: { setId: string }) {
+  const t = useT();
+  function seeOnCreate() {
+    // Only once the click that picked this item is over: switching views grows the canvas under
+    // the pointer, and that click landing on its background would clear the selection again.
+    setTimeout(() => {
+      const state = useAppStore.getState();
+      const layoutId = state.setsById[setId]?.sourceLayoutId;
+      state.setWorkspaceView('edit');
+      state.setActiveCanvas(canvasRootOf(state, setId));
+      // In this order: making a layout active clears the banner selection.
+      if (layoutId) state.setActiveLayout(layoutId);
+      state.selectScene(setId);
+      // After the canvas has grown back to full width, so the banner is centered in the right space.
+      setTimeout(() => useAppStore.getState().requestFocusPage(setId), 50);
+    }, 0);
+  }
+  function duplicate() {
+    // Keeps the layers' ids, so the copy lines up with the table's columns like any other size.
+    const newId = duplicateBanner(setId, { keepElementIds: true });
+    if (newId) useAppStore.getState().requestFocusPage(newId);
+  }
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={t('More options')}
+          className="flex size-6 items-center justify-center rounded-lg text-white/70 transition-colors outline-none hover:bg-white/10 hover:text-white data-[state=open]:bg-white/10 data-[state=open]:text-white"
+        >
+          <EllipsisVertical className="size-4" />
+        </button>
+      </DropdownMenuTrigger>
+      {/* Same look as the canvas's right-click menu on a banner. */}
+      <DropdownMenuContent
+        align="end"
+        className="min-w-40 rounded-lg border p-1 text-white shadow-[0px_4px_32px_4px_rgba(0,0,0,0.24)] backdrop-blur-[16px]"
+        style={{ background: 'rgba(38,38,44,0.88)', borderColor: BORDER }}
+      >
+        <DropdownMenuItem className={ROW_MENU_ITEM} onSelect={seeOnCreate}>
+          {t('See on Create')}
+        </DropdownMenuItem>
+        <DropdownMenuItem className={ROW_MENU_ITEM} onSelect={duplicate}>
+          {t('Duplicate')}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator className="my-1 h-px" style={{ background: BORDER }} />
+        <DropdownMenuItem className={ROW_MENU_ITEM} onSelect={() => useAppStore.getState().deletePage(setId)}>
+          <img src="/icons/dropdown/delete.svg" alt="" className="size-5 shrink-0" />
+          {t('Delete')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function BannerGroupTable({ primaryId, memberIds }: { primaryId: string; memberIds: string[] }) {
@@ -525,6 +589,7 @@ function BannerGroupTable({ primaryId, memberIds }: { primaryId: string; memberI
   // go, copies that cell's value into every cell the drag covered.
   const [fill, setFill] = useState<{ columnId: string; sourceId: string; rowIds: string[] } | null>(null);
   const fillRef = useRef(fill);
+  const [glimmer, setGlimmer] = useState<{ columnId: string; rowIds: string[]; stamp: number } | null>(null);
   function startFill(e: React.MouseEvent, setId: string, columnId: string) {
     // Keeps focus (and any text still being typed) in the cell, and isn't a cell press either.
     e.preventDefault();
@@ -548,8 +613,9 @@ function BannerGroupTable({ primaryId, memberIds }: { primaryId: string; memberI
     const sourceSet = state.setsById[done.sourceId];
     const source = sourceSet ? state.layoutsById[sourceSet.sourceLayoutId]?.elements.find((el) => el.id === done.columnId) : undefined;
     if (!source) return;
+    const targets = done.rowIds.filter((id) => id !== done.sourceId);
     applyToRows(
-      done.rowIds.filter((id) => id !== done.sourceId),
+      targets,
       done.columnId,
       (el): Partial<LayoutElement> =>
         el.kind === 'text'
@@ -558,6 +624,10 @@ function BannerGroupTable({ primaryId, memberIds }: { primaryId: string; memberI
             ? { imageUrl: source.imageUrl }
             : { style: { ...el.style, fill: source.style.fill, opacity: source.style.opacity } },
     );
+    // A soft glimmer across every cell that just took the value, as feedback.
+    const stamp = Date.now();
+    setGlimmer({ columnId: done.columnId, rowIds: targets, stamp });
+    setTimeout(() => setGlimmer((current) => (current?.stamp === stamp ? null : current)), GLIMMER_MS);
     // The filled run stays selected, the source cell active — like a multi-cell selection.
     setCellSelection({ columnId: done.columnId, rowIds: done.rowIds, anchorId: done.sourceId });
     focusCellField(done.sourceId, done.columnId);
@@ -662,9 +732,6 @@ function BannerGroupTable({ primaryId, memberIds }: { primaryId: string; memberI
         <img src="/icons/primary%201.svg" alt="" className="size-6 shrink-0" />
         {/* The primary banner's own name, as in the Banners list (renaming it there renames this too). */}
         <span className="min-w-0 truncate text-[15px] leading-[1.4] tracking-[-0.01em] text-white">{setsById[primaryId]?.name || t('Primary')}</span>
-        <span className="flex h-5 shrink-0 items-center rounded-full border px-2 text-[13px] leading-4 text-white" style={{ background: '#26262C', borderColor: BORDER }}>
-          {primary.size.width}x{primary.size.height}
-        </span>
       </div>
 
       {/* One rounded frame around the table. Inside it the checkbox column (left) and the row
@@ -675,161 +742,156 @@ function BannerGroupTable({ primaryId, memberIds }: { primaryId: string; memberI
           part while there's more to see. No native drag-and-drop of a field's selected text either:
           pressing on already-selected text and moving would otherwise start dragging that text
           away instead of a cell-selection drag. */}
-      <div className="relative overflow-hidden rounded-lg border" style={{ borderColor: TABLE_BORDER }}>
-        <div
-          ref={tableRef}
-          // While dragging a fill handle the resize cursor holds over every cell, fields included.
-          className={cn('overflow-x-auto', fill && '[&_*]:cursor-ns-resize!')}
-          onDragStart={(e) => e.preventDefault()}
-        >
-          <table
-            className="w-full table-fixed border-separate border-spacing-0 [&>tbody>tr:last-child>td]:border-b-0"
-            style={{ minWidth: CHECKBOX_COLUMN_WIDTH + ACTIONS_COLUMN_WIDTH + (columns.length + 1) * MIN_COLUMN_WIDTH }}
-          >
-            <thead>
-              <tr>
-                <th className="sticky left-0 z-[2] h-10 border-r border-b px-2" style={{ borderColor: TABLE_BORDER, background: ROW_BG, width: CHECKBOX_COLUMN_WIDTH }}>
-                  <RowCheckbox checked={allRowsChecked} onChange={toggleAllRows} />
-                </th>
-                {[{ id: 'format', label: t('Format'), icon: '/icons/edit_panel/panel_image.svg' }, ...columns.map((c) => ({ id: c.id, label: `${t(KIND_LABELS[c.kind])} ${c.index}`, icon: KIND_ICONS[c.kind] }))].map((col, i, all) => (
-                  <th key={col.id} className={cn('h-10 border-b px-2 text-left text-[13px] font-normal tracking-[-0.01em] text-white', i < all.length - 1 && 'border-r')} style={{ borderColor: TABLE_BORDER, background: ROW_BG }}>
-                    <div className="flex min-w-0 items-center gap-1">
-                      <img src={col.icon} alt="" className="size-6 shrink-0" />
-                      <span className="truncate">{col.label}</span>
-                    </div>
-                  </th>
-                ))}
-                <th className="sticky right-0 z-[2] h-10 border-b border-l" style={{ borderColor: TABLE_BORDER, background: ROW_BG, width: ACTIONS_COLUMN_WIDTH }} />
-              </tr>
-            </thead>
-            <tbody>
-              {memberIds.map((setId) => {
-                const layout = layoutOf(setId);
-                if (!layout) return null;
-                const platformId = getPreset(layout.size.presetId ?? '')?.platformId ?? groupPlatformId;
-                return (
-                  // Selecting any cell brings that row's banner into view in the preview — focus
-                  // bubbles up from whichever field took it, so this covers every kind of cell.
-                  <tr
-                    key={setId}
-                    className="group/row"
-                    onFocus={() => focusBanner(setId)}
-                    // Leaving the row entirely (not just moving to another of its cells) lets coming
-                    // back to it bring its banner into view again.
-                    onBlur={(e) => {
-                      const next = e.relatedTarget as Element | null;
-                      if (e.currentTarget.contains(next)) return;
-                      lastFocusedRef.current = null;
-                      // Still editing this row from a picker opened by one of its cells (color
-                      // popover, image dialog) — keep its banner outlined. Moving to another row
-                      // outlines that one instead (its own onFocus).
-                      if (!next?.closest('[data-radix-popper-content-wrapper], [role="dialog"]')) setBulkEditActivePage(null);
-                    }}
-                  >
-                    <Cell pinned="left">
-                      <RowCheckbox checked={selectedSceneIds.includes(setId)} onChange={() => selectScene(setId, true)} />
-                    </Cell>
-                    <Cell className={columns.length === 0 ? 'border-r-0' : undefined}>
-                      {platformId ? (
-                        <img src={`/icons/ec-platform-icon/${platformId}.svg`} alt="" className="size-6 shrink-0 rounded-[6px]" />
-                      ) : (
-                        <RatioIcon width={layout.size.width} height={layout.size.height} className="size-6 shrink-0" />
-                      )}
-                      <span className="truncate">
-                        {layout.size.width}x{layout.size.height}
-                      </span>
-                    </Cell>
-                    {columns.map((col, ci) => {
-                      // The pinned actions column already draws the separator after the last one.
-                      const lastClass = ci === columns.length - 1 ? 'border-r-0' : undefined;
-                      const el = layout.elements.find((e) => e.id === col.id);
-                      // A size just added is still "generating" (same loading time as on the canvas)
-                      // — nothing to edit yet.
-                      if (loadingPageIds[setId]) {
-                        return (
-                          <Cell key={col.id} className={lastClass}>
-                            <LoadingCell />
-                          </Cell>
-                        );
-                      }
-                      if (!el) {
-                        return (
-                          <Cell key={col.id} className={lastClass}>
-                            <Missing />
-                          </Cell>
-                        );
-                      }
-                      const rows = () => targetRows(setId, col.id);
-                      const multiSelected =
-                        Boolean(cellSelection && cellSelection.rowIds.length > 1 && cellSelection.columnId === col.id && cellSelection.rowIds.includes(setId)) ||
-                        Boolean(fill && fill.columnId === col.id && fill.sourceId !== setId && fill.rowIds.includes(setId));
-                      return (
-                        <Cell
-                          key={col.id}
-                          className={lastClass}
-                          editable
-                          cellKey={`${setId}:${col.id}`}
-                          selected={multiSelected}
-                          onMouseDown={(e) => handleCellMouseDown(e, setId, col.id)}
-                          onMouseEnter={(e) => handleCellMouseEnter(e, setId, col.id)}
-                          onFillHandleMouseDown={(e) => startFill(e, setId, col.id)}
-                        >
-                          {el.kind === 'text' && <TextCell value={el.content ?? ''} onCommit={(content) => applyToRows(rows(), col.id, () => ({ content }))} />}
-                          {el.kind === 'image' && (
-                            <ImageCell
-                              url={el.imageUrl}
-                              onPick={() =>
-                                setPicking(
-                                  rows().flatMap((rowId) => {
-                                    const rowLayout = layoutOf(rowId);
-                                    return rowLayout?.elements.some((e) => e.id === col.id) ? [{ layoutId: rowLayout.id, elementId: col.id }] : [];
-                                  }),
-                                )
-                              }
-                            />
-                          )}
-                          {(el.kind === 'shape' || el.kind === 'vector') && (
-                            <FillCell
-                              color={el.style.fill ?? '#D9D9D9'}
-                              opacity={el.style.opacity ?? 100}
-                              onChange={(fill) => applyToRows(rows(), col.id, (target) => ({ style: { ...target.style, fill } }))}
-                            />
-                          )}
-                        </Cell>
-                      );
-                    })}
-                    <Cell pinned="right" className="px-2">
-                      <button
-                        type="button"
-                        aria-label={t('More options')}
-                        className="flex size-6 items-center justify-center rounded-lg text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-                      >
-                        <EllipsisVertical className="size-4" />
-                      </button>
-                    </Cell>
-                  </tr>
-                );
-              })}
-              <AddSizeRow
-                colSpan={columns.length + 3}
-                onAdd={(sizes) => {
-                  // Adapted from the primary, like any size added on the canvas — so they start with
-                  // the same content as the rest of the group, and join it as the table's last rows.
-                  const [newId] = addSizesTo(primaryId, sizes);
-                  if (newId) requestFocusPage(newId);
-                }}
-              />
-            </tbody>
-          </table>
-        </div>
-        {moreToTheRight && (
+      <div className="overflow-hidden rounded-lg border" style={{ borderColor: TABLE_BORDER }}>
+        <div className="relative">
           <div
-            aria-hidden
-            className="pointer-events-none absolute top-0 z-[3] w-[60px] bg-gradient-to-l from-[rgba(4,4,6,0.5)] to-[rgba(4,4,6,0)]"
-            // Down to the "Add size" row, which doesn't scroll.
-            style={{ right: ACTIONS_COLUMN_WIDTH, bottom: ADD_SIZE_ROW_HEIGHT }}
-          />
-        )}
+            ref={tableRef}
+            // While dragging a fill handle the resize cursor holds over every cell, fields included.
+            className={cn('overflow-x-auto', fill && '[&_*]:cursor-ns-resize!')}
+            onDragStart={(e) => e.preventDefault()}
+          >
+            <table
+              className="w-full table-fixed border-separate border-spacing-0 [&>tbody>tr:last-child>td]:border-b-0"
+              style={{ minWidth: CHECKBOX_COLUMN_WIDTH + ACTIONS_COLUMN_WIDTH + (columns.length + 1) * MIN_COLUMN_WIDTH }}
+            >
+              <thead>
+                <tr>
+                  <th className="sticky left-0 z-[2] h-10 border-r border-b px-2" style={{ borderColor: TABLE_BORDER, background: ROW_BG, width: CHECKBOX_COLUMN_WIDTH }}>
+                    <RowCheckbox checked={allRowsChecked} onChange={toggleAllRows} />
+                  </th>
+                  {[{ id: 'format', label: t('Format'), icon: '/icons/edit_panel/panel_image.svg' }, ...columns.map((c) => ({ id: c.id, label: `${t(KIND_LABELS[c.kind])} ${c.index}`, icon: KIND_ICONS[c.kind] }))].map((col, i, all) => (
+                    <th key={col.id} className={cn('h-10 border-b px-2 text-left text-[13px] font-normal tracking-[-0.01em] text-white', i < all.length - 1 && 'border-r')} style={{ borderColor: TABLE_BORDER, background: ROW_BG }}>
+                      <div className="flex min-w-0 items-center gap-1">
+                        <img src={col.icon} alt="" className="size-6 shrink-0" />
+                        <span className="truncate">{col.label}</span>
+                      </div>
+                    </th>
+                  ))}
+                  <th className="sticky right-0 z-[2] h-10 border-b border-l" style={{ borderColor: TABLE_BORDER, background: ROW_BG, width: ACTIONS_COLUMN_WIDTH }} />
+                </tr>
+              </thead>
+              <tbody>
+                {memberIds.map((setId) => {
+                  const layout = layoutOf(setId);
+                  if (!layout) return null;
+                  const platformId = getPreset(layout.size.presetId ?? '')?.platformId ?? groupPlatformId;
+                  return (
+                    // Selecting any cell brings that row's banner into view in the preview — focus
+                    // bubbles up from whichever field took it, so this covers every kind of cell.
+                    <tr
+                      key={setId}
+                      className="group/row"
+                      onFocus={() => focusBanner(setId)}
+                      // Leaving the row entirely (not just moving to another of its cells) lets coming
+                      // back to it bring its banner into view again.
+                      onBlur={(e) => {
+                        const next = e.relatedTarget as Element | null;
+                        if (e.currentTarget.contains(next)) return;
+                        lastFocusedRef.current = null;
+                        // Still editing this row from a picker opened by one of its cells (color
+                        // popover, image dialog) — keep its banner outlined. Moving to another row
+                        // outlines that one instead (its own onFocus).
+                        if (!next?.closest('[data-radix-popper-content-wrapper], [role="dialog"]')) setBulkEditActivePage(null);
+                      }}
+                    >
+                      <Cell pinned="left">
+                        <RowCheckbox checked={selectedSceneIds.includes(setId)} onChange={() => selectScene(setId, true)} />
+                      </Cell>
+                      <Cell className={columns.length === 0 ? 'border-r-0' : undefined}>
+                        {platformId ? (
+                          <img src={`/icons/ec-platform-icon/${platformId}.svg`} alt="" className="size-6 shrink-0 rounded-[6px]" />
+                        ) : (
+                          <RatioIcon width={layout.size.width} height={layout.size.height} className="size-6 shrink-0" />
+                        )}
+                        <span className="truncate">
+                          {layout.size.width}x{layout.size.height}
+                        </span>
+                      </Cell>
+                      {columns.map((col, ci) => {
+                        // The pinned actions column already draws the separator after the last one.
+                        const lastClass = ci === columns.length - 1 ? 'border-r-0' : undefined;
+                        const el = layout.elements.find((e) => e.id === col.id);
+                        // A size just added is still "generating" (same loading time as on the canvas)
+                        // — nothing to edit yet.
+                        if (loadingPageIds[setId]) {
+                          return (
+                            <Cell key={col.id} className={lastClass}>
+                              <LoadingCell />
+                            </Cell>
+                          );
+                        }
+                        if (!el) {
+                          return (
+                            <Cell key={col.id} className={lastClass}>
+                              <Missing />
+                            </Cell>
+                          );
+                        }
+                        const rows = () => targetRows(setId, col.id);
+                        const multiSelected =
+                          Boolean(cellSelection && cellSelection.rowIds.length > 1 && cellSelection.columnId === col.id && cellSelection.rowIds.includes(setId)) ||
+                          Boolean(fill && fill.columnId === col.id && fill.sourceId !== setId && fill.rowIds.includes(setId));
+                        return (
+                          <Cell
+                            key={col.id}
+                            className={lastClass}
+                            editable
+                            cellKey={`${setId}:${col.id}`}
+                            selected={multiSelected}
+                            onMouseDown={(e) => handleCellMouseDown(e, setId, col.id)}
+                            onMouseEnter={(e) => handleCellMouseEnter(e, setId, col.id)}
+                            onFillHandleMouseDown={(e) => startFill(e, setId, col.id)}
+                            glimmer={glimmer && glimmer.columnId === col.id && glimmer.rowIds.includes(setId) ? glimmer.stamp : undefined}
+                          >
+                            {el.kind === 'text' && <TextCell value={el.content ?? ''} onCommit={(content) => applyToRows(rows(), col.id, () => ({ content }))} />}
+                            {el.kind === 'image' && (
+                              <ImageCell
+                                url={el.imageUrl}
+                                onPick={() =>
+                                  setPicking(
+                                    rows().flatMap((rowId) => {
+                                      const rowLayout = layoutOf(rowId);
+                                      return rowLayout?.elements.some((e) => e.id === col.id) ? [{ layoutId: rowLayout.id, elementId: col.id }] : [];
+                                    }),
+                                  )
+                                }
+                              />
+                            )}
+                            {(el.kind === 'shape' || el.kind === 'vector') && (
+                              <FillCell
+                                color={el.style.fill ?? '#D9D9D9'}
+                                opacity={el.style.opacity ?? 100}
+                                onChange={(fill) => applyToRows(rows(), col.id, (target) => ({ style: { ...target.style, fill } }))}
+                              />
+                            )}
+                          </Cell>
+                        );
+                      })}
+                      <Cell pinned="right" className="px-2">
+                        <RowMenu setId={setId} />
+                      </Cell>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {moreToTheRight && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute top-0 bottom-0 z-[3] w-[60px] bg-gradient-to-l from-[rgba(4,4,6,0.5)] to-[rgba(4,4,6,0)]"
+              style={{ right: ACTIONS_COLUMN_WIDTH }}
+            />
+          )}
+        </div>
+        <AddSizeRow
+          onAdd={(sizes) => {
+            // Adapted from the primary, like any size added on the canvas — so they start with
+            // the same content as the rest of the group, and join it as the table's last rows.
+            const [newId] = addSizesTo(primaryId, sizes);
+            if (newId) requestFocusPage(newId);
+          }}
+        />
       </div>
 
       {picking && (
