@@ -17,6 +17,8 @@ export type Language = 'en' | 'ja';
 /** A single selected element, qualified by which layout (scene) it lives in — selection can span scenes. */
 export type SelectedElementRef = { layoutId: string; elementId: string };
 
+export type WorkspaceView = 'edit' | 'bulkEdit';
+
 export type UiSlice = {
   step: AppStep;
   sizeSelectOpen: boolean;
@@ -91,15 +93,22 @@ export type UiSlice = {
   /** Whether the decorative top/left canvas rulers are shown — toggled by the ruler icon in
    * `CanvasZoomBar`; purely visual (tick marks/labels only, no real measuring or snapping). */
   showRulers: boolean;
+  /** Which of the playground's two views is showing — 'edit' (the canvas, with every editing
+   * tool) or 'bulkEdit' (every piece of content used in the playground, in an editable table). */
+  workspaceView: WorkspaceView;
+  /** The banner whose row is being edited in Bulk edit's table — drawn with the selected outline
+   * in the preview, without selecting it (selection there is the rows' checkboxes). */
+  bulkEditActivePageId: string | null;
   /**
-   * Ready-to-use CSS values for the full-screen dot backdrop, recomputed by `MultiPageCanvas`
-   * whenever its camera/viewport changes and rendered by `Shell` — Shell needs to paint this
+   * Where the full-screen dot backdrop sits — the canvas camera plus the canvas's own left offset
+   * on screen — recomputed by `MultiPageCanvas` whenever its camera/viewport changes and rendered
+   * by `Shell` (see `dotGridStyle` in src/lib/canvas-dots.ts) — Shell needs to paint this
    * *behind* the sidebar (which sits outside the canvas's own container), so the values live here
    * rather than inside a `position: fixed` element nested in the canvas itself (a fixed descendant
    * with a negative z-index still loses to the app shell's own opaque background — no stacking
    * context above it to escape into). `null` while no canvas is mounted (e.g. the Playgrounds step).
    */
-  canvasDotBackground: { position: string; size: string; visible: boolean } | null;
+  canvasDotBackground: { x: number; y: number; zoom: number; offsetX: number } | null;
   /** Current UI display language — defaults to English. */
   language: Language;
   goTo: (step: AppStep) => void;
@@ -148,7 +157,11 @@ export type UiSlice = {
   /** Turns match-select off and drops every cross-scene match from the current selection, keeping only whatever's selected in the current scene. */
   disableMatchSelect: () => void;
   toggleRulers: () => void;
-  setCanvasDotBackground: (bg: { position: string; size: string; visible: boolean } | null) => void;
+  /** Switches between the Edit and Bulk edit views — leaving Edit also drops the canvas selection and
+   * any in-place editing, so nothing hidden behind the Bulk edit view can react to the keyboard. */
+  setWorkspaceView: (view: WorkspaceView) => void;
+  setBulkEditActivePage: (pageId: string | null) => void;
+  setCanvasDotBackground: (bg: { x: number; y: number; zoom: number; offsetX: number } | null) => void;
   setLanguage: (language: Language) => void;
 };
 

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
 import { cn } from '@/lib/utils';
+import { DOT_SPACING, dotGridStyle } from '@/lib/canvas-dots';
 import { useLatestCallback } from '@/hooks/useLatestCallback';
 import { useT } from '@/lib/i18n';
 import { useAppStore } from '@/store/useAppStore';
-import { nextId, createAdaptedLayout, layoutHasContent } from '@/lib/create-layout';
+import { nextId, layoutHasContent } from '@/lib/create-layout';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import type { BannerSet, Layout } from '@/types';
 import type { PagePosition } from '@/store/types';
@@ -13,10 +14,10 @@ import { CanvasZoomBar } from './CanvasZoomBar';
 import { RulerOverlay } from './RulerOverlay';
 import { PageTitleBar } from './PageTitleBar';
 import { QuickSizeMenu, type QuickSizeResult } from './QuickSizeMenu';
+import { addSizesTo } from './add-sizes';
 import { SceneContextMenu } from './SceneContextMenu';
 import {
   canvasRootOf,
-  isFirstPrimaryGroup,
   isPrimaryPage,
   PAGE_GAP,
   PAGE_TITLE_RESERVE,
@@ -25,8 +26,6 @@ import {
   SECTION_GAP_TOP,
   TITLE_CLEARANCE_BUFFER,
 } from '@/lib/canvas-layout';
-import { applyPrototypeSizeFill } from '@/lib/prototype-size-fill';
-import { buildOverlayElements } from '@/lib/overlay-elements';
 import { computeGroupLayout } from '@/lib/group-layout';
 
 const PADDING = 96;
@@ -37,7 +36,6 @@ const MAX_FIT_ZOOM = 1;
 const MIN_ZOOM = 0.01;
 const MAX_ZOOM = 3;
 const FOCUS_FILL_RATIO = 0.6;
-const DOT_SPACING = 50;
 const PAN_THRESHOLD = 4;
 // Screen px within which a dragged scene's edge/center snaps to align with another scene's.
 const SNAP_THRESHOLD = 8;
@@ -237,6 +235,8 @@ function UnifiedAllSizesHeader({
 }) {
   const t = useT();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  // The Bulk edit view's canvas is a preview — no "add sizes" from here.
+  const readOnly = useAppStore((s) => s.workspaceView !== 'edit');
   // A hovered icon lights up both of its own adjacent segments (the one before it and the one
   // after), not just the one before — so the whole gap around whichever "+" the user is pointing
   // at reads as highlighted, not just its left half.
@@ -263,7 +263,7 @@ function UnifiedAllSizesHeader({
                 style={{ left: segStart, top: -1, width: segEnd - segStart, ...segmentStyle(hoveredIndex === i || hoveredIndex === i - 1) }}
               />
             )}
-            <div className="pointer-events-auto absolute" style={{ left: icon.x - ADD_ICON_SIZE / 2, top: -ADD_ICON_SIZE / 2 }}>
+            <div className={cn('pointer-events-auto absolute', readOnly && 'hidden')} style={{ left: icon.x - ADD_ICON_SIZE / 2, top: -ADD_ICON_SIZE / 2 }}>
               <QuickSizeMenu onConfirm={icon.onConfirm}>
                 <AddSizeIconButton onHoverChange={(v) => setHoveredIndex(v ? i : null)} onClick={icon.onFocusPrimary} />
               </QuickSizeMenu>
@@ -376,6 +376,12 @@ function PageCard({
   onSceneContextMenu: (e: ReactMouseEvent, pasteHere: () => void) => void;
 }) {
   const { set: bannerSet, layout } = entry;
+  // In the Bulk edit view's preview a click on the card just selects the banner (shift adds it to the
+  // selection); everything inside the card — layers, the title bar's
+  // rename/drag, the add-sizes hotspot — ignores the pointer, so nothing in it can be edited,
+  // moved or right-clicked from here.
+  const readOnly = useAppStore((s) => s.workspaceView !== 'edit');
+  const selectScene = useAppStore((s) => s.selectScene);
   const [isHovered, setIsHovered] = useState(false);
   // The canvas creates these handlers fresh on every render — stable wrappers keep that from
   // defeating ArtboardFrame's memo, while still always calling the latest version.
@@ -384,9 +390,17 @@ function PageCard({
   const stableSceneContextMenu = useLatestCallback(onSceneContextMenu);
   return (
     <div
-      className={cn('group/card absolute', reflowing ? 'transition-[opacity,left,top] duration-150' : 'transition-opacity')}
+      className={cn('group/card absolute', reflowing ? 'transition-[opacity,left,top] duration-150' : 'transition-opacity', readOnly && 'cursor-pointer [&_*]:pointer-events-none')}
       style={{ left, top, width, height, opacity: dimmed ? 0.6 : 1, zIndex: dragging ? 10 : undefined }}
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        if (readOnly && e.button === 0) {
+          // Shift-click is also the browser's own "extend text selection" gesture — without this
+          // it highlights the banner titles and texts it lands between.
+          e.preventDefault();
+          selectScene(entry.id, e.shiftKey);
+        }
+      }}
       onClick={(e) => e.stopPropagation()}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -458,7 +472,6 @@ export function MultiPageCanvas() {
   const renamePage = useAppStore((s) => s.renamePage);
   const updateLayoutStyle = useAppStore((s) => s.updateLayoutStyle);
   const movePagesBy = useAppStore((s) => s.movePagesBy);
-  const startPageLoading = useAppStore((s) => s.startPageLoading);
   const viewAllActivePageId = useAppStore((s) => s.viewAllActivePageId);
   const setViewAllActivePage = useAppStore((s) => s.setViewAllActivePage);
   const focusPageId = useAppStore((s) => s.focusPageId);
@@ -471,6 +484,11 @@ export function MultiPageCanvas() {
   const activeCanvasRootId = useAppStore((s) => s.activeCanvasRootId);
   const setActiveCanvas = useAppStore((s) => s.setActiveCanvas);
   const activeTool = useAppStore((s) => s.activeTool);
+  // The Bulk edit view shows this same canvas as a preview: pan and zoom, and select banners (click,
+  // shift-click or a selection box) — but banners can't be moved, renamed, right-clicked or added
+  // to, their layers can't be selected, and no editing panel opens. Its rulers sit inside the
+  // preview window rather than along the screen's edges.
+  const readOnly = useAppStore((s) => s.workspaceView !== 'edit');
   const showRulers = useAppStore((s) => s.showRulers);
   const toggleRulers = useAppStore((s) => s.toggleRulers);
   const setCanvasDotBackground = useAppStore((s) => s.setCanvasDotBackground);
@@ -526,7 +544,7 @@ export function MultiPageCanvas() {
   // jump a plain `setCamera` would give — used for "bring the primary back on screen" (the "ALL
   // SIZES" + icon's onFocusPrimary), where a sudden cut reads as jarring. Cancels any prior
   // in-flight animation first so rapid repeat clicks retarget smoothly rather than fighting.
-  function animateCameraTo(target: Camera, duration = 400) {
+  function animateCameraTo(target: Camera, duration = 400, onDone?: () => void) {
     if (cameraAnimRef.current !== null) cancelAnimationFrame(cameraAnimRef.current);
     const start = camera;
     const startTime = performance.now();
@@ -539,6 +557,7 @@ export function MultiPageCanvas() {
         zoom: start.zoom + (target.zoom - start.zoom) * eased,
       });
       cameraAnimRef.current = t < 1 ? requestAnimationFrame(tick) : null;
+      if (t >= 1) onDone?.();
     }
     cameraAnimRef.current = requestAnimationFrame(tick);
   }
@@ -580,11 +599,7 @@ export function MultiPageCanvas() {
   // cleanup: a cleanup tied to `camera` would also fire (clearing to `null` for a frame) on every
   // single pan/zoom tick, not just on unmount.
   useEffect(() => {
-    setCanvasDotBackground({
-      visible: camera.zoom >= 0.3,
-      size: `${DOT_SPACING * camera.zoom}px ${DOT_SPACING * camera.zoom}px`,
-      position: `${camera.x + canvasOffsetX}px ${camera.y}px`,
-    });
+    setCanvasDotBackground({ x: camera.x, y: camera.y, zoom: camera.zoom, offsetX: canvasOffsetX });
   }, [camera, canvasOffsetX, setCanvasDotBackground]);
 
   // Clears it only on unmount, so a stale value from a previous canvas mount never shows on a
@@ -844,7 +859,12 @@ export function MultiPageCanvas() {
       const zoom = clamp(Math.min(targetW / entry.layout.size.width, targetH / entry.layout.size.height), MIN_ZOOM, MAX_ZOOM);
       const x = viewport.width / 2 - (entry.pos.x + entry.layout.size.width / 2) * zoom;
       const y = viewport.height / 2 - (entry.pos.y + entry.layout.size.height / 2) * zoom;
-      animateCameraTo({ x, y, zoom });
+      // A grouped size's packed position depends on the zoom itself (title bars keep a fixed
+      // screen height — see `titleClearance`), so the position used above is only right for the
+      // zoom it started from. Once the new zoom has landed, a plain pan (see revealPageId below)
+      // re-centers on where the page actually sits at that zoom.
+      const pageId = focusPageId;
+      animateCameraTo({ x, y, zoom }, 400, () => requestRevealPage(pageId));
     }
     clearFocusPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1189,7 +1209,8 @@ export function MultiPageCanvas() {
 
   function handleCanvasMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
     // Background dragging pans the camera in the hand ("move") tool; in every other tool the same
-    // drag instead rubber-bands a selection box, and a plain click is click-to-deselect.
+    // drag instead rubber-bands a selection box (whole banners only — it never reaches layers),
+    // and a plain click is click-to-deselect. Same in the Bulk edit view's preview.
     if (activeTool !== 'move') {
       startMarqueeSelect(e);
       return;
@@ -1225,81 +1246,13 @@ export function MultiPageCanvas() {
     }
     setViewAllActivePage(null);
     selectGroup(null);
+    // A plain click on the background (no drag) also clears the banner selection in Bulk edit,
+    // where there's no other way back to "nothing selected".
+    if (readOnly) selectScene(null);
   }
 
   function handleAddAdjacent(source: PageEntry, edge: 'right' | 'bottom', results: QuickSizeResult[]) {
-    const anchor =
-      edge === 'right'
-        ? {
-            x: source.pos.x + source.layout.size.width + PAGE_GAP,
-            y: source.pos.y,
-          }
-        : {
-            x: source.pos.x,
-            y: source.pos.y + source.layout.size.height + PAGE_GAP,
-          };
-
-    // Both of these are a demo-only convenience meant to show off the auto-fill concept once —
-    // repeating it for every later primary a user adds via "+" would just be redundant noise on
-    // top of a group they're deliberately building fresh. See isFirstPrimaryGroup's own comment.
-    const showDemoFill = isFirstPrimaryGroup(useAppStore.getState(), source.id);
-
-    let cursorX = anchor.x;
-    const newIds: string[] = [];
-    const newHeightById: Record<string, number> = {};
-    for (const result of results) {
-      const setId = nextId('set');
-      const productId = nextId('product');
-      const adaptedLayout = createAdaptedLayout(source.layout, {
-        setId,
-        productId,
-        width: result.width,
-        height: result.height,
-        label: result.label,
-        presetId: result.presetId,
-        ruleSetId: result.ruleSetId,
-      });
-      const filledLayout = showDemoFill ? applyPrototypeSizeFill(adaptedLayout) : adaptedLayout;
-      // Mocks the finished composition (coupon/logo/headline/button/bottom_banner/product shot)
-      // onto every freshly generated size, per public/samples/position-overlay-spec.md — percentage
-      // positions keyed off the new size's own wide/square/tall aspect-ratio archetype.
-      const newLayout: Layout = showDemoFill
-        ? { ...filledLayout, elements: [...filledLayout.elements, ...buildOverlayElements(result.width, result.height)] }
-        : filledLayout;
-      const newSet: BannerSet = {
-        id: setId,
-        name: result.label,
-        sourceLayoutId: newLayout.id,
-        layoutIds: [newLayout.id],
-        productIds: [],
-      };
-      upsertLayout(newLayout);
-      loadSet(newSet, { x: cursorX, y: anchor.y });
-      startPageLoading(setId);
-      newIds.push(setId);
-      newHeightById[setId] = result.height;
-      cursorX += result.width + PAGE_GAP;
-    }
-
-    // Self-organizes this batch tallest-first before it joins the group's pack order (see
-    // packShelves) — only this fresh batch is sorted; any sizes already in the group keep
-    // whatever order a prior manual drag-to-reorder left them in, and these just append after.
-    newIds.sort((a, b) => newHeightById[b] - newHeightById[a]);
-    // Whichever platform this batch's sizes came from (if any) — a mixed-platform batch just takes
-    // the first one, since picking sizes from more than one platform in a single confirm is a rare
-    // edge case, not a meaningful "this group belongs to two platforms" scenario.
-    const platformId = results.find((r) => r.platformId)?.platformId;
-    // Only used when this call actually creates a brand-new group (groupPagesWith ignores
-    // `name`/`platformId` when extending an existing one) — named after the primary banner
-    // itself, so the group reads the same as the size that spawned it. Renamable afterward.
-    groupPagesWith(source.id, newIds, source.set.name, platformId);
-    // If the source was still ungrouped, it just moved off the shared default canvas onto its own
-    // — follow it there so the set doesn't vanish right after you added sizes to it. A no-op when
-    // this only extended a group the source (and the active canvas) already belonged to. Reading
-    // the canvas root (not the raw group id) keeps this correct even when the source is bundled
-    // alongside other independent primaries (see canvasRootOf) — otherwise this would jump to
-    // showing *only* the source's own new group, hiding the rest of the bundle.
-    setActiveCanvas(canvasRootOf(useAppStore.getState(), source.id));
+    addSizesTo(source.id, results, edge);
     // The source scene was selected (that's what showed the "add sizes" affordance in the first
     // place) — leaving it selected would dim every sibling just generated, reading as if something
     // went wrong. Clear it so the whole new group shows at full opacity.
@@ -1391,6 +1344,10 @@ export function MultiPageCanvas() {
         className="absolute inset-0 overflow-hidden"
         style={{
           cursor: activeTool === 'move' ? 'grab' : 'default',
+          // In Bulk edit this canvas sits in its own window over an opaque background, which hides
+          // the screen-wide dot backdrop Shell paints for Edit — so it draws its own dots, lined
+          // up with the camera in this element's own coordinates.
+          ...(readOnly && dotGridStyle(camera)),
         }}
         onMouseDown={handleCanvasMouseDown}
         onClick={handleCanvasClick}
@@ -1539,7 +1496,7 @@ export function MultiPageCanvas() {
           />
         )}
       </div>
-      {showRulers && <RulerOverlay camera={camera} viewport={viewport} canvasOffsetX={canvasOffsetX} />}
+      {showRulers && <RulerOverlay camera={camera} viewport={viewport} canvasOffsetX={canvasOffsetX} contained={readOnly} />}
 
       <div className="pointer-events-none absolute right-6 bottom-6 z-10">
         <CanvasZoomBar

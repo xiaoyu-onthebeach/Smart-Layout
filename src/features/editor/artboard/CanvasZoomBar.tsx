@@ -18,7 +18,8 @@ export function CanvasZoomBar({
   onSetZoom: (pct: number) => void;
   onFitToScreen: () => void;
   showRulers: boolean;
-  onToggleRulers: () => void;
+  /** Left out where rulers don't apply (the Bulk edit view's preview canvas) — hides the toggle. */
+  onToggleRulers?: () => void;
 }) {
   const t = useT();
   return (
@@ -51,19 +52,23 @@ export function CanvasZoomBar({
       >
         <img src="/icons/Expand.svg" alt="" className="size-4" />
       </button>
-      <div className="h-8 w-px shrink-0" style={{ background: '#2F2F37' }} />
-      <button
-        type="button"
-        aria-label={showRulers ? t('Hide rulers') : t('Show rulers')}
-        aria-pressed={showRulers}
-        onClick={onToggleRulers}
-        className={cn(
-          'flex size-8 shrink-0 items-center justify-center rounded-full transition-colors',
-          showRulers ? 'bg-white/10' : 'hover:bg-white/5',
-        )}
-      >
-        <img src={showRulers ? '/icons/ruler-on.svg' : '/icons/ruler-off.svg'} alt="" className="size-4" />
-      </button>
+      {onToggleRulers && (
+        <>
+          <div className="h-8 w-px shrink-0" style={{ background: '#2F2F37' }} />
+          <button
+            type="button"
+            aria-label={showRulers ? t('Hide rulers') : t('Show rulers')}
+            aria-pressed={showRulers}
+            onClick={onToggleRulers}
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-full transition-colors',
+              showRulers ? 'bg-white/10' : 'hover:bg-white/5',
+            )}
+          >
+            <img src={showRulers ? '/icons/ruler-on.svg' : '/icons/ruler-off.svg'} alt="" className="size-4" />
+          </button>
+        </>
+      )}
     </div>
   );
 }

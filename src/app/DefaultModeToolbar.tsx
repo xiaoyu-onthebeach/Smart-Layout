@@ -151,7 +151,10 @@ export function DefaultModeToolbar() {
   const setActiveTool = useAppStore((s) => s.setActiveTool);
   const setShapeToolKind = useAppStore((s) => s.setShapeToolKind);
   const selectedSceneIds = useAppStore((s) => s.selectedSceneIds);
-  const hasSceneSelected = selectedSceneIds.length > 0;
+  // The Bulk edit view's preview canvas only ever gets the cursor and hand — no creation tools or
+  // their shortcuts, even if a scene somehow ended up selected.
+  const workspaceView = useAppStore((s) => s.workspaceView);
+  const hasSceneSelected = selectedSceneIds.length > 0 && workspaceView === 'edit';
 
   // R/O/L arm the shape tool with that kind directly — the same shortcuts the picker itself
   // advertises next to each option. P arms the pen tool (svg import & edit spec, Part 3). Both only

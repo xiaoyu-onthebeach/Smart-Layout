@@ -31,6 +31,8 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   activeCanvasRootId: null,
   matchSelectEnabled: false,
   showRulers: false,
+  workspaceView: 'edit',
+  bulkEditActivePageId: null,
   canvasDotBackground: null,
   language: 'en',
 
@@ -181,6 +183,24 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
       };
     }),
   toggleRulers: () => set((state) => ({ showRulers: !state.showRulers })),
+  setWorkspaceView: (view) =>
+    set(
+      view === 'edit'
+        ? { workspaceView: view, bulkEditActivePageId: null }
+        : {
+            workspaceView: view,
+            selectedSceneIds: [],
+            viewAllActivePageId: null,
+            selectedElements: [],
+            autoMatchedElements: [],
+            editingTextElementId: null,
+            editingVectorElementId: null,
+            editingVectorJoint: null,
+            textRangeSelection: null,
+            activeTool: 'select',
+          },
+    ),
+  setBulkEditActivePage: (pageId) => set({ bulkEditActivePageId: pageId }),
   setCanvasDotBackground: (bg) => set({ canvasDotBackground: bg }),
   setLanguage: (language) => set({ language }),
 });

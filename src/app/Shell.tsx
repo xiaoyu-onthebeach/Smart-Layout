@@ -1,7 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { usePanelRef } from 'react-resizable-panels';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useAppStore } from '@/store/useAppStore';
+import { cn } from '@/lib/utils';
+import { dotGridStyle } from '@/lib/canvas-dots';
 import { initUndoHistory, undo } from '@/store/undoHistory';
 import { AddBannersPanel } from '@/features/size-select/AddBannersPanel';
 import { MultiPageCanvas } from '@/features/editor/artboard/MultiPageCanvas';
@@ -9,8 +13,11 @@ import { RULER_SIZE } from '@/features/editor/artboard/RulerOverlay';
 import { TopBar } from './TopBar';
 import { LeftPanel } from './LeftPanel';
 import { PlaygroundsPage } from './PlaygroundsPage';
+import { TestDataButton } from './TestDataButton';
 import { DefaultModeToolbar } from './DefaultModeToolbar';
 import { InspectorPanel } from './InspectorPanel';
+import { BulkEditView } from './BulkEditView';
+import { BulkEditDownloadPanel } from './BulkEditDownloadPanel';
 
 /**
  * The canvas's dot-grid background, painted at the very top of the app (before the sidebar/canvas
@@ -24,16 +31,7 @@ import { InspectorPanel } from './InspectorPanel';
 function CanvasDotBackdrop() {
   const dot = useAppStore((s) => s.canvasDotBackground);
   if (!dot) return null;
-  return (
-    <div
-      className="pointer-events-none absolute inset-0"
-      style={{
-        backgroundImage: dot.visible ? 'radial-gradient(rgba(255,255,255,0.08) 2px, transparent 2px)' : 'none',
-        backgroundSize: dot.size,
-        backgroundPosition: dot.position,
-      }}
-    />
-  );
+  return <div className="pointer-events-none absolute inset-0" style={dotGridStyle(dot, dot.offsetX)} />;
 }
 
 export function Shell() {
@@ -50,9 +48,25 @@ export function Shell() {
   const editingVectorElementId = useAppStore((s) => s.editingVectorElementId);
   const setEditingVectorElement = useAppStore((s) => s.setEditingVectorElement);
   const showRulers = useAppStore((s) => s.showRulers);
+  const workspaceView = useAppStore((s) => s.workspaceView);
+  const isBulkEdit = step === 'editor' && workspaceView === 'bulkEdit';
+  // Opens the Bulk edit content panel at half the screen the first time, then at whatever width it
+  // was last dragged to; closes it again (remembering that width) on the way back to Edit.
+  const bulkPanelRef = usePanelRef();
+  const bulkPanelSizeRef = useRef('50');
+  useEffect(() => {
+    const panel = bulkPanelRef.current;
+    if (!panel) return;
+    if (isBulkEdit) {
+      if (panel.isCollapsed()) panel.resize(bulkPanelSizeRef.current);
+    } else if (!panel.isCollapsed()) {
+      bulkPanelSizeRef.current = String(panel.getSize().asPercentage);
+      panel.collapse();
+    }
+  }, [isBulkEdit, bulkPanelRef]);
   // The ruler toggle only ever lives inside the editor's own canvas toolbar — this guard just
   // keeps a stale flag from a previous editor session from shifting the sidebar on another step.
-  const rulersActive = showRulers && step === 'editor';
+  const rulersActive = showRulers && step === 'editor' && workspaceView === 'edit';
   // The toolbar is a permanent fixture of the playground, not something that waits for a
   // selection — with nothing selected it still mounts, just narrowed to Select/Move only (see
   // DefaultModeToolbar's own `hasSceneSelected` check, which adds Text/Shape once a scene is).
@@ -79,6 +93,10 @@ export function Shell() {
         undo();
         return;
       }
+
+      // Every other shortcut acts on the canvas — none of them apply while the Bulk edit view is
+      // showing instead of it.
+      if (useAppStore.getState().workspaceView !== 'edit') return;
 
       // Enter/Esc toggle a selected vector layer's joint-editing mode (svg import & edit spec,
       // Part 2) — Enter only when exactly one vector is selected and focused (not mid-edit already);
@@ -164,7 +182,14 @@ export function Shell() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [viewAllActivePageId, selectedElements, deletePage, removeElement, duplicateElement, reorderElement, selectElement, setSelectedElements, groupElements, editingVectorElementId, setEditingVectorElement]);
 
-  if (step === 'playgrounds') return <PlaygroundsPage />;
+  if (step === 'playgrounds') {
+    return (
+      <>
+        <PlaygroundsPage />
+        <TestDataButton />
+      </>
+    );
+  }
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -175,25 +200,43 @@ export function Shell() {
             of it (rendered after, transparent) rather than reserving its own row. */}
         <main className="absolute inset-0 flex">
           {(step === 'start' || step === 'editor') && (
-            <>
-              {/* The ruler-driven extra push is a `transform`, not `margin`/padding — a margin
-                  here would grow this flex item's own footprint, shrinking the canvas sibling's
-                  measured width right along with it, which was re-triggering the canvas's
-                  auto-fit-on-resize effect (silently resetting the user's own zoom/pan) every
-                  time the ruler toggled. `transform` moves the panel without touching layout at
-                  all, so the canvas's own size never changes and never re-fits because of it —
-                  the panel just visually slides over a bit more of it, which is fine since the
-                  panel's own background is already opaque. The constant `paddingTop: 56` (header
-                  height, unrelated to rulers) still clears the floating header underneath. */}
-              <div className="transition-transform duration-150" style={{ paddingTop: 56, transform: rulersActive ? `translate(${RULER_SIZE}px, ${RULER_SIZE}px)` : undefined }}>
-                <LeftPanel />
-              </div>
-              <div className="relative flex-1 overflow-hidden">
-                {step === 'editor' && <MultiPageCanvas />}
-                {showToolbar && <DefaultModeToolbar />}
-                {step === 'editor' && <InspectorPanel />}
-              </div>
-            </>
+            // Always the same two panels, so switching views never remounts the canvas: in Edit
+            // the left (Bulk edit content) panel is collapsed to nothing and its divider hidden; in
+            // Bulk edit it opens beside the canvas, which becomes a preview where only whole banners
+            // can be selected (see MultiPageCanvas's own `readOnly`), and both editing panels (left
+            // panel, inspector) step aside — selecting banners shows download options instead.
+            <ResizablePanelGroup className="flex-1">
+              <ResizablePanel id="bulk-edit-content" panelRef={bulkPanelRef} collapsible collapsedSize={0} defaultSize="0" minSize="25">
+                {isBulkEdit && <BulkEditView />}
+              </ResizablePanel>
+              {/* Same color as the background around it until hovered — the window's own border already
+                  separates the two sides. */}
+              <ResizableHandle disabled={!isBulkEdit} className={cn('bg-[#19191D] transition-colors hover:bg-white/10', !isBulkEdit && 'hidden')} />
+              <ResizablePanel id="workspace" minSize="25">
+                {/* In Bulk edit the canvas becomes a rounded window sitting on the view's own
+                    background, below the floating header. */}
+                <div className={cn('flex h-full', isBulkEdit && 'bg-[#19191D] p-2 pt-16')}>
+                  {/* The ruler-driven extra push is a `transform`, not `margin`/padding — a margin
+                      here would grow this flex item's own footprint, shrinking the canvas sibling's
+                      measured width right along with it, which was re-triggering the canvas's
+                      auto-fit-on-resize effect (silently resetting the user's own zoom/pan) every
+                      time the ruler toggled. `transform` moves the panel without touching layout at
+                      all, so the canvas's own size never changes and never re-fits because of it —
+                      the panel just visually slides over a bit more of it, which is fine since the
+                      panel's own background is already opaque. The constant `paddingTop: 56` (header
+                      height, unrelated to rulers) still clears the floating header underneath. */}
+                  <div className={cn('transition-transform duration-150', isBulkEdit && 'hidden')} style={{ paddingTop: 56, transform: rulersActive ? `translate(${RULER_SIZE}px, ${RULER_SIZE}px)` : undefined }}>
+                    <LeftPanel />
+                  </div>
+                  <div className={cn('relative flex-1 overflow-hidden', isBulkEdit && 'rounded-2xl border border-white/10 bg-background')}>
+                    {step === 'editor' && <MultiPageCanvas />}
+                    {showToolbar && <DefaultModeToolbar />}
+                    {step === 'editor' && !isBulkEdit && <InspectorPanel />}
+                    {isBulkEdit && <BulkEditDownloadPanel />}
+                  </div>
+                </div>
+              </ResizablePanel>
+            </ResizablePanelGroup>
           )}
           {step === 'allLayouts' && (
             <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -205,6 +248,7 @@ export function Shell() {
       </div>
       <AddBannersPanel />
       <Toaster />
+      <TestDataButton />
     </TooltipProvider>
   );
 }

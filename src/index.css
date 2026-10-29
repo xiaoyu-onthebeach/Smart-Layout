@@ -180,6 +180,17 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Scrollbars stay invisible until the pointer is over the area that scrolls. `:hover` also
+     matches every ancestor of whatever is hovered, so it's always the scroll container you're
+     actually over that shows its bar. Thin and transparent rather than `none`, so the bar keeps
+     its space and content never shifts when it appears. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  *:hover {
+    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  }
   /* Every number input in this app (custom width/height fields, radius, etc.) uses its own
      up/down control elsewhere in the UI, if any at all — the native spinner is just visual noise
      that only appears on hover. */

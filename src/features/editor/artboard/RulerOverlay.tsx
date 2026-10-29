@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 /** Purely decorative ruler overlay — ticks/labels track the canvas's own pan/zoom (`camera`) so
  * they look right at any zoom level, but nothing here is interactive: no draggable guides, no
  * click-to-measure, no snapping. Toggled by the ruler icon in `CanvasZoomBar`. */
@@ -50,7 +51,7 @@ function buildTicks(offset: number, zoom: number, trackLength: number): Tick[] {
   return ticks;
 }
 
-function TopRuler({ offset, zoom, trackWidth }: { offset: number; zoom: number; trackWidth: number }) {
+function TopRuler({ offset, zoom, trackWidth, contained }: { offset: number; zoom: number; trackWidth: number; contained: boolean }) {
   const ticks = buildTicks(offset, zoom, trackWidth);
   return (
     // `fixed`, not `absolute` — same reasoning as LeftRuler below: scoping this to the canvas
@@ -58,7 +59,7 @@ function TopRuler({ offset, zoom, trackWidth }: { offset: number; zoom: number; 
     // above the sidebar itself, just the dot-grid showing through. `fixed` hugs the true browser
     // edge instead, so the bar reads as one continuous strip across the whole top of the app.
     <div
-      className="pointer-events-none fixed top-0 z-20 overflow-hidden"
+      className={cn('pointer-events-none top-0 z-20 overflow-hidden', contained ? 'absolute' : 'fixed')}
       style={{ left: RULER_SIZE, right: 0, height: RULER_SIZE, background: RULER_BG, boxShadow: RULER_SHADOW, backdropFilter: 'blur(16px)' }}
     >
       {ticks.map((tick, i) => (
@@ -78,14 +79,14 @@ function TopRuler({ offset, zoom, trackWidth }: { offset: number; zoom: number; 
   );
 }
 
-function LeftRuler({ offset, zoom, trackHeight }: { offset: number; zoom: number; trackHeight: number }) {
+function LeftRuler({ offset, zoom, trackHeight, contained }: { offset: number; zoom: number; trackHeight: number; contained: boolean }) {
   const ticks = buildTicks(offset, zoom, trackHeight);
   return (
     // `fixed`, not `absolute` — this bar hugs the true browser edge regardless of where the canvas
     // viewport itself sits (the sidebar shifts right to make room for it; see Shell.tsx), unlike
     // TopRuler, which stays scoped to the canvas viewport it measures.
     <div
-      className="pointer-events-none fixed left-0 z-20 overflow-hidden"
+      className={cn('pointer-events-none left-0 z-20 overflow-hidden', contained ? 'absolute' : 'fixed')}
       style={{ top: RULER_SIZE, bottom: 0, width: RULER_SIZE, background: RULER_BG, boxShadow: RULER_SHADOW, backdropFilter: 'blur(16px)' }}
     >
       {ticks.map((tick, i) => (
@@ -116,6 +117,7 @@ export function RulerOverlay({
   camera,
   viewport,
   canvasOffsetX,
+  contained = false,
 }: {
   camera: { x: number; y: number; zoom: number };
   viewport: { width: number; height: number };
@@ -125,17 +127,21 @@ export function RulerOverlay({
    * math needs to travel from "camera-relative, inside the canvas container" out to "true
    * viewport" coordinates the same way the dot-grid backdrop's own phase-matching already does. */
   canvasOffsetX: number;
+  /** Inside the canvas's own box instead of along the browser's edges — for the Replace view, where
+   * the canvas is a window beside the content table rather than the whole screen. */
+  contained?: boolean;
 }) {
   if (viewport.width <= 0 || viewport.height <= 0) return null;
+  const offsetX = contained ? 0 : canvasOffsetX;
   return (
     <>
-      <TopRuler offset={camera.x + canvasOffsetX - RULER_SIZE} zoom={camera.zoom} trackWidth={canvasOffsetX + viewport.width - RULER_SIZE} />
-      <LeftRuler offset={camera.y - RULER_SIZE} zoom={camera.zoom} trackHeight={viewport.height - RULER_SIZE} />
+      <TopRuler offset={camera.x + offsetX - RULER_SIZE} zoom={camera.zoom} trackWidth={offsetX + viewport.width - RULER_SIZE} contained={contained} />
+      <LeftRuler offset={camera.y - RULER_SIZE} zoom={camera.zoom} trackHeight={viewport.height - RULER_SIZE} contained={contained} />
       {/* Corner square at the true top-left of the app, where the (fixed) left ruler starts —
           matches the header's own push-down-and-right so nothing overlaps it. The crosshair inside
           it (one line continuing each ruler's own edge tick) marks where the two rulers' zero
           points meet, the same corner crosshair every ruler-equipped design tool shows. */}
-      <div className="pointer-events-none fixed top-0 left-0 z-20" style={{ width: RULER_SIZE, height: RULER_SIZE, background: '#19191D' }}>
+      <div className={cn('pointer-events-none top-0 left-0 z-20', contained ? 'absolute' : 'fixed')} style={{ width: RULER_SIZE, height: RULER_SIZE, background: '#19191D' }}>
         <div className="absolute right-[1px] bottom-0" style={{ width: 1, height: 8, background: TICK_MAJOR_COLOR }} />
         <div className="absolute right-0 bottom-[1px]" style={{ width: 8, height: 1, background: TICK_MAJOR_COLOR }} />
       </div>

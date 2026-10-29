@@ -8,6 +8,7 @@ import {
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import { RULER_SIZE } from '@/features/editor/artboard/RulerOverlay';
+import { ViewTabs } from './ViewTabs';
 
 // Document-level title — not tied to any single page, so it's a fixed label for now.
 const DOCUMENT_TITLE = 'Winter EC Campaign 2027';
@@ -18,10 +19,12 @@ export function TopBar() {
   const downloading = useAppStore((s) => s.downloading);
   const showRulers = useAppStore((s) => s.showRulers);
   const step = useAppStore((s) => s.step);
+  const workspaceView = useAppStore((s) => s.workspaceView);
   const t = useT();
   // Rulers are only ever toggled on while editing (see CanvasZoomBar) — this guard just keeps a
   // stale `showRulers` from a previous editor session pushing the header around on another step.
-  const rulersActive = showRulers && step === 'editor';
+  // Rulers belong to the canvas, so the Bulk edit view (which hides it) never shifts the header either.
+  const rulersActive = showRulers && step === 'editor' && workspaceView === 'edit';
 
   return (
     <header
@@ -32,6 +35,14 @@ export function TopBar() {
         <img src="/icons/logo.svg" alt="Beachside" className="size-8" />
         <span className="text-sm font-medium text-chrome-fg">{DOCUMENT_TITLE}</span>
       </div>
+
+      {/* Centered on the header itself, independent of how wide the title or the right-hand
+          controls are. */}
+      {step === 'editor' && (
+        <div className="absolute left-1/2 -translate-x-1/2">
+          <ViewTabs />
+        </div>
+      )}
 
       <div className="flex items-center gap-2 p-3">
         {downloading && <img src="/icons/dropdown/Downloading.svg" alt="" className="size-6 animate-spin" />}

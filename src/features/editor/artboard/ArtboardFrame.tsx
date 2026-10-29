@@ -190,7 +190,9 @@ function ArtboardFrameImpl({
 
   const selectedSceneIds = useAppStore((s) => s.selectedSceneIds);
   const selectScene = useAppStore((s) => s.selectScene);
-  const isSceneSelected = selectedSceneIds.includes(layout.setId);
+  // Bulk edit's row being edited shows as selected too (see bulkEditActivePageId).
+  const bulkEditActive = useAppStore((s) => s.bulkEditActivePageId === layout.setId);
+  const isSceneSelected = selectedSceneIds.includes(layout.setId) || bulkEditActive;
   const updateElement = useAppStore((s) => s.updateElement);
   const setGroupLayout = useAppStore((s) => s.setGroupLayout);
   const addElement = useAppStore((s) => s.addElement);
