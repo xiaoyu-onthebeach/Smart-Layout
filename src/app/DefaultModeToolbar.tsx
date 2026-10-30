@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import type { Tool, WorkspaceView } from '@/store/types';
@@ -192,17 +193,23 @@ function ModeSwitch() {
   return (
     <div className="flex h-full items-center gap-1 bg-[#26262C] px-3 py-1">
       {MODES.map(({ value, label, icon: Icon }) => (
-        <button
-          key={value}
-          type="button"
-          aria-label={t(label)}
-          title={t(label)}
-          aria-pressed={view === value}
-          onClick={() => setView(value)}
-          className={cn('flex size-8 items-center justify-center rounded-lg transition-colors', view === value ? 'bg-[#131316] text-white' : 'text-white/45 hover:text-white')}
-        >
-          <Icon className="size-5" />
-        </button>
+        // Figma "Tooltip with Shortcut": the mode's name above the button.
+        <Tooltip key={value}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={t(label)}
+              aria-pressed={view === value}
+              onClick={() => setView(value)}
+              className={cn('flex size-8 items-center justify-center rounded-lg transition-colors', view === value ? 'bg-[#131316] text-white' : 'text-white/45 hover:text-white')}
+            >
+              <Icon className="size-5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={8} className="text-[14px]">
+            {t(`${label} mode`)}
+          </TooltipContent>
+        </Tooltip>
       ))}
     </div>
   );

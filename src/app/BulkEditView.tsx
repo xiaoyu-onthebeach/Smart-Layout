@@ -43,8 +43,13 @@ const HEADER_HEIGHT = 56;
 const TOP_FADE_LENGTH = 40;
 /** The left area's side padding — the pinned filter bar spans it too, so both use this one value. */
 const SIDE_PADDING = 24;
-/** Space above the Replace title, inside the scrolling area (which starts below the header). */
+/** Room for the tables' scrollbar, kept on both sides (so the left and right margins match) and on
+ * the filter bar too (so it lines up with the tables) — zero where scrollbars overlay the content. */
+const SCROLLBAR_ROOM = { scrollbarGutter: 'stable both-edges' } as const;
+/** Space between the header and the filter bar. */
 const SCROLL_TOP_PADDING = 96 - HEADER_HEIGHT;
+/** Space between the filter bar and the first table (the top of the tables' scrolling area). */
+const FILTERS_TO_TABLES = 40;
 /** Base background of every cell — opaque (the page's own color) so the pinned columns cover
  * whatever scrolls underneath them. */
 const ROW_BG = '#19191D';
@@ -1282,7 +1287,7 @@ function SizeFilterMenu({ sizes, onChange, groups }: { sizes: Set<string>; onCha
   );
 }
 
-/** Channel and size filters on the left, a text search on the right — between the title and the tables. */
+/** Channel and size filters on the left, a text search on the right — above the tables. */
 function FilterBar({
   sizes,
   onSizesChange,
@@ -1382,51 +1387,38 @@ export function BulkEditView() {
   }, [matchesKey, setBulkEditFilterMatches]);
   useEffect(() => () => setBulkEditFilterMatches(null), [setBulkEditFilterMatches]);
   return (
-    // The scrolling area starts below the floating header, so its scrollbar runs only down the
-    // content, never behind the Create / Replace tabs.
-    <div className="relative h-full animate-in bg-[#19191D] fade-in-0 duration-300" style={{ paddingTop: HEADER_HEIGHT }}>
-      <div className="h-full overflow-x-hidden overflow-y-auto pb-6" style={{ paddingTop: SCROLL_TOP_PADDING, paddingLeft: SIDE_PADDING, paddingRight: SIDE_PADDING }}>
-        <div className="flex flex-col gap-10">
-          <div className="flex flex-col gap-1">
-            <h3 className="text-2xl leading-8 font-semibold tracking-[-0.01em] text-white">{t('Replace')}</h3>
-            <p className="text-[14px] leading-[1.4] tracking-[-0.01em] text-white/65">{t('Edit content in batch, create new sizes, without spending much time')}</p>
-          </div>
-          {groups.length > 0 && (
-            // Stays pinned to the top of the scrolling area once scrolled to, over the tables, on the
-            // page's own background (edge to edge, across the side padding) with a short fade below.
-            <div
-              className="sticky z-[6] py-3 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-gradient-to-b after:from-[#19191D] after:to-transparent"
-              // A sticky element stops at the scroll area's padding — pulled up by it, so the bar pins
-              // flush under the header and nothing shows through above it.
-              style={{
-                background: ROW_BG,
-                marginTop: -12,
-                marginBottom: -12,
-                marginLeft: -SIDE_PADDING,
-                marginRight: -SIDE_PADDING,
-                paddingLeft: SIDE_PADDING,
-                paddingRight: SIDE_PADDING,
-                top: -SCROLL_TOP_PADDING,
-              }}
-            >
-              <FilterBar sizes={sizes} onSizesChange={setSizes} sizeGroups={sizeGroups} channel={channel} onChannelChange={setChannel} channels={channels} query={query} onQueryChange={setQuery} />
-            </div>
-          )}
-          {shown.map((g) => (
-            <BannerGroupTable key={g.primaryId} primaryId={g.primaryId} memberIds={g.memberIds} rowIds={g.rowIds} />
-          ))}
-          {groups.length === 0 && <span className="text-[13px] text-white/45">{t('No banners yet.')}</span>}
-          {groups.length > 0 && shown.length === 0 && <span className="text-[13px] text-white/45">{t('No banners match these filters.')}</span>}
+    // Below the floating header: the filter bar, fixed, then the tables scrolling under it — so
+    // their scrollbar runs only down the tables, never behind the header or the filters.
+    <div className="relative flex h-full animate-in flex-col bg-[#19191D] fade-in-0 duration-300" style={{ paddingTop: HEADER_HEIGHT }}>
+      {groups.length > 0 && (
+        // Reserves the same scrollbar room as the tables' area below (see SCROLLBAR_ROOM), so the bar
+        // lines up with the tables on both sides.
+        <div className="shrink-0 overflow-hidden" style={{ paddingTop: SCROLL_TOP_PADDING, paddingLeft: SIDE_PADDING, paddingRight: SIDE_PADDING, ...SCROLLBAR_ROOM }}>
+          <FilterBar sizes={sizes} onSizesChange={setSizes} sizeGroups={sizeGroups} channel={channel} onChannelChange={setChannel} channels={channels} query={query} onQueryChange={setQuery} />
         </div>
+      )}
+      <div className="relative min-h-0 flex-1">
+        <div
+          className="h-full overflow-x-hidden overflow-y-auto pb-6"
+          style={{ paddingTop: groups.length > 0 ? FILTERS_TO_TABLES : SCROLL_TOP_PADDING, paddingLeft: SIDE_PADDING, paddingRight: SIDE_PADDING, ...SCROLLBAR_ROOM }}
+        >
+          <div className="flex flex-col gap-10">
+            {shown.map((g) => (
+              <BannerGroupTable key={g.primaryId} primaryId={g.primaryId} memberIds={g.memberIds} rowIds={g.rowIds} />
+            ))}
+            {groups.length === 0 && <span className="text-[13px] text-white/45">{t('No banners yet.')}</span>}
+            {groups.length > 0 && shown.length === 0 && <span className="text-[13px] text-white/45">{t('No banners match these filters.')}</span>}
+          </div>
+        </div>
+        {/* Tables scrolling up fade out at the top of their area, just under the filters, in the
+            page's own background color, instead of being cut off by a hard edge. Stops short of
+            the right edge so the scrollbar stays visible. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute top-0 right-3 left-0 z-[5]"
+          style={{ height: TOP_FADE_LENGTH, background: `linear-gradient(to bottom, ${ROW_BG}, rgba(25, 25, 29, 0))` }}
+        />
       </div>
-      {/* Content scrolling up fades out at the top of the scrolling area, just under the header,
-          in the page's own background color, instead of being cut off by a hard edge. Stops short
-          of the right edge so the scrollbar stays visible. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute right-3 left-0 z-[5]"
-        style={{ top: HEADER_HEIGHT, height: TOP_FADE_LENGTH, background: `linear-gradient(to bottom, ${ROW_BG}, rgba(25, 25, 29, 0))` }}
-      />
     </div>
   );
 }
