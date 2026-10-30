@@ -1752,9 +1752,7 @@ function ExportScaleSelect({ value, onChange }: { value: ExportScale; onChange: 
  * MultiSceneContentPanel) get this; the per-layer panels don't have anything to export on their own.
  * Renders straight to a browser download (no intermediate settings dialog) — the store's own
  * `downloading` flag drives the header's spinner for the duration. */
-/** `accent`: the Export button's fill — the brand blue, or Popsicle in the Replace view (where a
- * dark label and icon read better on the light pink). */
-export function PanelExportFooter({ layouts, accent = 'blue' }: { layouts: Layout[]; accent?: 'blue' | 'popsicle' }) {
+export function PanelExportFooter({ layouts }: { layouts: Layout[] }) {
   const t = useT();
   const downloading = useAppStore((s) => s.downloading);
   const setDownloading = useAppStore((s) => s.setDownloading);
@@ -1785,10 +1783,10 @@ export function PanelExportFooter({ layouts, accent = 'blue' }: { layouts: Layou
           type="button"
           onClick={handleExport}
           disabled={downloading}
-          className={cn('flex h-8 w-full items-center justify-center gap-2 rounded-lg text-[13px] transition-colors hover:brightness-110 disabled:opacity-60', accent === 'popsicle' ? 'text-[#131316]' : 'text-white')}
-          style={{ background: accent === 'popsicle' ? 'var(--popsicle)' : '#4570FF' }}
+          className="flex h-8 w-full items-center justify-center gap-2 rounded-lg text-[13px] text-white transition-colors hover:brightness-110 disabled:opacity-60"
+          style={{ background: '#4570FF' }}
         >
-          <img src="/icons/download%2024.svg" alt="" className={cn('size-4', accent === 'popsicle' && 'brightness-0')} />
+          <img src="/icons/download%2024.svg" alt="" className="size-4" />
           {t('Export')}
         </button>
       </div>

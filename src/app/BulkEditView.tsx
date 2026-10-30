@@ -31,10 +31,10 @@ const MIN_COLUMN_WIDTH = 120;
 /** The leftmost column: drag handle (12px), 4px gap, checkbox (16px), 8px padding each side and
  * its border — wide enough for the handle at all times, so revealing it on hover moves nothing. */
 const CHECKBOX_COLUMN_WIDTH = 49;
-/** The primary's row is lit in Popsicle (the color primaries take in Replace) from the marker inward: strongest across the
+/** The primary's row is lit in the primary blue from the marker inward: strongest across the
  * checkbox cell, then fading out across Size. */
-const PRIMARY_ROW_GRADIENT_START = 'linear-gradient(90deg, rgba(245, 167, 223, 0.5) 0%, rgba(245, 167, 223, 0.2) 100%)';
-const PRIMARY_ROW_GRADIENT_END = 'linear-gradient(90deg, rgba(245, 167, 223, 0.2) 0%, rgba(245, 167, 223, 0) 100%)';
+const PRIMARY_ROW_GRADIENT_START = 'linear-gradient(90deg, rgba(69, 112, 255, 0.5) 0%, rgba(69, 112, 255, 0.2) 100%)';
+const PRIMARY_ROW_GRADIENT_END = 'linear-gradient(90deg, rgba(69, 112, 255, 0.2) 0%, rgba(69, 112, 255, 0) 100%)';
 /** The pinned row-actions column on the right. */
 const ACTIONS_COLUMN_WIDTH = 40;
 /** The floating header's height — the scrolling content starts below it. */
@@ -154,10 +154,10 @@ function Cell({
         pinned === 'right' && 'sticky right-0 z-[2] border-r-0 border-l',
         // The active cell: blue-tinted with a blue border, drawn inset so it never fights the table's
         // own grid lines. Not clipped, so its fill handle can sit across the bottom edge.
-        editable ? 'group/cell relative p-0 focus-within:bg-popsicle/10! focus-within:shadow-[inset_0_0_0_1px_var(--popsicle)]' : 'overflow-hidden px-2',
+        editable ? 'group/cell relative p-0 focus-within:bg-[#4570FF]/10! focus-within:shadow-[inset_0_0_0_1px_#4570FF]' : 'overflow-hidden px-2',
         // The rest of a multi-cell selection is just tinted; only the cell being edited (focus-within
         // above) gets the border.
-        selected && 'bg-popsicle/15!',
+        selected && 'bg-[#4570FF]/15!',
         className,
       )}
       style={{ borderColor: TABLE_BORDER, backgroundImage }}
@@ -169,7 +169,7 @@ function Cell({
           aria-hidden
           onMouseDown={onFillHandleMouseDown}
           // A larger invisible grab area around the 16×6 handle.
-          className="absolute right-[6px] -bottom-[2px] z-[1] hidden h-[6px] w-4 cursor-ns-resize rounded-[8px] border border-popsicle bg-[#2F2F37] group-focus-within/cell:block before:absolute before:-inset-x-1 before:-inset-y-2"
+          className="absolute right-[6px] -bottom-[2px] z-[1] hidden h-[6px] w-4 cursor-ns-resize rounded-[8px] border border-[#4570FF] bg-[#2F2F37] group-focus-within/cell:block before:absolute before:-inset-x-1 before:-inset-y-2"
         />
       )}
     </td>
@@ -187,10 +187,9 @@ function RowCheckbox({ checked, onChange }: { checked: boolean; onChange: () => 
       role="checkbox"
       aria-checked={checked}
       onClick={onChange}
-      className={cn('flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors', checked ? 'border-popsicle bg-popsicle' : 'border-chrome-border bg-chrome-border-subtle hover:border-popsicle')}
+      className={cn('flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors', checked ? 'border-[#4570FF] bg-[#4570FF]' : 'border-chrome-border bg-chrome-border-subtle hover:border-[#4570FF]')}
     >
-      {/* Dark on Popsicle — a white check wouldn't read on the light pink. */}
-      {checked && <img src="/icons/edit_panel/check%2016.svg" alt="" className="size-4 brightness-0" />}
+      {checked && <img src="/icons/edit_panel/check%2016.svg" alt="" className="size-4" />}
     </button>
   );
 }
@@ -275,9 +274,9 @@ function SizeCheckbox({ checked }: { checked: boolean }) {
   return (
     <span
       className="flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors"
-      style={{ background: checked ? 'var(--popsicle)' : '#26262C', borderColor: checked ? 'var(--popsicle)' : BORDER }}
+      style={{ background: checked ? '#4570FF' : '#26262C', borderColor: checked ? '#4570FF' : BORDER }}
     >
-      {checked && <Check className="size-3 text-[#131316]" />}
+      {checked && <Check className="size-3 text-white" />}
     </span>
   );
 }
@@ -484,7 +483,7 @@ function AddSizeRow({ onAdd }: { onAdd: (sizes: QuickSizeResult[]) => void }) {
             >
               {t('Cancel')}
             </button>
-            <Button size="sm" onClick={confirm} disabled={selected.size === 0} className="min-w-0 flex-1 bg-popsicle text-[13px] font-semibold text-[#131316] hover:bg-popsicle/90">
+            <Button size="sm" onClick={confirm} disabled={selected.size === 0} className="min-w-0 flex-1 text-[13px] font-semibold">
               {language === 'ja' ? `${selected.size}件のサイズを追加` : `Add ${selected.size} size${selected.size === 1 ? '' : 's'}`}
             </Button>
           </div>
@@ -530,7 +529,7 @@ function SetName({ primaryId, name }: { primaryId: string; name: string }) {
           if (e.key === 'Enter') commit();
           if (e.key === 'Escape') setDraft(null);
         }}
-        className={cn('-mx-1 min-w-0 rounded-md bg-[#26262C] px-1 outline-none focus:shadow-[inset_0_0_0_1px_var(--popsicle)]', textClass)}
+        className={cn('-mx-1 min-w-0 rounded-md bg-[#26262C] px-1 outline-none focus:shadow-[inset_0_0_0_1px_#4570FF]', textClass)}
         style={{ width: `${Math.max(draft.length, 4) + 2}ch` }}
       />
     );
@@ -1025,7 +1024,7 @@ function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string;
                                 this column, except while filters hide some rows (the order is the whole group's). */}
                             {setId === primaryId ? (
                               <>
-                                <img src="/icons/primary-row-popsicle.svg" alt={t('Primary')} className="absolute top-1/2 left-0 size-4 -translate-y-1/2 -scale-x-100" />
+                                <img src="/icons/primary-row.svg" alt={t('Primary')} className="absolute top-1/2 left-0 size-4 -translate-y-1/2 -scale-x-100" />
                                 <span className="size-3 shrink-0" />
                               </>
                             ) : filtered ? (
@@ -1129,7 +1128,7 @@ function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string;
             </div>
             {rowDrag?.lineY !== undefined && (
               // Where the dragged row will land.
-              <div aria-hidden className="pointer-events-none absolute right-0 left-0 z-[4] h-0.5 bg-popsicle" style={{ top: rowDrag.lineY - 1 }} />
+              <div aria-hidden className="pointer-events-none absolute right-0 left-0 z-[4] h-0.5 bg-[#4570FF]" style={{ top: rowDrag.lineY - 1 }} />
             )}
             {moreToTheRight && (
               <div
@@ -1322,7 +1321,7 @@ function FilterBar({
         <FilterMenu label={channel === null ? t('All channels') : channelName(channel)} value={channel} options={channelOptions} onChange={onChannelChange} />
         <SizeFilterMenu sizes={sizes} onChange={onSizesChange} groups={sizeGroups} />
       </div>
-      <label className="flex h-8 w-[228px] shrink-0 items-center gap-2 overflow-hidden rounded-full border border-[#40404A] bg-[#26262C] px-3 focus-within:border-popsicle">
+      <label className="flex h-8 w-[228px] shrink-0 items-center gap-2 overflow-hidden rounded-full border border-[#40404A] bg-[#26262C] px-3 focus-within:border-[#4570FF]">
         <Search className="size-4 shrink-0 text-white" />
         <input
           value={query}

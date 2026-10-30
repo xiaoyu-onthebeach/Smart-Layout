@@ -7,10 +7,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
+import { ModeSwitch } from './ModeSwitch';
 import { RULER_SIZE } from '@/features/editor/artboard/RulerOverlay';
 
 // Document-level title — not tied to any single page, so it's a fixed label for now.
-const DOCUMENT_TITLE = 'Winter EC Campaign 2027';
+const DOCUMENT_TITLE = 'La Plage - Winter 2027 Amazon+Q10 Campaign';
 
 export function TopBar() {
   const language = useAppStore((s) => s.language);
@@ -33,6 +34,13 @@ export function TopBar() {
       <div className="flex items-center gap-4 py-3 pr-6 pl-3">
         <img src="/icons/logo.svg" alt="Beachside" className="size-8" />
         <span className="text-sm font-medium text-chrome-fg">{DOCUMENT_TITLE}</span>
+        {step === 'editor' && <ModeSwitch />}
+      </div>
+
+
+      <div className="flex items-center gap-2 p-3">
+        {downloading && <img src="/icons/dropdown/Downloading.svg" alt="" className="size-6 animate-spin" />}
+
         {/* Figma "Button 32 / Primary text". Not wired to anything yet. */}
         <button
           type="button"
@@ -41,11 +49,6 @@ export function TopBar() {
           <img src="/icons/share.svg" alt="" className="size-6 shrink-0" />
           {t('Share playground')}
         </button>
-      </div>
-
-
-      <div className="flex items-center gap-2 p-3">
-        {downloading && <img src="/icons/dropdown/Downloading.svg" alt="" className="size-6 animate-spin" />}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

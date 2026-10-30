@@ -1128,7 +1128,7 @@ function ArtboardFrameImpl({
       {bulkEditHighlighted && (
         // Same outline as a selected layer, but unclipped by the frame and with no handles.
         <div
-          className="pointer-events-none absolute z-10 outline outline-[1.5px] outline-popsicle"
+          className="pointer-events-none absolute z-10 outline outline-[1.5px] outline-button-primary"
           style={{
             left: `${(bulkEditHighlighted.frame.x / nativeWidth) * 100}%`,
             top: `${(bulkEditHighlighted.frame.y / nativeHeight) * 100}%`,

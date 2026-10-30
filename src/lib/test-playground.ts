@@ -2,8 +2,14 @@ import { useAppStore } from '@/store/useAppStore';
 import type { AppState } from '@/store/types';
 
 // A testing shortcut, not a product feature: snapshot whatever banners are on the playground right
-// now, and bring that exact set back later in one click (see TestDataButton). Stored in IndexedDB
-// rather than localStorage — banners with uploaded images can easily outgrow localStorage's ~5MB.
+// now, and bring that exact set back later in one click (see TestDataButton). Saved either in this
+// browser (IndexedDB rather than localStorage — banners with uploaded images can easily outgrow
+// localStorage's ~5MB) or into the project itself, as PROJECT_FILE, committed so every browser
+// and every teammate gets the same set.
+
+/** The shared test set, in `public/` — written by the dev server (see vite.config.ts). */
+const PROJECT_FILE = '/test-playground.json';
+const PROJECT_FILE_WRITE_URL = '/__test-playground';
 
 /** Everything that makes up the playground's banners and how they're arranged on the canvas. */
 const SAVED_KEYS = [
@@ -82,22 +88,46 @@ async function inlineBlobUrls(layoutsById: Snapshot['layoutsById']): Promise<Sna
   return (await walk(layoutsById)) as Snapshot['layoutsById'];
 }
 
-export async function saveTestPlayground(): Promise<void> {
+async function currentSnapshot(): Promise<Snapshot> {
   const state = useAppStore.getState();
   const snapshot = {} as Snapshot;
   for (const key of SAVED_KEYS) snapshot[key] = state[key] as never;
   snapshot.layoutsById = await inlineBlobUrls(snapshot.layoutsById);
+  return snapshot;
+}
+
+export async function saveTestPlayground(): Promise<void> {
+  const snapshot = await currentSnapshot();
   await withStore('readwrite', (store) => store.put(snapshot, KEY));
 }
 
+/** Writes the current banners into the project (PROJECT_FILE) — only while running the dev server. */
+export async function saveTestPlaygroundToProject(): Promise<void> {
+  const res = await fetch(PROJECT_FILE_WRITE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(await currentSnapshot()) });
+  if (!res.ok) throw new Error(`Saving to the project failed (${res.status})`);
+}
+
+async function projectSnapshot(): Promise<Snapshot | undefined> {
+  try {
+    const res = await fetch(PROJECT_FILE, { cache: 'no-store' });
+    if (!res.ok || !res.headers.get('content-type')?.includes('json')) return undefined;
+    return (await res.json()) as Snapshot;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether there's a set to load — saved in this browser, or in the project. */
 export async function hasSavedTestPlayground(): Promise<boolean> {
-  return (await withStore('readonly', (store) => store.count(KEY))) > 0;
+  const inBrowser = await withStore('readonly', (store) => store.count(KEY)).catch(() => 0);
+  return inBrowser > 0 || Boolean(await projectSnapshot());
 }
 
 /** Replaces the playground with the saved banners and opens the editor on them. Returns false when
  * nothing was saved yet. */
 export async function loadTestPlayground(): Promise<boolean> {
-  const snapshot = await withStore<Snapshot | undefined>('readonly', (store) => store.get(KEY));
+  // This browser's own save first; otherwise the set committed to the project.
+  const snapshot = (await withStore<Snapshot | undefined>('readonly', (store) => store.get(KEY)).catch(() => undefined)) ?? (await projectSnapshot());
   if (!snapshot) return false;
   const firstPage = snapshot.pageOrder[0];
   const firstSet = firstPage ? snapshot.setsById[firstPage] : undefined;

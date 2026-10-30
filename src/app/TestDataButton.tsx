@@ -3,13 +3,14 @@ import { FlaskConical } from 'lucide-react';
 import { toast } from 'sonner';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAppStore } from '@/store/useAppStore';
-import { hasSavedTestPlayground, loadTestPlayground, saveTestPlayground } from '@/lib/test-playground';
+import { hasSavedTestPlayground, loadTestPlayground, saveTestPlayground, saveTestPlaygroundToProject } from '@/lib/test-playground';
 
 /**
  * Testing shortcut, deliberately hidden: an invisible spot in the bottom-left corner of the screen
  * (a flask shows on hover) with "Load test banners" — brings back the banners saved earlier, in
- * one click from anywhere, including the Playgrounds page — and "Save current banners as test
- * banners". Not translated: it's for the team, not for users.
+ * one click from anywhere, including the Playgrounds page — "Save current banners as test
+ * banners" (this browser only) and "Save current banners to the project" (a file committed with the
+ * code, so every browser and teammate can load the same set). Not translated: it's for the team.
  */
 export function TestDataButton() {
   const hasBanners = useAppStore((s) => s.pageOrder.length > 0);
@@ -47,6 +48,17 @@ export function TestDataButton() {
           }
         >
           Save current banners as test banners
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={!hasBanners}
+          onSelect={() =>
+            saveTestPlaygroundToProject().then(
+              () => toast.success('Saved to public/test-playground.json — commit it to share'),
+              () => toast.error('Could not save to the project (only works with the dev server)'),
+            )
+          }
+        >
+          Save current banners to the project
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

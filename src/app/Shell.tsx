@@ -264,7 +264,7 @@ export function Shell() {
               <ResizablePanel id="workspace" minSize="25">
                 {/* In Bulk edit the canvas becomes a rounded window sitting on the view's own
                     background, below the floating header. */}
-                <div className={cn('flex h-full transition-[padding,background-color] duration-300 ease-out', isBulkEdit && 'bg-[#19191D] p-2 pt-16')}>
+                <div className={cn('relative flex h-full transition-[padding,background-color] duration-300 ease-out', isBulkEdit && 'bg-[#19191D] p-2 pt-16')}>
                   {/* The ruler-driven extra push is a `transform`, not `margin`/padding — a margin
                       here would grow this flex item's own footprint, shrinking the canvas sibling's
                       measured width right along with it, which was re-triggering the canvas's
@@ -274,9 +274,16 @@ export function Shell() {
                       the panel just visually slides over a bit more of it, which is fine since the
                       panel's own background is already opaque. The constant `paddingTop: 56` (header
                       height, unrelated to rulers) still clears the floating header underneath. */}
-                  {/* Coming back to Create, it stays hidden while the canvas grows back to full width
-                      (it would otherwise ride along with the moving edge), then fades in in place. */}
-                  <div className={cn('animate-in fade-in-0 transition-transform duration-150 [animation-duration:300ms]', (isBulkEdit || switching) && 'hidden')} style={{ paddingTop: 56, transform: rulersActive ? `translate(${RULER_SIZE}px, ${RULER_SIZE}px)` : undefined }}>
+                  {/* Floats over the canvas (which runs full width underneath), so banners pass behind
+                      its cards instead of being cut off at its edge — only the cards themselves catch
+                      the pointer. Coming back to Create, it stays hidden while the canvas grows back
+                      to full width (it would otherwise ride along with the moving edge), then fades
+                      in in place. */}
+                  <div
+                    className={cn(
+                      'pointer-events-none absolute inset-y-0 left-0 z-10 animate-in fade-in-0 transition-transform duration-150 [animation-duration:300ms] [&_aside>*]:pointer-events-auto',
+                      (isBulkEdit || switching) && 'hidden',
+                    )} style={{ paddingTop: 56, transform: rulersActive ? `translate(${RULER_SIZE}px, ${RULER_SIZE}px)` : undefined }}>
                     <LeftPanel />
                   </div>
                   <div className={cn('relative flex-1 overflow-hidden transition-[border-radius] duration-300 ease-out', isBulkEdit && 'rounded-2xl border border-white/10 bg-background')}>
