@@ -193,6 +193,9 @@ function ArtboardFrameImpl({
   // Bulk edit's row being edited shows as selected too (see bulkEditActivePageId).
   const bulkEditActive = useAppStore((s) => s.bulkEditActivePageId === layout.setId);
   const isSceneSelected = selectedSceneIds.includes(layout.setId) || bulkEditActive;
+  // The layer behind the Replace table's active cell, when it's in this banner — outlined only.
+  const bulkEditHighlightId = useAppStore((s) => (s.bulkEditHighlight?.pageIds.includes(layout.setId) ? s.bulkEditHighlight.elementId : null));
+  const bulkEditHighlighted = bulkEditHighlightId ? layout.elements.find((el) => el.id === bulkEditHighlightId) : undefined;
   const updateElement = useAppStore((s) => s.updateElement);
   const setGroupLayout = useAppStore((s) => s.setGroupLayout);
   const addElement = useAppStore((s) => s.addElement);
@@ -1122,6 +1125,19 @@ function ArtboardFrameImpl({
           overflowing layer (dragged past an edge, or just larger than the frame) stays visible.
           Rotation is applied explicitly here (unlike the real selection box, which inherits it from
           its own rotated parent wrapper) since this trace is a plain sibling, not nested inside it. */}
+      {bulkEditHighlighted && (
+        // Same outline as a selected layer, but unclipped by the frame and with no handles.
+        <div
+          className="pointer-events-none absolute z-10 outline outline-[1.5px] outline-popsicle"
+          style={{
+            left: `${(bulkEditHighlighted.frame.x / nativeWidth) * 100}%`,
+            top: `${(bulkEditHighlighted.frame.y / nativeHeight) * 100}%`,
+            width: `${(bulkEditHighlighted.frame.w / nativeWidth) * 100}%`,
+            height: `${(bulkEditHighlighted.frame.h / nativeHeight) * 100}%`,
+            transform: bulkEditHighlighted.rotation ? `rotate(${bulkEditHighlighted.rotation}deg)` : undefined,
+          }}
+        />
+      )}
       {overflowElements.map((el) => (
         <div
           key={`overflow-outline-${el.id}`}

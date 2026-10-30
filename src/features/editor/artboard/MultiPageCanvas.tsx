@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { DOT_SPACING, dotGridStyle } from '@/lib/canvas-dots';
 import { useLatestCallback } from '@/hooks/useLatestCallback';
@@ -37,7 +38,14 @@ const MAX_FIT_ZOOM = 1;
 const MIN_ZOOM = 0.01;
 const MAX_ZOOM = 3;
 const FOCUS_FILL_RATIO = 0.6;
+/** How much of the viewport several banners framed together fill (see `focusPages`). */
+const MULTI_FOCUS_FILL_RATIO = 0.8;
+/** A banner left out by the Replace table's filters/search, in the preview. */
+const FILTERED_OUT_OPACITY = 0.2;
 const PAN_THRESHOLD = 4;
+/** How long, after a Create/Replace switch, the camera keeps following the canvas area's movement —
+ * the switch animation (Shell's MODE_SWITCH_MS) plus a little slack. */
+const MODE_SWITCH_FOLLOW_MS = 450;
 // Screen px within which a dragged scene's edge/center snaps to align with another scene's.
 const SNAP_THRESHOLD = 8;
 
@@ -326,6 +334,7 @@ function PageCard({
   isPrimary,
   showCascadeToolbar,
   dimmed,
+  filteredOut,
   dragging,
   reflowing,
   onActivate,
@@ -356,6 +365,8 @@ function PageCard({
   showCascadeToolbar: boolean;
   /** True once some *other* scene is selected — dims this one so the selection reads clearly. */
   dimmed: boolean;
+  /** Not matching the Replace table's filters/search — faded further than `dimmed`. */
+  filteredOut: boolean;
   /** Being actively dragged to reorder within its group — follows the cursor with no position
    * transition (so it doesn't lag), elevated above its siblings. */
   dragging?: boolean;
@@ -392,7 +403,7 @@ function PageCard({
   return (
     <div
       className={cn('group/card absolute', reflowing ? 'transition-[opacity,left,top] duration-150' : 'transition-opacity', readOnly && 'cursor-pointer [&_*]:pointer-events-none')}
-      style={{ left, top, width, height, opacity: dimmed ? 0.6 : 1, zIndex: dragging ? 10 : undefined }}
+      style={{ left, top, width, height, opacity: filteredOut ? FILTERED_OUT_OPACITY : dimmed ? 0.6 : 1, zIndex: dragging ? 10 : undefined }}
       onMouseDown={(e) => {
         e.stopPropagation();
         if (readOnly && e.button === 0) {
@@ -475,6 +486,10 @@ export function MultiPageCanvas() {
   const focusPageId = useAppStore((s) => s.focusPageId);
   const requestFocusPage = useAppStore((s) => s.requestFocusPage);
   const clearFocusPage = useAppStore((s) => s.clearFocusPage);
+  const focusPages = useAppStore((s) => s.focusPages);
+  const bulkEditFilterMatches = useAppStore((s) => s.bulkEditFilterMatches);
+  const requestFocusPages = useAppStore((s) => s.requestFocusPages);
+  const clearFocusPages = useAppStore((s) => s.clearFocusPages);
   const revealPageId = useAppStore((s) => s.revealPageId);
   const requestRevealPage = useAppStore((s) => s.requestRevealPage);
   const clearRevealPage = useAppStore((s) => s.clearRevealPage);
@@ -595,8 +610,13 @@ export function MultiPageCanvas() {
   // travel through shared state rather than a prop. Split into two effects rather than one with a
   // cleanup: a cleanup tied to `camera` would also fire (clearing to `null` for a frame) on every
   // single pan/zoom tick, not just on unmount.
+  // The canvas area's live position, read on every camera change: while switching modes the area
+  // moves without resizing on every frame (and its top edge moves too), and the camera's matching
+  // correction (see the mode-switch effect) is what triggers this — so the dots stay locked to the
+  // banners instead of drifting with a position measured only on resize.
   useEffect(() => {
-    setCanvasDotBackground({ x: camera.x, y: camera.y, zoom: camera.zoom, offsetX: canvasOffsetX });
+    const rect = outerRef.current?.getBoundingClientRect();
+    setCanvasDotBackground({ x: camera.x, y: camera.y, zoom: camera.zoom, offsetX: rect?.left ?? canvasOffsetX, offsetY: rect?.top ?? 0 });
   }, [camera, canvasOffsetX, setCanvasDotBackground]);
 
   // Clears it only on unmount, so a stale value from a previous canvas mount never shows on a
@@ -835,15 +855,63 @@ export function MultiPageCanvas() {
   // Auto-fit the camera whenever the active canvas, its page count, or the viewport size changes;
   // free pan/zoom otherwise. Keying on effectiveActiveId (not just entries.length) matters because
   // switching to a different canvas with the same page count would otherwise look like a no-op.
+  // Switching between Create and Replace keeps the view exactly as it is: the same zoom, and the
+  // banners staying put on screen while the canvas area around them moves and resizes (the
+  // Banners panel disappearing, the table side sliding in, the preview window's frame easing in).
+  // So the size change a switch causes never re-fits the canvas — until something else does
+  // (another canvas, banners added or removed, the browser window resized).
+  const holdFramingRef = useRef(false);
   useEffect(() => {
     if (viewport.width === 0 || entries.length === 0) return;
     const key = `${effectiveActiveId}:${entries.length}:${viewport.width}:${viewport.height}`;
     if (fitKeyRef.current === key) return;
+    const onlyResized = fitKeyRef.current?.startsWith(`${effectiveActiveId}:${entries.length}:`);
     fitKeyRef.current = key;
+    if (holdFramingRef.current && onlyResized) return;
+    holdFramingRef.current = false;
     const fit = computeFitCamera();
     if (fit) setCamera(fit);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveActiveId, entries.length, viewport.width, viewport.height]);
+  useEffect(() => {
+    const release = () => {
+      holdFramingRef.current = false;
+    };
+    window.addEventListener('resize', release);
+    return () => window.removeEventListener('resize', release);
+  }, []);
+  // The camera is relative to this area's own top-left corner, which moves when the mode switches —
+  // offset the camera by that movement from the very first frame (before anything is painted) and
+  // then on every frame of the switch animation, so the banners hold their place on screen.
+  const lastAreaRectRef = useRef<DOMRect | null>(null);
+  useLayoutEffect(() => {
+    const el = outerRef.current;
+    let last = lastAreaRectRef.current;
+    if (!el || !last) return;
+    holdFramingRef.current = true;
+    const start = performance.now();
+    let frame = 0;
+    function follow() {
+      const rect = el!.getBoundingClientRect();
+      const dx = rect.left - last!.left;
+      const dy = rect.top - last!.top;
+      // Rendered right away (not on React's next tick), so the correction lands in the same frame
+      // as the movement it cancels out.
+      if (dx !== 0 || dy !== 0) flushSync(() => setCamera((c) => ({ ...c, x: c.x - dx, y: c.y - dy })));
+      last = rect;
+    }
+    function tick() {
+      follow();
+      if (performance.now() - start < MODE_SWITCH_FOLLOW_MS) frame = requestAnimationFrame(tick);
+    }
+    follow();
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [readOnly]);
+  // Where the area was as of the last render — what the mode-switch effect above measures from.
+  useLayoutEffect(() => {
+    if (outerRef.current) lastAreaRectRef.current = outerRef.current.getBoundingClientRect();
+  });
 
   // Selecting a page from the left panel (Sidebar) requests a pan/zoom that centers just that page
   // and sizes it to roughly FOCUS_FILL_RATIO of the viewport (not just "fit within padding").
@@ -866,6 +934,30 @@ export function MultiPageCanvas() {
     clearFocusPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusPageId, viewport.width, viewport.height]);
+
+  // Several pages at once (e.g. a selection spanning rows of the Replace table): frames all of them,
+  // their combined box filling MULTI_FOCUS_FILL_RATIO of the viewport. Grouped sizes' packed
+  // positions depend on the zoom (see the comment above), so once the zoom lands, a pan-only pass
+  // re-centers on where they actually sit.
+  useEffect(() => {
+    if (!focusPages || viewport.width === 0) return;
+    const list = entries.filter((e) => focusPages.ids.includes(e.id));
+    clearFocusPages();
+    if (list.length === 0) return;
+    const minX = Math.min(...list.map((e) => e.pos.x));
+    const minY = Math.min(...list.map((e) => e.pos.y));
+    const maxX = Math.max(...list.map((e) => e.pos.x + e.layout.size.width));
+    const maxY = Math.max(...list.map((e) => e.pos.y + e.layout.size.height));
+    const zoom = focusPages.panOnly
+      ? camera.zoom
+      : clamp(Math.min((viewport.width * MULTI_FOCUS_FILL_RATIO) / (maxX - minX), (viewport.height * MULTI_FOCUS_FILL_RATIO) / (maxY - minY)), MIN_ZOOM, MAX_FIT_ZOOM);
+    const x = viewport.width / 2 - ((minX + maxX) / 2) * zoom;
+    const y = viewport.height / 2 - ((minY + maxY) / 2) * zoom;
+    const ids = focusPages.ids;
+    if (focusPages.panOnly) animateCameraTo({ x, y, zoom }, 200);
+    else animateCameraTo({ x, y, zoom }, 400, () => requestFocusPages(ids, true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusPages, viewport.width, viewport.height]);
 
   // Duplicating a scene requests this instead of `focusPageId` — a plain pan to bring the new copy
   // into view, at whatever zoom the canvas is already at, rather than `focusPageId`'s zoom-to-fill.
@@ -1429,6 +1521,7 @@ export function MultiPageCanvas() {
                   !selectedSceneIds.includes(entry.id) &&
                   !(groupId && selectedGroupIds.has(groupId))
                 }
+                filteredOut={Boolean(readOnly && bulkEditFilterMatches && !bulkEditFilterMatches.includes(entry.id))}
                 dragging={isDraggingThis || isDraggingCluster}
                 reflowing={isReflowingPeer || isReflowingClusterPeer}
                 onActivate={() => setViewAllActivePage(entry.id)}
@@ -1461,7 +1554,8 @@ export function MultiPageCanvas() {
       </div>
       {showRulers && <RulerOverlay camera={camera} viewport={viewport} canvasOffsetX={canvasOffsetX} contained={readOnly} />}
 
-      <div className="pointer-events-none absolute right-6 bottom-6 z-10">
+      {/* Tagged so the bottom toolbar can keep clear of it (DefaultModeToolbar). */}
+      <div data-canvas-zoom-bar className="pointer-events-none absolute right-6 bottom-6 z-10">
         <CanvasZoomBar
           zoomPct={camera.zoom * 100}
           onSetZoom={setZoomPct}

@@ -8,8 +8,9 @@ import { useT } from '@/lib/i18n';
 import { nextId, createEmptyLayout } from '@/lib/create-layout';
 import { nearestPreset } from '@/lib/mock';
 import { NO_RULES_ID } from '@/lib/mock/rulesets';
-import { canvasRootOf, PAGE_GAP } from '@/lib/canvas-layout';
+import { canvasRootOf } from '@/lib/canvas-layout';
 import { nextAvailableName } from '@/lib/main-size-naming';
+import { addPrimaryToCanvas } from '@/features/editor/artboard/banner-sets';
 import type { BannerSet } from '@/types';
 
 /** Every new main size added via the left panel's "+" starts at this size — a plain empty frame,
@@ -158,8 +159,6 @@ export function BannersTab() {
   const setActiveCanvas = useAppStore((s) => s.setActiveCanvas);
   const upsertLayout = useAppStore((s) => s.upsertLayout);
   const updateLayoutStyle = useAppStore((s) => s.updateLayoutStyle);
-  const loadSet = useAppStore((s) => s.loadSet);
-  const attachStandalonePage = useAppStore((s) => s.attachStandalonePage);
   const requestFocusPage = useAppStore((s) => s.requestFocusPage);
 
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -185,11 +184,7 @@ export function BannersTab() {
   // cluster-root positions from actual current footprints on every render regardless (see its
   // Pass 2) — it just needs to sort after everything already there.
   //
-  // The anchor page/root is "locked in" as an explicit canvasRootByPage entry (pointing at itself)
-  // the first time a second scene joins it, rather than reusing its bare id as the shared root
-  // going forward: the moment that specific page later grows its own "all sizes" pack, its own id
-  // becomes a real PageGroup id, which is a wholly separate concern from *canvas-root* membership
-  // (see canvasRootOf) — without this lock, the bundle would fall apart the instant that happens.
+  // Placed on the canvas by addPrimaryToCanvas (see banner-sets.ts).
   function handleAddMainSize() {
     const state = useAppStore.getState();
     const setId = nextId('set');
@@ -211,48 +206,8 @@ export function BannersTab() {
     });
     const bannerSet: BannerSet = { id: setId, name: label, sourceLayoutId: layout.id, layoutIds: [layout.id], productIds: [] };
     upsertLayout(layout);
-
-    if (state.pageOrder.length === 0) {
-      loadSet(bannerSet);
-      setActiveCanvas(setId);
-      return;
-    }
-
-    const anchorRoot = state.activeCanvasRootId ?? canvasRootOf(state, state.pageOrder[0]);
-    let cursorX = 0;
-    let anchorY = 0;
-    let foundAny = false;
-    for (const id of state.pageOrder) {
-      if (canvasRootOf(state, id) !== anchorRoot) continue;
-      // A pack sibling shares its primary's resolved canvas root too — skip it here, or whichever
-      // sibling happens to sort last in pageOrder would hand its own (irrelevant, often far-away)
-      // position to `anchorY`/`cursorX` instead of the actual cluster-root column it belongs to.
-      const memberGroup = state.pageGroups[state.pageGroupIdByPage[id]];
-      if (memberGroup && memberGroup.memberIds.length > 1 && memberGroup.memberIds[0] !== id) continue;
-      const otherSet = state.setsById[id];
-      const otherLayout = otherSet ? state.layoutsById[otherSet.sourceLayoutId] : null;
-      const pos = state.pagePositions[id] ?? { x: 0, y: 0 };
-      const right = pos.x + (otherLayout?.size.width ?? 0);
-      if (!foundAny || right > cursorX) cursorX = right;
-      anchorY = pos.y;
-      foundAny = true;
-    }
-    if (foundAny) cursorX += PAGE_GAP;
-
-    loadSet(bannerSet, { x: cursorX, y: anchorY });
-    // The very first time a second column joins `anchorRoot`, canvasRootOrder needs seeding with
-    // whichever page is *actually* anchoring that canvas view — anchorRoot itself when it's a bare
-    // page, but a real PageGroup's own primary page id when `anchorRoot` already resolved to that
-    // group's id (canvasRootOf returns the groupId, not the primary's page id, the moment a pack
-    // forms) — otherwise the primary's own id never lands in the order at all and it always sorts
-    // last instead of staying the leftmost column.
-    if (!state.canvasRootOrder[anchorRoot]?.length) {
-      const anchorPrimaryId = state.pageGroups[anchorRoot]?.memberIds[0] ?? anchorRoot;
-      attachStandalonePage(anchorPrimaryId, anchorRoot);
-    }
-    attachStandalonePage(setId, anchorRoot);
-    setActiveCanvas(anchorRoot);
-    requestFocusPage(setId);
+    addPrimaryToCanvas(bannerSet);
+    if (state.pageOrder.length > 0) requestFocusPage(setId);
   }
 
   function renderRow(setId: string) {

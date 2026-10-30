@@ -76,6 +76,9 @@ export type UiSlice = {
   pendingCascadeSetIds: Record<string, true>;
   /** Set to request the view-all canvas pan/zoom to frame this page; consumed and cleared by the canvas. */
   focusPageId: string | null;
+  /** Like `focusPageId`, for several pages at once: frames all of them. `panOnly` re-centers at
+   * the current zoom (the canvas's own follow-up once the zoom has landed). */
+  focusPages: { ids: string[]; panOnly?: boolean } | null;
   /** Set to request the view-all canvas pan (current zoom kept as-is) to bring this page into view —
    * unlike `focusPageId`, never changes zoom; used after duplicating a scene, where the new copy
    * should just scroll into view rather than the whole canvas zooming out to fit everything. */
@@ -99,6 +102,15 @@ export type UiSlice = {
   /** The banner whose row is being edited in Bulk edit's table — drawn with the selected outline
    * in the preview, without selecting it (selection there is the rows' checkboxes). */
   bulkEditActivePageId: string | null;
+  /** True for the short animation while switching between Create and Replace (see Shell) — the
+   * canvas holds its framing until it's over, then glides to the new one. */
+  workspaceSwitching: boolean;
+  /** While the Replace table's filters/search are active: the banners they let through (the rest
+   * fade out in the preview). `null` when nothing is filtered. */
+  bulkEditFilterMatches: string[] | null;
+  /** The layer behind the Replace table's active cell (and the rest of its column selection),
+   * outlined in each of those banners in the preview — display only, nothing gets selected. */
+  bulkEditHighlight: { elementId: string; pageIds: string[] } | null;
   /**
    * Where the full-screen dot backdrop sits — the canvas camera plus the canvas's own left offset
    * on screen — recomputed by `MultiPageCanvas` whenever its camera/viewport changes and rendered
@@ -108,7 +120,7 @@ export type UiSlice = {
    * with a negative z-index still loses to the app shell's own opaque background — no stacking
    * context above it to escape into). `null` while no canvas is mounted (e.g. the Playgrounds step).
    */
-  canvasDotBackground: { x: number; y: number; zoom: number; offsetX: number } | null;
+  canvasDotBackground: { x: number; y: number; zoom: number; offsetX: number; offsetY: number } | null;
   /** Current UI display language — defaults to English. */
   language: Language;
   goTo: (step: AppStep) => void;
@@ -146,6 +158,8 @@ export type UiSlice = {
   /** Requests that the view-all canvas pan/zoom to frame this page. */
   requestFocusPage: (pageId: string) => void;
   clearFocusPage: () => void;
+  requestFocusPages: (pageIds: string[], panOnly?: boolean) => void;
+  clearFocusPages: () => void;
   /** Requests that the view-all canvas pan (keeping its current zoom) to bring this page into view. */
   requestRevealPage: (pageId: string) => void;
   clearRevealPage: () => void;
@@ -161,7 +175,10 @@ export type UiSlice = {
    * any in-place editing, so nothing hidden behind the Bulk edit view can react to the keyboard. */
   setWorkspaceView: (view: WorkspaceView) => void;
   setBulkEditActivePage: (pageId: string | null) => void;
-  setCanvasDotBackground: (bg: { x: number; y: number; zoom: number; offsetX: number } | null) => void;
+  setWorkspaceSwitching: (switching: boolean) => void;
+  setBulkEditFilterMatches: (pageIds: string[] | null) => void;
+  setBulkEditHighlight: (highlight: { elementId: string; pageIds: string[] } | null) => void;
+  setCanvasDotBackground: (bg: { x: number; y: number; zoom: number; offsetX: number; offsetY: number } | null) => void;
   setLanguage: (language: Language) => void;
 };
 

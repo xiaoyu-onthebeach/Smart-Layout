@@ -26,6 +26,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   loadingPageIds: {},
   pendingCascadeSetIds: {},
   focusPageId: null,
+  focusPages: null,
   revealPageId: null,
   uploadedAssetUrls: [],
   activeCanvasRootId: null,
@@ -33,6 +34,9 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   showRulers: false,
   workspaceView: 'edit',
   bulkEditActivePageId: null,
+  workspaceSwitching: false,
+  bulkEditFilterMatches: null,
+  bulkEditHighlight: null,
   canvasDotBackground: null,
   language: 'en',
 
@@ -151,6 +155,8 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   },
   requestFocusPage: (pageId) => set({ focusPageId: pageId }),
   clearFocusPage: () => set({ focusPageId: null }),
+  requestFocusPages: (pageIds, panOnly) => set({ focusPages: { ids: pageIds, panOnly } }),
+  clearFocusPages: () => set({ focusPages: null }),
   requestRevealPage: (pageId) => set({ revealPageId: pageId }),
   clearRevealPage: () => set({ revealPageId: null }),
   setActiveCanvas: (rootId) => set({ activeCanvasRootId: rootId }),
@@ -186,7 +192,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   setWorkspaceView: (view) =>
     set(
       view === 'edit'
-        ? { workspaceView: view, bulkEditActivePageId: null }
+        ? { workspaceView: view, bulkEditActivePageId: null, bulkEditHighlight: null, bulkEditFilterMatches: null }
         : {
             workspaceView: view,
             selectedSceneIds: [],
@@ -201,6 +207,9 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
           },
     ),
   setBulkEditActivePage: (pageId) => set({ bulkEditActivePageId: pageId }),
+  setWorkspaceSwitching: (switching) => set({ workspaceSwitching: switching }),
+  setBulkEditFilterMatches: (pageIds) => set({ bulkEditFilterMatches: pageIds }),
+  setBulkEditHighlight: (highlight) => set({ bulkEditHighlight: highlight }),
   setCanvasDotBackground: (bg) => set({ canvasDotBackground: bg }),
   setLanguage: (language) => set({ language }),
 });

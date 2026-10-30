@@ -35,7 +35,7 @@ export function BulkEditDownloadPanel() {
               {language === 'ja' ? `${layouts.length}件のサイズを選択中` : `${layouts.length} size${layouts.length === 1 ? '' : 's'} selected`}
             </span>
           </div>
-          <PanelExportFooter layouts={layouts} />
+          <PanelExportFooter layouts={layouts} accent="popsicle" />
         </PanelCard>
       </div>
     </div>

@@ -14,15 +14,16 @@ export const DOT_COLOR = 'rgba(255, 255, 255, 0.12)';
 /** Below this zoom the dots are hidden — they'd be too small and dense to read as a grid. */
 export const DOT_MIN_ZOOM = 0.3;
 
-/** CSS for the dot grid under a canvas camera; `offsetX` shifts it when it's painted on a larger
- * element than the canvas itself (Edit's screen-wide backdrop, which also runs behind the sidebar). */
-export function dotGridStyle(camera: { x: number; y: number; zoom: number }, offsetX = 0): CSSProperties {
+/** CSS for the dot grid under a canvas camera; `offsetX`/`offsetY` shift it when it's painted on a
+ * larger element than the canvas itself (Create's screen-wide backdrop, which also runs behind the
+ * sidebar) — the canvas area's own position on that element. */
+export function dotGridStyle(camera: { x: number; y: number; zoom: number }, offsetX = 0, offsetY = 0): CSSProperties {
   if (camera.zoom < DOT_MIN_ZOOM) return { backgroundImage: 'none' };
   const spacing = DOT_SPACING * camera.zoom;
   const radius = DOT_RADIUS * camera.zoom;
   return {
     backgroundImage: `radial-gradient(${DOT_COLOR} ${radius}px, transparent ${radius}px)`,
     backgroundSize: `${spacing}px ${spacing}px`,
-    backgroundPosition: `${camera.x + offsetX}px ${camera.y}px`,
+    backgroundPosition: `${camera.x + offsetX}px ${camera.y + offsetY}px`,
   };
 }

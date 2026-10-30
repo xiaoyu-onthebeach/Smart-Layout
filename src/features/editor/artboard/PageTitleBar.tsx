@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { getPreset } from '@/lib/mock';
 import { PlatformMark } from '@/features/size-select/PlatformMark';
 import { useT } from '@/lib/i18n';
+import { useAppStore } from '@/store/useAppStore';
 
 /** Title row for a scene on the view-all canvas: name + optional platform mark + size pill. */
 export function PageTitleBar({
@@ -40,6 +41,7 @@ export function PageTitleBar({
   visible?: boolean;
 }) {
   const t = useT();
+  const replaceView = useAppStore((s) => s.workspaceView === 'bulkEdit');
   const platformId = presetId ? getPreset(presetId)?.platformId : undefined;
   const [draft, setDraft] = useState(name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -79,7 +81,8 @@ export function PageTitleBar({
       ) : (
         <div className="group/name flex min-w-0 flex-1 items-center gap-1.5">
           {isPrimary ? (
-            <img src="/icons/primary%201.svg" alt={t('Primary')} className="size-4 shrink-0" />
+            // In Replace, primaries are marked in Popsicle instead of the brand blue.
+            <img src={replaceView ? '/icons/primary-popsicle.svg' : '/icons/primary%201.svg'} alt={t('Primary')} className="size-4 shrink-0" />
           ) : (
             platformId && <PlatformMark platformId={platformId} className="size-4 shrink-0" />
           )}

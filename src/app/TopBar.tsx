@@ -8,7 +8,6 @@ import {
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import { RULER_SIZE } from '@/features/editor/artboard/RulerOverlay';
-import { ViewTabs } from './ViewTabs';
 
 // Document-level title — not tied to any single page, so it's a fixed label for now.
 const DOCUMENT_TITLE = 'Winter EC Campaign 2027';
@@ -34,15 +33,16 @@ export function TopBar() {
       <div className="flex items-center gap-4 py-3 pr-6 pl-3">
         <img src="/icons/logo.svg" alt="Beachside" className="size-8" />
         <span className="text-sm font-medium text-chrome-fg">{DOCUMENT_TITLE}</span>
+        {/* Figma "Button 32 / Primary text". Not wired to anything yet. */}
+        <button
+          type="button"
+          className="flex h-8 shrink-0 items-center gap-2 rounded-lg bg-[#4570FF] px-3 text-[14px] leading-[1.4] tracking-[-0.01em] text-white shadow-[0px_1px_1px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.02),0px_2px_2px_rgba(0,0,0,0.02)] transition-colors hover:bg-[#2C52DA]"
+        >
+          <img src="/icons/share.svg" alt="" className="size-6 shrink-0" />
+          {t('Share playground')}
+        </button>
       </div>
 
-      {/* Centered on the header itself, independent of how wide the title or the right-hand
-          controls are. */}
-      {step === 'editor' && (
-        <div className="absolute left-1/2 -translate-x-1/2">
-          <ViewTabs />
-        </div>
-      )}
 
       <div className="flex items-center gap-2 p-3">
         {downloading && <img src="/icons/dropdown/Downloading.svg" alt="" className="size-6 animate-spin" />}

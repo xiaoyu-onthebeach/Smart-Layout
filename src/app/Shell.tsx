@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePanelRef } from 'react-resizable-panels';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Toaster } from '@/components/ui/sonner';
@@ -10,6 +10,9 @@ import { initUndoHistory, undo } from '@/store/undoHistory';
 import { AddBannersPanel } from '@/features/size-select/AddBannersPanel';
 import { MultiPageCanvas } from '@/features/editor/artboard/MultiPageCanvas';
 import { RULER_SIZE } from '@/features/editor/artboard/RulerOverlay';
+
+/** How long switching between Create and Replace animates (matches the duration-300 classes). */
+const MODE_SWITCH_MS = 300;
 import { TopBar } from './TopBar';
 import { LeftPanel } from './LeftPanel';
 import { PlaygroundsPage } from './PlaygroundsPage';
@@ -31,7 +34,7 @@ import { BulkEditDownloadPanel } from './BulkEditDownloadPanel';
 function CanvasDotBackdrop() {
   const dot = useAppStore((s) => s.canvasDotBackground);
   if (!dot) return null;
-  return <div className="pointer-events-none absolute inset-0" style={dotGridStyle(dot, dot.offsetX)} />;
+  return <div className="pointer-events-none absolute inset-0" style={dotGridStyle(dot, dot.offsetX, dot.offsetY)} />;
 }
 
 export function Shell() {
@@ -50,10 +53,11 @@ export function Shell() {
   const showRulers = useAppStore((s) => s.showRulers);
   const workspaceView = useAppStore((s) => s.workspaceView);
   const isBulkEdit = step === 'editor' && workspaceView === 'bulkEdit';
-  // Opens the Bulk edit content panel at half the screen the first time, then at whatever width it
-  // was last dragged to; closes it again (remembering that width) on the way back to Edit.
+  // Opens the Replace content panel (the table side) at 40% of the screen the first time, then at
+  // whatever width it was last dragged to; closes it again (remembering that width) on the way back
+  // to Create.
   const bulkPanelRef = usePanelRef();
-  const bulkPanelSizeRef = useRef('50');
+  const bulkPanelSizeRef = useRef('40');
   useEffect(() => {
     const panel = bulkPanelRef.current;
     if (!panel) return;
@@ -64,6 +68,43 @@ export function Shell() {
       panel.collapse();
     }
   }, [isBulkEdit, bulkPanelRef]);
+  // Switching modes animates for MODE_SWITCH_MS: the table side slides open/closed, the canvas
+  // window's frame eases in/out, and the canvas itself waits, then glides to its new framing.
+  // Only while switching — a transition left on the panels would make dragging the divider lag.
+  const setWorkspaceSwitching = useAppStore((s) => s.setWorkspaceSwitching);
+  const switching = useAppStore((s) => s.workspaceSwitching);
+  // The table stays mounted for the closing slide after leaving Replace (set during render on the
+  // way in, so it never misses a frame; cleared once the slide is over).
+  const [tableMounted, setTableMounted] = useState(isBulkEdit);
+  if (isBulkEdit && !tableMounted) setTableMounted(true);
+  useEffect(() => {
+    if (isBulkEdit) return;
+    const id = window.setTimeout(() => setTableMounted(false), MODE_SWITCH_MS);
+    return () => window.clearTimeout(id);
+  }, [isBulkEdit]);
+  // The table side's width while in Replace, kept for the closing slide (see the panel below).
+  const tableSideRef = useRef<HTMLDivElement>(null);
+  const [tableSideWidth, setTableSideWidth] = useState(0);
+  useEffect(() => {
+    const el = tableSideRef.current;
+    if (!isBulkEdit || !el) return;
+    const ro = new ResizeObserver(() => setTableSideWidth(el.offsetWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isBulkEdit]);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    setWorkspaceSwitching(true);
+    const id = window.setTimeout(() => setWorkspaceSwitching(false), MODE_SWITCH_MS);
+    return () => {
+      window.clearTimeout(id);
+      setWorkspaceSwitching(false);
+    };
+  }, [isBulkEdit, setWorkspaceSwitching]);
   // The ruler toggle only ever lives inside the editor's own canvas toolbar — this guard just
   // keeps a stale flag from a previous editor session from shifting the sidebar on another step.
   const rulersActive = showRulers && step === 'editor' && workspaceView === 'edit';
@@ -205,9 +246,17 @@ export function Shell() {
             // Bulk edit it opens beside the canvas, which becomes a preview where only whole banners
             // can be selected (see MultiPageCanvas's own `readOnly`), and both editing panels (left
             // panel, inspector) step aside — selecting banners shows download options instead.
-            <ResizablePanelGroup className="flex-1">
+            <ResizablePanelGroup className={cn('flex-1', switching && '[&>[data-panel]]:transition-[flex] [&>[data-panel]]:duration-300 [&>[data-panel]]:ease-out')}>
               <ResizablePanel id="bulk-edit-content" panelRef={bulkPanelRef} collapsible collapsedSize={0} defaultSize="0" minSize="25">
-                {isBulkEdit && <BulkEditView />}
+                {/* Stays on screen while its side closes on the way back to Create — kept at the width
+                    it had (so the closing side covers it rather than squeezing it) and fading out. */}
+                {tableMounted && (
+                  <div ref={tableSideRef} className={cn('h-full w-full overflow-hidden transition-opacity duration-300 ease-in', !isBulkEdit && 'opacity-0')}>
+                    <div className="h-full" style={{ width: isBulkEdit ? '100%' : tableSideWidth || '100%' }}>
+                      <BulkEditView />
+                    </div>
+                  </div>
+                )}
               </ResizablePanel>
               {/* Same color as the background around it until hovered — the window's own border already
                   separates the two sides. */}
@@ -215,7 +264,7 @@ export function Shell() {
               <ResizablePanel id="workspace" minSize="25">
                 {/* In Bulk edit the canvas becomes a rounded window sitting on the view's own
                     background, below the floating header. */}
-                <div className={cn('flex h-full', isBulkEdit && 'bg-[#19191D] p-2 pt-16')}>
+                <div className={cn('flex h-full transition-[padding,background-color] duration-300 ease-out', isBulkEdit && 'bg-[#19191D] p-2 pt-16')}>
                   {/* The ruler-driven extra push is a `transform`, not `margin`/padding — a margin
                       here would grow this flex item's own footprint, shrinking the canvas sibling's
                       measured width right along with it, which was re-triggering the canvas's
@@ -225,10 +274,12 @@ export function Shell() {
                       the panel just visually slides over a bit more of it, which is fine since the
                       panel's own background is already opaque. The constant `paddingTop: 56` (header
                       height, unrelated to rulers) still clears the floating header underneath. */}
-                  <div className={cn('transition-transform duration-150', isBulkEdit && 'hidden')} style={{ paddingTop: 56, transform: rulersActive ? `translate(${RULER_SIZE}px, ${RULER_SIZE}px)` : undefined }}>
+                  {/* Coming back to Create, it stays hidden while the canvas grows back to full width
+                      (it would otherwise ride along with the moving edge), then fades in in place. */}
+                  <div className={cn('animate-in fade-in-0 transition-transform duration-150 [animation-duration:300ms]', (isBulkEdit || switching) && 'hidden')} style={{ paddingTop: 56, transform: rulersActive ? `translate(${RULER_SIZE}px, ${RULER_SIZE}px)` : undefined }}>
                     <LeftPanel />
                   </div>
-                  <div className={cn('relative flex-1 overflow-hidden', isBulkEdit && 'rounded-2xl border border-white/10 bg-background')}>
+                  <div className={cn('relative flex-1 overflow-hidden transition-[border-radius] duration-300 ease-out', isBulkEdit && 'rounded-2xl border border-white/10 bg-background')}>
                     {step === 'editor' && <MultiPageCanvas />}
                     {showToolbar && <DefaultModeToolbar />}
                     {step === 'editor' && !isBulkEdit && <InspectorPanel />}
