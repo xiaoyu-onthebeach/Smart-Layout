@@ -9,6 +9,7 @@ import { getPlatform, getPreset, nearestPreset, platforms, presetsForPlatform, s
 import { NO_RULES_ID } from '@/lib/mock/rulesets';
 import type { BannerSet } from '@/types';
 import { PlatformSizeCard } from './SizeTile';
+import { formatSize } from '@/lib/format-size';
 
 const ALL_SIZES_ID = 'all';
 
@@ -58,7 +59,7 @@ export function AddBannersPanel() {
   }, [sizeSelectOpen, closeSizeSelect]);
 
   const q = query.trim().toLowerCase();
-  const qCompact = q.replace(/\s+/g, '');
+  const qCompact = q.replace(/\s+/g, '').replace(/×/g, 'x');
   const visiblePresets = useMemo(() => {
     const list = activeNavId === ALL_SIZES_ID ? sizePresets : presetsForPlatform(activeNavId);
     return list.filter((p) => {
@@ -232,8 +233,8 @@ export function AddBannersPanel() {
             {customSize && (
               <span className="px-1 text-xs text-white/65">
                 {language === 'ja'
-                  ? `カスタム ${customSize.width}x${customSize.height} を選択中`
-                  : `Custom ${customSize.width}x${customSize.height} selected`}
+                  ? `カスタム ${formatSize(customSize.width, customSize.height)} を選択中`
+                  : `Custom ${formatSize(customSize.width, customSize.height)} selected`}
               </span>
             )}
           </div>

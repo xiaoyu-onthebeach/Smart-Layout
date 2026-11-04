@@ -47,7 +47,7 @@ export function TopBar() {
           className="flex h-8 shrink-0 items-center gap-2 rounded-lg bg-[#4570FF] px-3 text-[14px] leading-[1.4] tracking-[-0.01em] text-white shadow-[0px_1px_1px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.02),0px_2px_2px_rgba(0,0,0,0.02)] transition-colors hover:bg-[#2C52DA]"
         >
           <img src="/icons/share.svg" alt="" className="size-6 shrink-0" />
-          {t('Share playground')}
+          {t('Share')}
         </button>
 
         <DropdownMenu>

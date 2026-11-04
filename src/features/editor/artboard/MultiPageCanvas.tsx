@@ -245,7 +245,6 @@ function UnifiedAllSizesHeader({
   const t = useT();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   // The Bulk edit view's canvas is a preview — no "add sizes" from here.
-  const readOnly = useAppStore((s) => s.workspaceView !== 'edit');
   // A hovered icon lights up both of its own adjacent segments (the one before it and the one
   // after), not just the one before — so the whole gap around whichever "+" the user is pointing
   // at reads as highlighted, not just its left half.
@@ -272,7 +271,9 @@ function UnifiedAllSizesHeader({
                 style={{ left: segStart, top: -1, width: segEnd - segStart, ...segmentStyle(hoveredIndex === i || hoveredIndex === i - 1) }}
               />
             )}
-            <div className={cn('pointer-events-auto absolute', readOnly && 'hidden')} style={{ left: icon.x - ADD_ICON_SIZE / 2, top: -ADD_ICON_SIZE / 2 }}>
+            {/* Shown in Replace too: adding sizes is part of it (the table's own "Add more sizes" adds
+                to the same group). */}
+            <div className="pointer-events-auto absolute" style={{ left: icon.x - ADD_ICON_SIZE / 2, top: -ADD_ICON_SIZE / 2 }}>
               <QuickSizeMenu onConfirm={icon.onConfirm}>
                 <AddSizeIconButton onHoverChange={(v) => setHoveredIndex(v ? i : null)} onClick={icon.onFocusPrimary} />
               </QuickSizeMenu>

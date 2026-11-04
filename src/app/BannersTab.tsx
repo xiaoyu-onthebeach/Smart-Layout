@@ -12,6 +12,7 @@ import { canvasRootOf } from '@/lib/canvas-layout';
 import { nextAvailableName } from '@/lib/main-size-naming';
 import { addPrimaryToCanvas } from '@/features/editor/artboard/banner-sets';
 import type { BannerSet } from '@/types';
+import { formatSize } from '@/lib/format-size';
 
 /** Every new main size added via the left panel's "+" starts at this size — a plain empty frame,
  * disambiguated against existing names (see nextAvailableName) rather than offering a choice of
@@ -36,7 +37,7 @@ function BannerRow({
   onToggleHidden: () => void;
 }) {
   const t = useT();
-  const displayName = name || `${width}x${height}`;
+  const displayName = name || formatSize(width, height);
   return (
     <div
       className={cn(
@@ -50,7 +51,7 @@ function BannerRow({
           {/* Fixed width, not just shrink-0 — so the name after it always starts at the same x
               regardless of how many digits this particular size's own width x height needs. */}
           <span className="w-[60px] shrink-0 text-sm text-chrome-fg">
-            {width}x{height}
+            {formatSize(width, height)}
           </span>
         </div>
         <span className="min-w-0 truncate text-left text-xs text-white/45">{displayName}</span>
@@ -132,7 +133,7 @@ function CategoryRow({
           <div className="flex shrink-0 items-center gap-1">
             <RatioIcon width={representativeWidth} height={representativeHeight} />
             <span className="shrink-0 text-sm text-white">
-              {representativeWidth}x{representativeHeight}
+              {formatSize(representativeWidth, representativeHeight)}
             </span>
           </div>
         </div>

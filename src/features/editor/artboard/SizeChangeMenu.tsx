@@ -6,6 +6,7 @@ import { NO_RULES_ID } from '@/lib/mock/rulesets';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 import { GROUPS, type QuickSizeResult } from './QuickSizeMenu';
+import { formatSize } from '@/lib/format-size';
 
 /**
  * A leaner sibling of `QuickSizeMenu` for the "Size" row in the single-scene panel — browses the
@@ -203,7 +204,7 @@ export function SizeChangeMenu({
                   >
                     <RatioIcon width={entry.width} height={entry.height} />
                     <span className="min-w-0 flex-1 truncate text-sm text-chrome-fg">
-                      {entry.width}x{entry.height}
+                      {formatSize(entry.width, entry.height)}
                     </span>
                   </button>
                   {isCurrentSize(entry.width, entry.height) && <Check className="ml-auto size-4 shrink-0 text-white" />}
@@ -242,7 +243,7 @@ export function SizeChangeMenu({
                       >
                         <RatioIcon width={item.width} height={item.height} />
                         <span className="shrink-0 text-sm text-chrome-fg">
-                          {item.width}x{item.height}
+                          {formatSize(item.width, item.height)}
                         </span>
                         <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{item.label}</span>
                         {isCurrentSize(item.width, item.height) && <Check className="size-4 shrink-0 text-white" />}

@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { getPreset } from '@/lib/mock';
 import { PlatformMark } from '@/features/size-select/PlatformMark';
 import { useT } from '@/lib/i18n';
+import { formatSize } from '@/lib/format-size';
 
 /** Title row for a scene on the view-all canvas: name + optional platform mark + size pill. */
 export function PageTitleBar({
@@ -97,7 +98,7 @@ export function PageTitleBar({
       )}
 
       <span className="flex h-5 shrink-0 items-center rounded-full border border-chrome-border bg-chrome-border-subtle px-2 text-xs text-chrome-fg">
-        {width}x{height}
+        {formatSize(width, height)}
       </span>
     </div>
   );

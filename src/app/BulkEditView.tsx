@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Check, EllipsisVertical, ImageIcon, Plus, Search } from 'lucide-react';
+import { Check, EllipsisVertical, ImageIcon, Plus, Search, Sparkles } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
@@ -7,7 +7,6 @@ import { isRealLayer } from '@/lib/create-layout';
 import { getPreset } from '@/lib/mock/presets';
 import { nearestPreset, platforms } from '@/lib/mock';
 import { NO_RULES_ID } from '@/lib/mock/rulesets';
-import { isGradient } from '@/lib/gradient';
 import { RatioIcon } from '@/components/RatioIcon';
 import { ColorPickerPopover } from '@/features/editor/artboard/ColorPickerPopover';
 import { ImagePickerDialog } from '@/features/editor/artboard/ImagePickerDialog';
@@ -15,26 +14,31 @@ import { GROUPS, type ListItem, type QuickSizeResult } from '@/features/editor/a
 import { Button } from '@/components/ui/button';
 import { addSizesTo } from '@/features/editor/artboard/add-sizes';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { duplicateBanner } from '@/features/editor/artboard/duplicate-banner';
 import { deleteBannerSet, duplicateBannerSet } from '@/features/editor/artboard/banner-sets';
 import { canvasRootOf } from '@/lib/canvas-layout';
 import type { Layout, LayoutElement } from '@/types';
+import { formatSize, normalizeSizeQuery } from '@/lib/format-size';
 
 const BORDER = '#40404A';
 /** The table's own lines — its outer frame and the grid between cells. */
 const TABLE_BORDER = '#2A2A2C';
 /** How long the glimmer on freshly filled cells plays — matches `.cell-glimmer` in index.css. */
 const GLIMMER_MS = 600;
-/** Narrowest a Size/content column gets before the table scrolls sideways instead. */
-const MIN_COLUMN_WIDTH = 120;
-/** The leftmost column: drag handle (12px), 4px gap, checkbox (16px), 8px padding each side and
- * its border — wide enough for the handle at all times, so revealing it on hover moves nothing. */
-const CHECKBOX_COLUMN_WIDTH = 49;
-/** The primary's row is lit in the primary blue from the marker inward: strongest across the
- * checkbox cell, then fading out across Size. */
-const PRIMARY_ROW_GRADIENT_START = 'linear-gradient(90deg, rgba(69, 112, 255, 0.5) 0%, rgba(69, 112, 255, 0.2) 100%)';
-const PRIMARY_ROW_GRADIENT_END = 'linear-gradient(90deg, rgba(69, 112, 255, 0.2) 0%, rgba(69, 112, 255, 0) 100%)';
+// Columns are sized by the content they hold (in both views): Size large, texts medium (sharing the
+// remaining width), images and colors small — just the thumbnail / dot.
+/** The Size column — room for a grouped row's several sizes, a few per line. */
+const SIZE_COLUMN_WIDTH = 240;
+/** Image and color columns: the thumbnail / dot alone. */
+const SMALL_COLUMN_WIDTH = 64;
+/** Text columns share the remaining width, never narrower than this — below it, the table scrolls
+ * sideways instead. */
+const TEXT_COLUMN_MIN_WIDTH = 160;
+/** The leftmost column: the checkbox (16px) centered, 12px each side and its border. The row's drag
+ * handle (12px) appears in the left margin on hover, over nothing — so revealing it moves nothing. */
+const CHECKBOX_COLUMN_WIDTH = 41;
 /** The pinned row-actions column on the right. */
 const ACTIONS_COLUMN_WIDTH = 40;
 /** The floating header's height — the scrolling content starts below it. */
@@ -53,6 +57,18 @@ const FILTERS_TO_TABLES = 40;
 /** Base background of every cell — opaque (the page's own color) so the pinned columns cover
  * whatever scrolls underneath them. */
 const ROW_BG = '#19191D';
+/** A text's color column is keyed by its element's id plus this — the color's own cells, under the
+ * text's header, with their own selection and fill handle. */
+const TEXT_COLOR_SUFFIX = '#color';
+/** Likewise a text's fill column (the box behind the text), for texts that have one. */
+const TEXT_FILL_SUFFIX = '#fill';
+const elementIdOf = (columnId: string) => columnId.replace(/#(color|fill)$/, '');
+const isTextColorColumn = (columnId: string) => columnId.endsWith(TEXT_COLOR_SUFFIX);
+const isTextFillColumn = (columnId: string) => columnId.endsWith(TEXT_FILL_SUFFIX);
+/** A column's cells, left to right: a text's color, its fill (when it has one), then the text. */
+const columnParts = (col: Column) => (col.kind === 'text' ? [`${col.id}${TEXT_COLOR_SUFFIX}`, ...(col.hasFill ? [`${col.id}${TEXT_FILL_SUFFIX}`] : []), col.id] : [col.id]);
+/** Width of a text's color column (just the dot). */
+const TEXT_COLOR_COLUMN_WIDTH = 44;
 const KIND_LABELS: Record<LayoutElement['kind'], string> = { image: 'Image', text: 'Text', shape: 'Shape', vector: 'Vector' };
 const KIND_ICONS: Record<LayoutElement['kind'], string> = {
   image: '/icons/edit_panel/panel_image.svg',
@@ -64,18 +80,21 @@ const KIND_ICONS: Record<LayoutElement['kind'], string> = {
 /** One column of a group's table: a piece of content in the primary banner, named by its type and
  * position ("Image 1", "Text 2", ...). Sizes adapted from a primary keep its layers' ids, so the
  * same id finds that content in every banner of the group. */
-type Column = { id: string; kind: LayoutElement['kind']; index: number };
+/** `hasFill`: a text drawn on a fill of its own (`style.fill`, the box behind it) — it gets a fill
+ * column too. */
+type Column = { id: string; kind: LayoutElement['kind']; index: number; hasFill: boolean };
 
 function contentColumns(primary: Layout): Column[] {
   const counts: Partial<Record<LayoutElement['kind'], number>> = {};
   return (
     primary.elements
-      // An empty image slot is still content waiting to be filled ("Select or drop"); everything
-      // else only counts once it's real (no untouched "Add headline" placeholders).
-      .filter((el) => el.kind === 'image' || isRealLayer(el))
+      // Only real content, as in the Layers list: no untouched placeholders — neither "Add headline"
+      // texts nor the built-in image slot every new banner starts with, which would otherwise show
+      // up as an always-empty "Image 1" when the banner's images are layers of their own.
+      .filter(isRealLayer)
       .map((el) => {
         counts[el.kind] = (counts[el.kind] ?? 0) + 1;
-        return { id: el.id, kind: el.kind, index: counts[el.kind]! };
+        return { id: el.id, kind: el.kind, index: counts[el.kind]!, hasFill: el.kind === 'text' && Boolean(el.style.fill) };
       })
   );
 }
@@ -119,7 +138,6 @@ function Cell({
   pinned,
   onFillHandleMouseDown,
   glimmer,
-  backgroundImage,
 }: {
   children?: ReactNode;
   className?: string;
@@ -136,8 +154,6 @@ function Cell({
   onFillHandleMouseDown?: (e: React.MouseEvent) => void;
   /** Set to a new value to play the "value just changed" glimmer once (see BannerGroupTable's `fill`). */
   glimmer?: number;
-  /** Drawn over the cell's own background (which stays opaque, for the pinned columns). */
-  backgroundImage?: string;
 }) {
   return (
     <td
@@ -160,7 +176,7 @@ function Cell({
         selected && 'bg-[#4570FF]/15!',
         className,
       )}
-      style={{ borderColor: TABLE_BORDER, backgroundImage }}
+      style={{ borderColor: TABLE_BORDER }}
     >
       {editable ? children : <div className="flex h-full min-w-0 items-center gap-2">{children}</div>}
       {glimmer !== undefined && <span key={glimmer} aria-hidden className="cell-glimmer pointer-events-none absolute inset-0" />}
@@ -216,8 +232,36 @@ function TextCell({ value, onCommit }: { value: string; onCommit: (value: string
   );
 }
 
-/** Only the thumbnail opens the image picker; the rest of the cell just selects it (for a
- * multi-cell selection or the fill handle). Enter on the selected cell opens the picker too. */
+/** A text's font color — or its background fill — in its own narrow column right before the text
+ * (all under the text's header), drawn so the two can't be confused: the font color as a "T" in that
+ * color, the background as a color dot (like every color in the table). Both
+ * open the color picker; a faint outline keeps dark colors visible on the dark table. */
+function TextColorCell({ color, onChange, variant }: { color: string; onChange: (color: string) => void; variant: 'font' | 'background' }) {
+  const t = useT();
+  const label = variant === 'font' ? t('Text color') : t('Text fill');
+  return (
+    <ColorPickerPopover color={color} onChange={onChange}>
+      <button type="button" data-cell-field aria-label={label} title={label} className="flex h-12 w-full items-center justify-center outline-none">
+        {variant === 'font' ? (
+          // A "T" in the text's color.
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="size-6 shrink-0" aria-hidden>
+            <path
+              d="M18.7222 1C21.0848 1 23 2.91523 23 5.27778V7.72222H19.3333V5.27778C19.3333 4.94027 19.0597 4.66667 18.7222 4.66667H13.8333V19.3333H16.8889V23H7.11111V19.3333H10.1667V4.66667H5.27778C4.94027 4.66667 4.66667 4.94027 4.66667 5.27778V7.72222H1V5.27778C1 2.91523 2.91523 1 5.27778 1H18.7222Z"
+              fill={color}
+              stroke="rgba(255, 255, 255, 0.35)"
+              strokeWidth={0.75}
+            />
+          </svg>
+        ) : (
+          // A color dot, like every color in the table (same as a shape's, FillCell).
+          <span className="size-6 shrink-0 rounded-full border border-white/20" style={{ background: color }} />
+        )}
+      </button>
+    </ColorPickerPopover>
+  );
+}
+
+/** Just the thumbnail (a narrow column) — clicking it opens the image picker. */
 function ImageCell({ url, onPick }: { url: string | undefined; onPick: () => void }) {
   const t = useT();
   return (
@@ -225,36 +269,29 @@ function ImageCell({ url, onPick }: { url: string | undefined; onPick: () => voi
       data-cell-field
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && onPick()}
-      className="flex h-12 w-full min-w-0 items-center gap-2 px-2 outline-none"
+      // A 48px thumbnail with 8px around it — rows holding images are 64px tall.
+      className="flex h-16 w-full min-w-0 items-center justify-center px-2 outline-none"
     >
       <button
         type="button"
         aria-label={t('Select or drop')}
         onClick={onPick}
-        className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-white/10 bg-cover bg-center text-white/45 outline-none transition-shadow hover:shadow-[0_0_0_1px_rgba(255,255,255,0.65)]"
+        className="flex size-12 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-white/10 bg-cover bg-center text-white/45 outline-none transition-shadow hover:shadow-[0_0_0_1px_rgba(255,255,255,0.65)]"
         style={url ? { backgroundImage: `url(${url})` } : undefined}
       >
-        {!url && <ImageIcon className="size-3.5" />}
+        {!url && <ImageIcon className="size-5" />}
       </button>
-      <span className="min-w-0 flex-1 truncate text-white/45">{t('Select or drop')}</span>
     </div>
   );
 }
 
-function FillCell({ color, opacity, onChange }: { color: string; opacity: number; onChange: (color: string) => void }) {
+/** Just the color dot (a narrow column) — clicking it opens the color picker. */
+function FillCell({ color, onChange }: { color: string; onChange: (color: string) => void }) {
   const t = useT();
-  // Read before `isGradient`, whose type guard would otherwise narrow `color` away in the else branch.
-  const hex = color.toUpperCase();
-  const gradient = isGradient(color);
   return (
     <ColorPickerPopover color={color} onChange={onChange}>
-      <button type="button" data-cell-field aria-label={t('Color')} className="flex h-12 w-full items-center gap-2 px-2 text-left outline-none">
+      <button type="button" data-cell-field aria-label={t('Color')} className="flex h-12 w-full items-center justify-center px-2 outline-none">
         <span className="size-6 shrink-0 rounded-full border border-black/20" style={{ background: color }} />
-        <span className="min-w-0 flex-1 truncate">{gradient ? t('Linear') : hex}</span>
-        <span className="h-4 w-px shrink-0" style={{ background: BORDER }} />
-        <span>
-          {Math.round(opacity)} <span className="text-white/65">%</span>
-        </span>
       </button>
     </ColorPickerPopover>
   );
@@ -336,7 +373,7 @@ function SizeGroupList({
           <SizeCheckbox checked={isSelected(item.id)} />
           <RatioIcon width={item.width} height={item.height} />
           <span className="shrink-0 text-[13px]">
-            {item.width}x{item.height}
+            {formatSize(item.width, item.height)}
           </span>
           <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{item.label}</span>
         </button>
@@ -363,7 +400,7 @@ function AddSizeRow({ onAdd }: { onAdd: (sizes: QuickSizeResult[]) => void }) {
   const q = query.trim().toLowerCase();
   const groups = GROUPS.map((g) => ({
     ...g,
-    items: g.items.filter((item) => !q || item.label.toLowerCase().includes(q) || `${item.width}x${item.height}`.includes(q)),
+    items: g.items.filter((item) => !q || item.label.toLowerCase().includes(q) || `${item.width}x${item.height}`.includes(normalizeSizeQuery(q))),
   })).filter((g) => g.items.length > 0);
   const typed = parseTypedSize(query);
 
@@ -441,7 +478,7 @@ function AddSizeRow({ onAdd }: { onAdd: (sizes: QuickSizeResult[]) => void }) {
               <button type="button" onClick={addTyped} className="flex h-9 shrink-0 items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-white/10">
                 <Plus className="size-4 shrink-0" />
                 <span className="shrink-0 text-[13px]">
-                  {typed.width}x{typed.height}
+                  {formatSize(typed.width, typed.height)}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{t('Custom size')}</span>
               </button>
@@ -456,7 +493,7 @@ function AddSizeRow({ onAdd }: { onAdd: (sizes: QuickSizeResult[]) => void }) {
                 <SizeCheckbox checked={selected.has(custom.id)} />
                 <RatioIcon width={custom.width} height={custom.height} />
                 <span className="shrink-0 text-[13px]">
-                  {custom.width}x{custom.height}
+                  {formatSize(custom.width, custom.height)}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{t('Custom size')}</span>
               </button>
@@ -583,6 +620,14 @@ function SetMenu({ primaryId }: { primaryId: string }) {
 /** A row's ⋮ menu: open that banner in the Create view, duplicate it, or delete it. */
 function RowMenu({ setId }: { setId: string }) {
   const t = useT();
+  // Offered once this banner's content has been changed from the table.
+  const edited = useAppStore((s) => Boolean(s.bulkEditEditedPageIds[setId]));
+  function improve() {
+    // Mocked for now: the banner just goes through its loading state, as when a size is generated.
+    const state = useAppStore.getState();
+    state.startPageLoading(setId);
+    state.clearBulkEditEdited(setId);
+  }
   function seeOnCreate() {
     // Only once the click that picked this item is over: switching views grows the canvas under
     // the pointer, and that click landing on its background would clear the selection again.
@@ -620,6 +665,22 @@ function RowMenu({ setId }: { setId: string }) {
         className="min-w-40 rounded-lg border p-1 text-white shadow-[0px_4px_32px_4px_rgba(0,0,0,0.24)] backdrop-blur-[16px]"
         style={MENU_SURFACE}
       >
+        {edited && (
+          <>
+            {/* Set apart from the generic options and highlighted: the one that does real work. */}
+            <DropdownMenuItem
+              className="flex cursor-pointer items-start gap-2 rounded-lg bg-[#4570FF]/15 px-3 py-2 text-white outline-none focus:bg-[#4570FF]/25 data-[highlighted]:bg-[#4570FF]/25"
+              onSelect={improve}
+            >
+              <Sparkles className="mt-0.5 size-4 shrink-0 text-[#4570FF]" />
+              <span className="flex min-w-0 flex-col">
+                <span className="text-[13px] leading-[1.4] font-semibold">{t('Improve banner')}</span>
+                <span className="text-[11px] leading-[1.4] text-white/45">{t('Takes around 2 minutes')}</span>
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="my-1 h-px" style={{ background: BORDER }} />
+          </>
+        )}
         <DropdownMenuItem className={ROW_MENU_ITEM} onSelect={seeOnCreate}>
           {t('See on Create')}
         </DropdownMenuItem>
@@ -636,17 +697,55 @@ function RowMenu({ setId }: { setId: string }) {
   );
 }
 
-function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string; memberIds: string[]; rowIds: string[] }) {
-  // `memberIds` is the whole group, in its order; `rowIds` the ones the filter bar lets through —
-  // the rows actually shown, which cell-selection and fill ranges run over.
-  const filtered = rowIds.length !== memberIds.length;
+function BannerGroupTable({
+  primaryId,
+  memberIds,
+  rowIds: bannerIds,
+  combine,
+}: {
+  primaryId: string;
+  memberIds: string[];
+  rowIds: string[];
+  /** "Grouped by content" view: banners with the same content in every column share one row. */
+  combine: boolean;
+}) {
+  // `memberIds` is the whole group, in its order; `bannerIds` the ones the filter bar lets through.
+  // `rowIds` are the rows actually shown — one per banner, or in the grouped view one per distinct
+  // content, keyed by its first banner — which cell-selection and fill ranges run over; `membersOf`
+  // turns a row back into the banners it stands for (what every edit is applied to).
   const t = useT();
   const setsById = useAppStore((s) => s.setsById);
+  const layoutsByIdForRows = useAppStore((s) => s.layoutsById);
+  const rowMembers = new Map<string, string[]>();
+  if (combine) {
+    const primaryLayout = setsById[primaryId] ? layoutsByIdForRows[setsById[primaryId].sourceLayoutId] : undefined;
+    const columnIds = primaryLayout ? contentColumns(primaryLayout).map((c) => c.id) : [];
+    const keyBySignature = new Map<string, string>();
+    for (const id of bannerIds) {
+      const layout = setsById[id] ? layoutsByIdForRows[setsById[id].sourceLayoutId] : undefined;
+      const signature = columnIds
+        .map((colId) => {
+          const el = layout?.elements.find((e) => e.id === colId);
+          if (!el) return '-';
+          return el.kind === 'text' ? `t:${el.content ?? ''}:${el.style.color ?? ''}:${el.style.fill ?? ''}` : el.kind === 'image' ? `i:${el.imageUrl ?? ''}` : `f:${el.style.fill ?? ''}:${el.style.opacity ?? 100}`;
+        })
+        .join('\u0000');
+      const key = keyBySignature.get(signature);
+      if (key) rowMembers.get(key)!.push(id);
+      else {
+        keyBySignature.set(signature, id);
+        rowMembers.set(id, [id]);
+      }
+    }
+  }
+  const rowIds = combine ? [...rowMembers.keys()] : bannerIds;
+  const membersOf = (rowId: string) => rowMembers.get(rowId) ?? [rowId];
+  // Row reordering is the whole group's order, one banner at a time — off while filtering or grouping.
+  const filtered = bannerIds.length !== memberIds.length || combine;
   const layoutsById = useAppStore((s) => s.layoutsById);
   const pageGroups = useAppStore((s) => s.pageGroups);
   const pageGroupIdByPage = useAppStore((s) => s.pageGroupIdByPage);
   const selectedSceneIds = useAppStore((s) => s.selectedSceneIds);
-  const selectScene = useAppStore((s) => s.selectScene);
   const selectScenes = useAppStore((s) => s.selectScenes);
   const updateElement = useAppStore((s) => s.updateElement);
   const requestFocusPage = useAppStore((s) => s.requestFocusPage);
@@ -791,14 +890,18 @@ function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string;
     if (active instanceof HTMLElement && tableRef.current?.contains(active)) active.blur();
     const state = useAppStore.getState();
     const sourceSet = state.setsById[done.sourceId];
-    const source = sourceSet ? state.layoutsById[sourceSet.sourceLayoutId]?.elements.find((el) => el.id === done.columnId) : undefined;
+    const source = sourceSet ? state.layoutsById[sourceSet.sourceLayoutId]?.elements.find((el) => el.id === elementIdOf(done.columnId)) : undefined;
     if (!source) return;
     const targets = done.rowIds.filter((id) => id !== done.sourceId);
     applyToRows(
       targets,
       done.columnId,
       (el): Partial<LayoutElement> =>
-        el.kind === 'text'
+        isTextColorColumn(done.columnId)
+          ? { style: { ...el.style, color: source.style.color } }
+          : isTextFillColumn(done.columnId)
+          ? { style: { ...el.style, fill: source.style.fill } }
+          : el.kind === 'text'
           ? { content: source.content }
           : el.kind === 'image'
             ? { imageUrl: source.imageUrl }
@@ -853,14 +956,16 @@ function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string;
   }
   /** Applies `patch` — built from each banner's own *current* element, so e.g. a fill change never
    * copies one banner's other style values onto another — to that column's element in every row. */
-  function applyToRows(rowIds: string[], columnId: string, patch: (el: LayoutElement) => Partial<LayoutElement>) {
+  function applyToRows(rows: string[], columnId: string, patch: (el: LayoutElement) => Partial<LayoutElement>) {
     const state = useAppStore.getState();
+    const rowIds = rows.flatMap(membersOf);
     for (const rowId of rowIds) {
       const set = state.setsById[rowId];
       const layout = set ? state.layoutsById[set.sourceLayoutId] : undefined;
-      const el = layout?.elements.find((candidate) => candidate.id === columnId);
+      const el = layout?.elements.find((candidate) => candidate.id === elementIdOf(columnId));
       if (layout && el) updateElement(layout.id, el.id, patch(el));
     }
+    state.markBulkEditEdited(rowIds);
   }
 
   const layoutOf = (setId: string) => {
@@ -877,7 +982,7 @@ function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string;
   // A cell selection spanning several rows: the preview frames all of those banners.
   const selectionRowsKey = cellSelection && cellSelection.rowIds.length > 1 ? cellSelection.rowIds.join(',') : '';
   useEffect(() => {
-    if (selectionRowsKey) useAppStore.getState().requestFocusPages(selectionRowsKey.split(','));
+    if (selectionRowsKey) useAppStore.getState().requestFocusPages(selectionRowsKey.split(',').flatMap(membersOf));
   }, [selectionRowsKey]);
   useEffect(() => {
     const store = useAppStore.getState();
@@ -887,7 +992,7 @@ function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string;
       return;
     }
     const inSelection = cellSelection && cellSelection.columnId === activeCell.columnId && cellSelection.rowIds.includes(activeCell.setId);
-    store.setBulkEditHighlight({ elementId: activeCell.columnId, pageIds: inSelection ? cellSelection.rowIds : [activeCell.setId] });
+    store.setBulkEditHighlight({ elementId: elementIdOf(activeCell.columnId), pageIds: (inSelection ? cellSelection.rowIds : [activeCell.setId]).flatMap(membersOf) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCell, cellSelection]);
   function focusBanner(setId: string) {
@@ -895,7 +1000,10 @@ function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string;
     setBulkEditActivePage(setId);
     if (lastFocusedRef.current === setId) return;
     lastFocusedRef.current = setId;
-    requestFocusPage(setId);
+    // A grouped row stands for several banners: frame all of them.
+    const banners = membersOf(setId);
+    if (banners.length > 1) useAppStore.getState().requestFocusPages(banners);
+    else requestFocusPage(setId);
   }
 
   // The right-edge fade over the scrolling columns only shows while there's more of them to the
@@ -919,10 +1027,10 @@ function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string;
   const primary = layoutOf(primaryId);
   if (!primary) return null;
   // Select-all covers the rows shown, not ones the filters hide.
-  const allRowsChecked = rowIds.every((id) => selectedSceneIds.includes(id));
+  const allRowsChecked = bannerIds.every((id) => selectedSceneIds.includes(id));
   function toggleAllRows() {
-    const others = selectedSceneIds.filter((id) => !rowIds.includes(id));
-    selectScenes(allRowsChecked ? others : [...others, ...rowIds]);
+    const others = selectedSceneIds.filter((id) => !bannerIds.includes(id));
+    selectScenes(allRowsChecked ? others : [...others, ...bannerIds]);
     frameCheckedBanners();
   }
   /** After a checkbox changes: the preview frames every checked banner (or just the one). */
@@ -946,7 +1054,7 @@ function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string;
       {/* One rounded frame around the table. Inside it the checkbox column (left) and the row
           actions (right) stay pinned, while Size and the content columns between them scroll
           sideways: they fill the available width, sharing it equally (fixed layout, so long
-          content truncates instead of widening its column), and below MIN_COLUMN_WIDTH each the
+          content truncates instead of widening its column), and below TEXT_COLUMN_MIN_WIDTH each the
           table stops shrinking and scrolls instead, with a fade at the right edge of the scrolling
           part while there's more to see. No native drag-and-drop of a field's selected text either:
           pressing on already-selected text and moving would otherwise start dragging that text
@@ -962,24 +1070,52 @@ function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string;
             >
               <table
                 className="w-full table-fixed border-separate border-spacing-0 [&>tbody>tr:last-child>td]:border-b-0"
-                style={{ minWidth: CHECKBOX_COLUMN_WIDTH + ACTIONS_COLUMN_WIDTH + (columns.length + 1) * MIN_COLUMN_WIDTH }}
+                style={{
+                  minWidth:
+                    CHECKBOX_COLUMN_WIDTH +
+                    ACTIONS_COLUMN_WIDTH +
+                    SIZE_COLUMN_WIDTH +
+                    columns.reduce((sum, c) => sum + (c.kind === 'text' ? TEXT_COLOR_COLUMN_WIDTH * (c.hasFill ? 2 : 1) + TEXT_COLUMN_MIN_WIDTH : SMALL_COLUMN_WIDTH), 0),
+                }}
               >
+                {/* Column widths (a fixed-layout table takes them from here) — see SIZE_COLUMN_WIDTH. */}
+                <colgroup>
+                  <col style={{ width: CHECKBOX_COLUMN_WIDTH }} />
+                  <col style={{ width: SIZE_COLUMN_WIDTH }} />
+                  {columns.flatMap((c) =>
+                    c.kind === 'text'
+                      ? columnParts(c).map((part) => <col key={part} style={{ width: part === c.id ? undefined : TEXT_COLOR_COLUMN_WIDTH }} />)
+                      : [<col key={c.id} style={{ width: SMALL_COLUMN_WIDTH }} />],
+                  )}
+                  <col style={{ width: ACTIONS_COLUMN_WIDTH }} />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th className="sticky left-0 z-[2] h-10 border-r border-b px-2" style={{ borderColor: TABLE_BORDER, background: ROW_BG, width: CHECKBOX_COLUMN_WIDTH }}>
-                      <div className="flex items-center gap-1">
-                        <span className="size-3 shrink-0" />
-                        <RowCheckbox checked={allRowsChecked} onChange={toggleAllRows} />
-                      </div>
+                    <th className="sticky left-0 z-[2] h-10 border-r border-b px-3" style={{ borderColor: TABLE_BORDER, background: ROW_BG, width: CHECKBOX_COLUMN_WIDTH }}>
+                      <RowCheckbox checked={allRowsChecked} onChange={toggleAllRows} />
                     </th>
-                    {[{ id: 'size', label: t('Size'), icon: '/icons/edit_panel/panel_image.svg' }, ...columns.map((c) => ({ id: c.id, label: `${t(KIND_LABELS[c.kind])} ${c.index}`, icon: KIND_ICONS[c.kind] }))].map((col, i, all) => (
-                      <th key={col.id} className={cn('h-10 border-b px-2 text-left text-[13px] font-normal tracking-[-0.01em] text-white/45', i < all.length - 1 && 'border-r')} style={{ borderColor: TABLE_BORDER, background: ROW_BG }}>
-                        <div className="flex min-w-0 items-center gap-1">
-                          <img src={col.icon} alt="" className="size-6 shrink-0" />
-                          <span className="truncate">{col.label}</span>
-                        </div>
-                      </th>
-                    ))}
+                    {[
+                      { id: 'size', label: t('Size'), short: t('Size'), icon: '/icons/edit_panel/panel_image.svg', kind: null },
+                      ...columns.map((c) => ({ id: c.id, label: `${t(KIND_LABELS[c.kind])} ${c.index}`, short: String(c.index), icon: KIND_ICONS[c.kind], kind: c.kind })),
+                    ].map((col, i, all) => {
+                      // Image and color columns are narrow: their header shows just the icon and number.
+                      const small = col.kind !== null && col.kind !== 'text';
+                      return (
+                        <th
+                          key={col.id}
+                          // A text's header spans all its columns: color, fill (if any), then text.
+                          colSpan={col.kind === 'text' ? columnParts(columns.find((c) => c.id === col.id)!).length : undefined}
+                          title={small ? col.label : undefined}
+                          className={cn('h-10 border-b px-2 text-left text-[13px] font-normal tracking-[-0.01em] text-white/45', i < all.length - 1 && 'border-r')}
+                          style={{ borderColor: TABLE_BORDER, background: ROW_BG }}
+                        >
+                          <div className={cn('flex min-w-0 items-center gap-1', small && 'justify-center')}>
+                            <img src={col.icon} alt="" className="size-6 shrink-0" />
+                            <span className="truncate">{small ? col.short : col.label}</span>
+                          </div>
+                        </th>
+                      );
+                    })}
                     <th className="sticky right-0 z-[2] h-10 border-b border-l" style={{ borderColor: TABLE_BORDER, background: ROW_BG, width: ACTIONS_COLUMN_WIDTH }} />
                   </tr>
                 </thead>
@@ -987,6 +1123,18 @@ function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string;
                   {rowIds.map((setId) => {
                     const layout = layoutOf(setId);
                     if (!layout) return null;
+                    const banners = membersOf(setId);
+                    const sizes = banners.map((id) => layoutOf(id)).filter((l): l is Layout => Boolean(l)).map((l) => formatSize(l.size.width, l.size.height));
+                    // Each channel among the row's banners, once (banners with none add no icon).
+                    const channelIcons = [
+                      ...new Set(
+                        banners.flatMap((id) => {
+                          const l = layoutOf(id);
+                          const ch = l ? (getPreset(l.size.presetId ?? '')?.platformId ?? groupPlatformId) : undefined;
+                          return ch ? [ch] : [];
+                        }),
+                      ),
+                    ];
                     const platformId = getPreset(layout.size.presetId ?? '')?.platformId ?? groupPlatformId;
                     return (
                       // Selecting any cell brings that row's banner into view in the preview — focus
@@ -1016,109 +1164,147 @@ function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string;
                           }
                         }}
                       >
-                        <Cell pinned="left" className="group/lead" backgroundImage={setId === primaryId ? PRIMARY_ROW_GRADIENT_START : undefined}>
-                          <div className="flex items-center gap-1">
-                            {/* The primary always stays first, so it has no drag handle — it gets the primary
-                                tag instead, attached to the table's left border (the tab icon mirrored, its
-                                flat side against the border). Other rows show their handle while hovering
-                                this column, except while filters hide some rows (the order is the whole group's). */}
-                            {setId === primaryId ? (
-                              <>
-                                <img src="/icons/primary-row.svg" alt={t('Primary')} className="absolute top-1/2 left-0 size-4 -translate-y-1/2 -scale-x-100" />
-                                <span className="size-3 shrink-0" />
-                              </>
-                            ) : filtered ? (
-                              <span className="size-3 shrink-0" />
-                            ) : (
-                              <img
-                                src="/icons/drag-12.svg"
-                                alt=""
-                                draggable={false}
-                                onMouseDown={(e) => startRowDrag(e, setId)}
-                                className={cn('size-3 shrink-0 cursor-grab opacity-0 transition-opacity group-hover/lead:opacity-100', rowDrag?.id === setId && 'opacity-100')}
-                              />
-                            )}
-                            <RowCheckbox
-                              checked={selectedSceneIds.includes(setId)}
-                              onChange={() => {
-                                selectScene(setId, true);
-                                frameCheckedBanners();
-                              }}
+                        <Cell pinned="left" className="group/lead px-3">
+                          {/* The drag handle shows in the left margin while hovering this column — not on the
+                              primary (it always stays first), nor while filters or grouping are on (the
+                              order is the whole group's, one banner at a time). */}
+                          {setId !== primaryId && !filtered && (
+                            <img
+                              src="/icons/drag-12.svg"
+                              alt=""
+                              draggable={false}
+                              onMouseDown={(e) => startRowDrag(e, setId)}
+                              className={cn(
+                                'absolute top-1/2 left-0 size-3 -translate-y-1/2 cursor-grab opacity-0 transition-opacity group-hover/lead:opacity-100',
+                                rowDrag?.id === setId && 'opacity-100',
+                              )}
                             />
-                          </div>
-                        </Cell>
-                        <Cell className={columns.length === 0 ? 'border-r-0' : undefined} backgroundImage={setId === primaryId ? PRIMARY_ROW_GRADIENT_END : undefined}>
-                          {platformId ? (
-                            <img src={`/icons/ec-platform-icon/${platformId}.svg`} alt="" className="size-6 shrink-0 rounded-[6px]" />
-                          ) : (
-                            <RatioIcon width={layout.size.width} height={layout.size.height} className="size-6 shrink-0" />
                           )}
-                          <span className="truncate">
-                            {layout.size.width}x{layout.size.height}
-                          </span>
+                          <RowCheckbox
+                            checked={banners.every((id) => selectedSceneIds.includes(id))}
+                            onChange={() => {
+                              const all = banners.every((id) => selectedSceneIds.includes(id));
+                              const others = selectedSceneIds.filter((id) => !banners.includes(id));
+                              selectScenes(all ? others : [...others, ...banners]);
+                              frameCheckedBanners();
+                            }}
+                          />
                         </Cell>
-                        {columns.map((col, ci) => {
-                          // The pinned actions column already draws the separator after the last one.
-                          const lastClass = ci === columns.length - 1 ? 'border-r-0' : undefined;
-                          const el = layout.elements.find((e) => e.id === col.id);
-                          // A size just added is still "generating" (same loading time as on the canvas)
-                          // — nothing to edit yet.
-                          if (loadingPageIds[setId]) {
+                        <Cell className={columns.length === 0 ? 'border-r-0' : undefined}>
+                          {sizes.length > 1 ? (
+                            // A grouped row: its channels' icons on their own line, then every size it
+                            // stands for, in full — wrapping onto more lines (the row grows) rather than
+                            // cutting any off.
+                            <div className="flex min-w-0 flex-col gap-1 py-2">
+                              {channelIcons.length > 0 && (
+                                <div className="flex items-center gap-1">
+                                  {channelIcons.map((id) => (
+                                    <img key={id} src={`/icons/ec-platform-icon/${id}.svg`} alt="" className="size-6 shrink-0 rounded-[6px]" />
+                                  ))}
+                                </div>
+                              )}
+                              <span className="flex min-w-0 flex-wrap gap-x-2 gap-y-0.5">
+                                {sizes.map((size, i) => (
+                                  <span key={i} className="whitespace-nowrap">
+                                    {size}
+                                    {i < sizes.length - 1 && ','}
+                                  </span>
+                                ))}
+                              </span>
+                            </div>
+                          ) : (
+                            <>
+                              {platformId ? (
+                                <img src={`/icons/ec-platform-icon/${platformId}.svg`} alt="" className="size-6 shrink-0 rounded-[6px]" />
+                              ) : (
+                                <RatioIcon width={layout.size.width} height={layout.size.height} className="size-6 shrink-0" />
+                              )}
+                              <span className="truncate">{sizes[0]}</span>
+                            </>
+                          )}
+                        </Cell>
+                        {columns.flatMap((col, ci) => {
+                          // A text has two cells under its header: its color, then the text itself.
+                          const parts = columnParts(col);
+                          return parts.map((columnId) => {
+                            // The pinned actions column already draws the separator after the last one.
+                            const lastClass = ci === columns.length - 1 && columnId === col.id ? 'border-r-0' : undefined;
+                            const el = layout.elements.find((e) => e.id === col.id);
+                            // A size just added is still "generating" (same loading time as on the canvas)
+                            // — nothing to edit yet.
+                            if (banners.some((id) => loadingPageIds[id])) {
+                              return (
+                                <Cell key={columnId} className={lastClass}>
+                                  {elementIdOf(columnId) === columnId && <LoadingCell />}
+                                </Cell>
+                              );
+                            }
+                            if (!el) {
+                              return (
+                                <Cell key={columnId} className={lastClass}>
+                                  {elementIdOf(columnId) === columnId && <Missing />}
+                                </Cell>
+                              );
+                            }
+                            const rows = () => targetRows(setId, columnId);
+                            const multiSelected =
+                              Boolean(cellSelection && cellSelection.rowIds.length > 1 && cellSelection.columnId === columnId && cellSelection.rowIds.includes(setId)) ||
+                              Boolean(fill && fill.columnId === columnId && fill.sourceId !== setId && fill.rowIds.includes(setId));
                             return (
-                              <Cell key={col.id} className={lastClass}>
-                                <LoadingCell />
+                              <Cell
+                                key={columnId}
+                                className={lastClass}
+                                editable
+                                cellKey={`${setId}:${columnId}`}
+                                selected={multiSelected}
+                                onMouseDown={(e) => handleCellMouseDown(e, setId, columnId)}
+                                onMouseEnter={(e) => handleCellMouseEnter(e, setId, columnId)}
+                                onFillHandleMouseDown={(e) => startFill(e, setId, columnId)}
+                                glimmer={glimmer && glimmer.columnId === columnId && glimmer.rowIds.includes(setId) ? glimmer.stamp : undefined}
+                              >
+                                {el.kind === 'text' &&
+                                  (isTextColorColumn(columnId) ? (
+                                    <TextColorCell
+                                      variant="font"
+                                      // Same default as the canvas draws an uncolored text in.
+                                      color={el.style.color ?? '#18181b'}
+                                      onChange={(color) => applyToRows(rows(), columnId, (target) => ({ style: { ...target.style, color } }))}
+                                    />
+                                  ) : isTextFillColumn(columnId) ? (
+                                    <TextColorCell
+                                      variant="background"
+                                      color={el.style.fill ?? 'transparent'}
+                                      onChange={(fill) => applyToRows(rows(), columnId, (target) => ({ style: { ...target.style, fill } }))}
+                                    />
+                                  ) : (
+                                    <TextCell value={el.content ?? ''} onCommit={(content) => applyToRows(rows(), columnId, () => ({ content }))} />
+                                  ))}
+                                {el.kind === 'image' && (
+                                  <ImageCell
+                                    url={el.imageUrl}
+                                    onPick={() =>
+                                      setPicking(
+                                        rows().flatMap(membersOf).flatMap((rowId) => {
+                                          const rowLayout = layoutOf(rowId);
+                                          return rowLayout?.elements.some((e) => e.id === col.id) ? [{ layoutId: rowLayout.id, elementId: col.id }] : [];
+                                        }),
+                                      )
+                                    }
+                                  />
+                                )}
+                                {(el.kind === 'shape' || el.kind === 'vector') && (
+                                  <FillCell
+                                    color={el.style.fill ?? '#D9D9D9'}
+                                    onChange={(fill) => applyToRows(rows(), columnId, (target) => ({ style: { ...target.style, fill } }))}
+                                  />
+                                )}
                               </Cell>
                             );
-                          }
-                          if (!el) {
-                            return (
-                              <Cell key={col.id} className={lastClass}>
-                                <Missing />
-                              </Cell>
-                            );
-                          }
-                          const rows = () => targetRows(setId, col.id);
-                          const multiSelected =
-                            Boolean(cellSelection && cellSelection.rowIds.length > 1 && cellSelection.columnId === col.id && cellSelection.rowIds.includes(setId)) ||
-                            Boolean(fill && fill.columnId === col.id && fill.sourceId !== setId && fill.rowIds.includes(setId));
-                          return (
-                            <Cell
-                              key={col.id}
-                              className={lastClass}
-                              editable
-                              cellKey={`${setId}:${col.id}`}
-                              selected={multiSelected}
-                              onMouseDown={(e) => handleCellMouseDown(e, setId, col.id)}
-                              onMouseEnter={(e) => handleCellMouseEnter(e, setId, col.id)}
-                              onFillHandleMouseDown={(e) => startFill(e, setId, col.id)}
-                              glimmer={glimmer && glimmer.columnId === col.id && glimmer.rowIds.includes(setId) ? glimmer.stamp : undefined}
-                            >
-                              {el.kind === 'text' && <TextCell value={el.content ?? ''} onCommit={(content) => applyToRows(rows(), col.id, () => ({ content }))} />}
-                              {el.kind === 'image' && (
-                                <ImageCell
-                                  url={el.imageUrl}
-                                  onPick={() =>
-                                    setPicking(
-                                      rows().flatMap((rowId) => {
-                                        const rowLayout = layoutOf(rowId);
-                                        return rowLayout?.elements.some((e) => e.id === col.id) ? [{ layoutId: rowLayout.id, elementId: col.id }] : [];
-                                      }),
-                                    )
-                                  }
-                                />
-                              )}
-                              {(el.kind === 'shape' || el.kind === 'vector') && (
-                                <FillCell
-                                  color={el.style.fill ?? '#D9D9D9'}
-                                  opacity={el.style.opacity ?? 100}
-                                  onChange={(fill) => applyToRows(rows(), col.id, (target) => ({ style: { ...target.style, fill } }))}
-                                />
-                              )}
-                            </Cell>
-                          );
+                          });
                         })}
                         <Cell pinned="right" className="px-2">
-                          <RowMenu setId={setId} />
+                          {/* Its actions are about one banner — none on a row standing for several. */}
+                          {banners.length === 1 && <RowMenu setId={setId} />}
                         </Cell>
                       </tr>
                     );
@@ -1155,6 +1341,7 @@ function BannerGroupTable({ primaryId, memberIds, rowIds }: { primaryId: string;
           onOpenChange={(open) => !open && setPicking(null)}
           onSelect={(url) => {
             for (const target of picking) updateElement(target.layoutId, target.elementId, { imageUrl: url });
+            useAppStore.getState().markBulkEditEdited(picking.map((target) => useAppStore.getState().layoutsById[target.layoutId]?.setId).filter((id): id is string => Boolean(id)));
             setPicking(null);
           }}
         />
@@ -1184,7 +1371,7 @@ function rowFacts(state: ReturnType<typeof useAppStore.getState>, setId: string)
     height: layout.size.height,
     label: preset?.label ?? '',
     channel,
-    text: [set.name, `${layout.size.width}x${layout.size.height}`, ...layout.elements.map((el) => (el.kind === 'text' ? (el.content ?? '') : ''))].join('\n').toLowerCase(),
+    text: [set.name, `${layout.size.width}x${layout.size.height}`, formatSize(layout.size.width, layout.size.height), ...layout.elements.map((el) => (el.kind === 'text' ? (el.content ?? '') : ''))].join('\n').toLowerCase(),
   };
 }
 
@@ -1237,10 +1424,10 @@ function SizeFilterMenu({ sizes, onChange, groups }: { sizes: Set<string>; onCha
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
   const visible = groups
-    .map((g) => ({ ...g, items: g.items.filter((item) => !q || item.label.toLowerCase().includes(q) || `${item.width}x${item.height}`.includes(q)) }))
+    .map((g) => ({ ...g, items: g.items.filter((item) => !q || item.label.toLowerCase().includes(q) || `${item.width}x${item.height}`.includes(normalizeSizeQuery(q))) }))
     .filter((g) => g.items.length > 0);
   const only = sizes.size === 1 ? groups.flatMap((g) => g.items).find((item) => sizes.has(item.id)) : undefined;
-  const label = sizes.size === 0 ? t('All sizes') : only ? `${only.width}x${only.height}` : language === 'ja' ? `${sizes.size}件のサイズ` : `${sizes.size} sizes`;
+  const label = sizes.size === 0 ? t('All sizes') : only ? formatSize(only.width, only.height) : language === 'ja' ? `${sizes.size}件のサイズ` : `${sizes.size} sizes`;
   function toggleIds(ids: string[], on: boolean) {
     const next = new Set(sizes);
     for (const id of ids) {
@@ -1286,7 +1473,65 @@ function SizeFilterMenu({ sizes, onChange, groups }: { sizes: Set<string>; onCha
   );
 }
 
-/** Channel and size filters on the left, a text search on the right — above the tables. */
+/** "One row per banner" — a table, inline in `currentColor` so it follows the button's color. */
+function OneRowPerBannerIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden>
+      <path
+        d="M13 0C14.6569 0 16 1.34315 16 3V13C16 14.6569 14.6569 16 13 16H3L2.8457 15.9961C1.26055 15.9158 0 14.6051 0 13V3C0 1.34315 1.34315 0 3 0H13ZM6.25 14.5H13C13.8284 14.5 14.5 13.8284 14.5 13V12.25H6.25V14.5ZM1.5 13C1.5 13.8284 2.17157 14.5 3 14.5H4.75V12.25H1.5V13ZM6.25 10.75H14.5V8.75H6.25V10.75ZM1.5 10.75H4.75V8.75H1.5V10.75ZM6.25 7.25H14.5V5.25H6.25V7.25ZM1.5 7.25H4.75V5.25H1.5V7.25ZM6.25 3.75H14.5V3C14.5 2.17157 13.8284 1.5 13 1.5H6.25V3.75ZM3 1.5C2.17157 1.5 1.5 2.17157 1.5 3V3.75H4.75V1.5H3Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+/** "Group banners with the same content" — two stacked blocks, inline in `currentColor`. */
+function GroupedBannersIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden>
+      <path
+        d="M13 9C14.6569 9 16 10.3431 16 12V13C16 14.6569 14.6569 16 13 16H3L2.8457 15.9961C1.26055 15.9158 0 14.6051 0 13V12C0 10.3431 1.34315 9 3 9H13ZM3 10.5C2.17157 10.5 1.5 11.1716 1.5 12V13C1.5 13.8284 2.17157 14.5 3 14.5H13C13.8284 14.5 14.5 13.8284 14.5 13V12C14.5 11.1716 13.8284 10.5 13 10.5H3ZM13 0C14.6569 0 16 1.34315 16 3V4C16 5.65685 14.6569 7 13 7H3L2.8457 6.99609C1.26055 6.91579 0 5.60511 0 4V3C0 1.34315 1.34315 0 3 0H13ZM3 1.5C2.17157 1.5 1.5 2.17157 1.5 3V4C1.5 4.82843 2.17157 5.5 3 5.5H13C13.8284 5.5 14.5 4.82843 14.5 4V3C14.5 2.17157 13.8284 1.5 13 1.5H3Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+/** How the tables list banners: one row per banner, or grouped — banners with the same content in
+ * every column sharing one row (edits to it go to all of them). Two icon buttons with tooltips. */
+function ViewToggle({ combine, onChange }: { combine: boolean; onChange: (combine: boolean) => void }) {
+  const t = useT();
+  const options = [
+    // The default (one row per banner) first.
+    { value: false, label: t('One row per banner'), icon: OneRowPerBannerIcon },
+    { value: true, label: t('Group banners with the same content'), icon: GroupedBannersIcon },
+  ];
+  return (
+    <div className="flex h-8 items-center gap-0.5 rounded-lg border border-[#40404A] bg-[#26262C] p-0.5">
+      {options.map(({ value, label, icon: Icon }) => (
+        <Tooltip key={String(value)}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={label}
+              aria-pressed={combine === value}
+              onClick={() => onChange(value)}
+              className={cn('flex size-6 items-center justify-center rounded-md transition-colors', combine === value ? 'bg-chrome-active text-white' : 'text-white hover:bg-white/5')}
+            >
+              <Icon className="size-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={8} className="text-[14px]">
+            {label}
+          </TooltipContent>
+        </Tooltip>
+      ))}
+    </div>
+  );
+}
+
+/** The table view toggle and the channel and size filters on the left, a text search on the right —
+ * above the tables. */
 function FilterBar({
   sizes,
   onSizesChange,
@@ -1296,6 +1541,8 @@ function FilterBar({
   channels,
   query,
   onQueryChange,
+  combine,
+  onCombineChange,
 }: {
   /** Ticked sizes (`RowFacts.sizeKey`s); none = every size. */
   sizes: Set<string>;
@@ -1308,6 +1555,8 @@ function FilterBar({
   channels: string[];
   query: string;
   onQueryChange: (value: string) => void;
+  combine: boolean;
+  onCombineChange: (value: boolean) => void;
 }) {
   const t = useT();
   const channelName = (id: string) => (id === '' ? t('Custom') : (platforms.find((p) => p.id === id)?.name ?? id));
@@ -1318,6 +1567,8 @@ function FilterBar({
   return (
     <div className="flex items-start justify-between gap-2">
       <div className="flex min-w-0 flex-1 items-start gap-2">
+        {/* How the tables list banners, first — then the filters. */}
+        <ViewToggle combine={combine} onChange={onCombineChange} />
         <FilterMenu label={channel === null ? t('All channels') : channelName(channel)} value={channel} options={channelOptions} onChange={onChannelChange} />
         <SizeFilterMenu sizes={sizes} onChange={onSizesChange} groups={sizeGroups} />
       </div>
@@ -1344,6 +1595,8 @@ export function BulkEditView() {
   const t = useT();
   const groups = useBannerGroups();
   const [sizes, setSizes] = useState<Set<string>>(new Set());
+  // One row per banner by default; the filter bar's toggle switches to grouped by content.
+  const [combine, setCombine] = useState(false);
   const [channel, setChannel] = useState<ChannelFilter>(null);
   const [query, setQuery] = useState('');
   // Subscribed so the filtering re-runs whenever a banner changes — an edit can change what a
@@ -1393,7 +1646,18 @@ export function BulkEditView() {
         // Reserves the same scrollbar room as the tables' area below (see SCROLLBAR_ROOM), so the bar
         // lines up with the tables on both sides.
         <div className="shrink-0 overflow-hidden" style={{ paddingTop: SCROLL_TOP_PADDING, paddingLeft: SIDE_PADDING, paddingRight: SIDE_PADDING, ...SCROLLBAR_ROOM }}>
-          <FilterBar sizes={sizes} onSizesChange={setSizes} sizeGroups={sizeGroups} channel={channel} onChannelChange={setChannel} channels={channels} query={query} onQueryChange={setQuery} />
+          <FilterBar
+            sizes={sizes}
+            onSizesChange={setSizes}
+            sizeGroups={sizeGroups}
+            channel={channel}
+            onChannelChange={setChannel}
+            channels={channels}
+            query={query}
+            onQueryChange={setQuery}
+            combine={combine}
+            onCombineChange={setCombine}
+          />
         </div>
       )}
       <div className="relative min-h-0 flex-1">
@@ -1403,7 +1667,7 @@ export function BulkEditView() {
         >
           <div className="flex flex-col gap-10">
             {shown.map((g) => (
-              <BannerGroupTable key={g.primaryId} primaryId={g.primaryId} memberIds={g.memberIds} rowIds={g.rowIds} />
+              <BannerGroupTable key={g.primaryId} primaryId={g.primaryId} memberIds={g.memberIds} rowIds={g.rowIds} combine={combine} />
             ))}
             {groups.length === 0 && <span className="text-[13px] text-white/45">{t('No banners yet.')}</span>}
             {groups.length > 0 && shown.length === 0 && <span className="text-[13px] text-white/45">{t('No banners match these filters.')}</span>}

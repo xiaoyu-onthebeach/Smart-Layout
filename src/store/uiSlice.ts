@@ -36,6 +36,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   bulkEditActivePageId: null,
   workspaceSwitching: false,
   bulkEditFilterMatches: null,
+  bulkEditEditedPageIds: {},
   bulkEditHighlight: null,
   canvasDotBackground: null,
   language: 'en',
@@ -209,6 +210,14 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   setBulkEditActivePage: (pageId) => set({ bulkEditActivePageId: pageId }),
   setWorkspaceSwitching: (switching) => set({ workspaceSwitching: switching }),
   setBulkEditFilterMatches: (pageIds) => set({ bulkEditFilterMatches: pageIds }),
+  markBulkEditEdited: (pageIds) =>
+    set((state) => ({ bulkEditEditedPageIds: { ...state.bulkEditEditedPageIds, ...Object.fromEntries(pageIds.map((id) => [id, true as const])) } })),
+  clearBulkEditEdited: (pageId) =>
+    set((state) => {
+      const next = { ...state.bulkEditEditedPageIds };
+      delete next[pageId];
+      return { bulkEditEditedPageIds: next };
+    }),
   setBulkEditHighlight: (highlight) => set({ bulkEditHighlight: highlight }),
   setCanvasDotBackground: (bg) => set({ canvasDotBackground: bg }),
   setLanguage: (language) => set({ language }),

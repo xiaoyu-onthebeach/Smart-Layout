@@ -21,6 +21,7 @@ import {
 } from './PanelKit';
 import { SizeChangeMenu } from './SizeChangeMenu';
 import type { QuickSizeResult } from './QuickSizeMenu';
+import { formatSize } from '@/lib/format-size';
 
 type BorderStyle = 'none' | 'solid' | 'dashed' | 'dotted';
 /** The segmented control inside the (expanded) Border section only ever offers these three — "no
@@ -118,7 +119,7 @@ export function SceneEditorPanel({ layout, setId }: { layout: Layout; setId: str
             style={{ background: '#26262C' }}
           >
             <span className="shrink-0">
-              {layout.size.width}x{layout.size.height}
+              {formatSize(layout.size.width, layout.size.height)}
             </span>
             <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{currentSizeLabel}</span>
             <ChevronDown className="size-4 shrink-0 text-white" />

@@ -8,6 +8,7 @@ import { NO_RULES_ID } from '@/lib/mock/rulesets';
 import { STANDARD_RATIOS } from '@/features/size-select/standard-ratios';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
+import { formatSize } from '@/lib/format-size';
 
 export type QuickSizeResult = { width: number; height: number; label: string; presetId?: string; ruleSetId: string; platformId?: string };
 
@@ -277,7 +278,7 @@ export function QuickSizeMenu({
                     </button>
                     <RatioIcon width={entry.width} height={entry.height} />
                     <span className="min-w-0 flex-1 truncate text-[13px] text-white">
-                      {entry.width}x{entry.height}
+                      {formatSize(entry.width, entry.height)}
                     </span>
                     <button type="button" onClick={() => removeCustomEntry(i)} className="text-white/45 hover:text-white">
                       <X className="size-4" />
@@ -343,7 +344,7 @@ export function QuickSizeMenu({
                                 </span>
                                 <RatioIcon width={item.width} height={item.height} />
                                 <span className="shrink-0 text-[13px] text-white">
-                                  {item.width}x{item.height}
+                                  {formatSize(item.width, item.height)}
                                 </span>
                                 <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{item.label}</span>
                               </button>

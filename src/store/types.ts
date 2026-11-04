@@ -108,6 +108,9 @@ export type UiSlice = {
   /** While the Replace table's filters/search are active: the banners they let through (the rest
    * fade out in the preview). `null` when nothing is filtered. */
   bulkEditFilterMatches: string[] | null;
+  /** Banners whose content was changed from the Replace table since their last "Improve banner" —
+   * their row menu offers it. */
+  bulkEditEditedPageIds: Record<string, true>;
   /** The layer behind the Replace table's active cell (and the rest of its column selection),
    * outlined in each of those banners in the preview — display only, nothing gets selected. */
   bulkEditHighlight: { elementId: string; pageIds: string[] } | null;
@@ -177,6 +180,8 @@ export type UiSlice = {
   setBulkEditActivePage: (pageId: string | null) => void;
   setWorkspaceSwitching: (switching: boolean) => void;
   setBulkEditFilterMatches: (pageIds: string[] | null) => void;
+  markBulkEditEdited: (pageIds: string[]) => void;
+  clearBulkEditEdited: (pageId: string) => void;
   setBulkEditHighlight: (highlight: { elementId: string; pageIds: string[] } | null) => void;
   setCanvasDotBackground: (bg: { x: number; y: number; zoom: number; offsetX: number; offsetY: number } | null) => void;
   setLanguage: (language: Language) => void;
