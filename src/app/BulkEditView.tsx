@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Check, EllipsisVertical, ImageIcon, Plus, Search, Sparkles } from 'lucide-react';
+import { ArrowRight, Check, EllipsisVertical, ImageIcon, Plus, Search } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
@@ -8,6 +8,7 @@ import { getPreset } from '@/lib/mock/presets';
 import { nearestPreset, platforms } from '@/lib/mock';
 import { NO_RULES_ID } from '@/lib/mock/rulesets';
 import { RatioIcon } from '@/components/RatioIcon';
+import { CreateModeIcon } from './ModeSwitch';
 import { ColorPickerPopover } from '@/features/editor/artboard/ColorPickerPopover';
 import { ImagePickerDialog } from '@/features/editor/artboard/ImagePickerDialog';
 import { GROUPS, type ListItem, type QuickSizeResult } from '@/features/editor/artboard/QuickSizeMenu';
@@ -17,9 +18,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { duplicateBanner } from '@/features/editor/artboard/duplicate-banner';
-import { deleteBannerSet, duplicateBannerSet } from '@/features/editor/artboard/banner-sets';
+import { ImproveBannerIcon, improveBanners } from '@/features/editor/artboard/ImproveBannersPanel';
+import { bannerSetGroups, deleteBannerSet, duplicateBannerSet, moveBannerSet } from '@/features/editor/artboard/banner-sets';
 import { canvasRootOf } from '@/lib/canvas-layout';
+import { bannerChannel } from '@/lib/canvas-order';
 import type { Layout, LayoutElement } from '@/types';
+import type { BulkEditCanvasOrder } from '@/store/types';
 import { formatSize, normalizeSizeQuery } from '@/lib/format-size';
 
 const BORDER = '#40404A';
@@ -51,7 +55,7 @@ const SIDE_PADDING = 24;
  * the filter bar too (so it lines up with the tables) — zero where scrollbars overlay the content. */
 const SCROLLBAR_ROOM = { scrollbarGutter: 'stable both-edges' } as const;
 /** Space between the header and the filter bar. */
-const SCROLL_TOP_PADDING = 96 - HEADER_HEIGHT;
+const SCROLL_TOP_PADDING = 80 - HEADER_HEIGHT;
 /** Space between the filter bar and the first table (the top of the tables' scrolling area). */
 const FILTERS_TO_TABLES = 40;
 /** Base background of every cell — opaque (the page's own color) so the pinned columns cover
@@ -104,21 +108,7 @@ function useBannerGroups(): { primaryId: string; memberIds: string[] }[] {
   const pageOrder = useAppStore((s) => s.pageOrder);
   const pageGroups = useAppStore((s) => s.pageGroups);
   const pageGroupIdByPage = useAppStore((s) => s.pageGroupIdByPage);
-  const groups: { primaryId: string; memberIds: string[] }[] = [];
-  const seen = new Set<string>();
-  for (const id of pageOrder) {
-    if (seen.has(id)) continue;
-    const group = pageGroups[pageGroupIdByPage[id]];
-    if (group && group.memberIds.length > 1) {
-      if (group.memberIds[0] !== id) continue; // a size whose primary comes later — listed with it
-      groups.push({ primaryId: id, memberIds: group.memberIds });
-      for (const memberId of group.memberIds) seen.add(memberId);
-    } else {
-      groups.push({ primaryId: id, memberIds: [id] });
-      seen.add(id);
-    }
-  }
-  return groups;
+  return bannerSetGroups({ pageOrder, pageGroups, pageGroupIdByPage });
 }
 
 /**
@@ -170,10 +160,10 @@ function Cell({
         pinned === 'right' && 'sticky right-0 z-[2] border-r-0 border-l',
         // The active cell: blue-tinted with a blue border, drawn inset so it never fights the table's
         // own grid lines. Not clipped, so its fill handle can sit across the bottom edge.
-        editable ? 'group/cell relative p-0 focus-within:bg-[#4570FF]/10! focus-within:shadow-[inset_0_0_0_1px_#4570FF]' : 'overflow-hidden px-2',
+        editable ? 'group/cell relative p-0 focus-within:bg-button-primary/10! focus-within:shadow-[inset_0_0_0_1px_var(--button-primary)]' : 'overflow-hidden px-2',
         // The rest of a multi-cell selection is just tinted; only the cell being edited (focus-within
         // above) gets the border.
-        selected && 'bg-[#4570FF]/15!',
+        selected && 'bg-button-primary/15!',
         className,
       )}
       style={{ borderColor: TABLE_BORDER }}
@@ -185,7 +175,7 @@ function Cell({
           aria-hidden
           onMouseDown={onFillHandleMouseDown}
           // A larger invisible grab area around the 16×6 handle.
-          className="absolute right-[6px] -bottom-[2px] z-[1] hidden h-[6px] w-4 cursor-ns-resize rounded-[8px] border border-[#4570FF] bg-[#2F2F37] group-focus-within/cell:block before:absolute before:-inset-x-1 before:-inset-y-2"
+          className="absolute right-[6px] -bottom-[2px] z-[1] hidden h-[6px] w-4 cursor-ns-resize rounded-[8px] border border-button-primary bg-[#2F2F37] group-focus-within/cell:block before:absolute before:-inset-x-1 before:-inset-y-2"
         />
       )}
     </td>
@@ -203,7 +193,7 @@ function RowCheckbox({ checked, onChange }: { checked: boolean; onChange: () => 
       role="checkbox"
       aria-checked={checked}
       onClick={onChange}
-      className={cn('flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors', checked ? 'border-[#4570FF] bg-[#4570FF]' : 'border-chrome-border bg-chrome-border-subtle hover:border-[#4570FF]')}
+      className={cn('flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors', checked ? 'border-button-primary bg-button-primary' : 'border-chrome-border bg-chrome-border-subtle hover:border-button-primary')}
     >
       {checked && <img src="/icons/edit_panel/check%2016.svg" alt="" className="size-4" />}
     </button>
@@ -311,7 +301,7 @@ function SizeCheckbox({ checked }: { checked: boolean }) {
   return (
     <span
       className="flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors"
-      style={{ background: checked ? '#4570FF' : '#26262C', borderColor: checked ? '#4570FF' : BORDER }}
+      style={{ background: checked ? 'var(--button-primary)' : '#26262C', borderColor: checked ? 'var(--button-primary)' : BORDER }}
     >
       {checked && <Check className="size-3 text-white" />}
     </span>
@@ -566,7 +556,7 @@ function SetName({ primaryId, name }: { primaryId: string; name: string }) {
           if (e.key === 'Enter') commit();
           if (e.key === 'Escape') setDraft(null);
         }}
-        className={cn('-mx-1 min-w-0 rounded-md bg-[#26262C] px-1 outline-none focus:shadow-[inset_0_0_0_1px_#4570FF]', textClass)}
+        className={cn('-mx-1 min-w-0 rounded-md bg-[#26262C] px-1 outline-none focus:shadow-[inset_0_0_0_1px_var(--button-primary)]', textClass)}
         style={{ width: `${Math.max(draft.length, 4) + 2}ch` }}
       />
     );
@@ -578,10 +568,21 @@ function SetName({ primaryId, name }: { primaryId: string; name: string }) {
   );
 }
 
-/** The ⋮ next to a set's name (same as the rows' own) (shown while hovering it): duplicate or delete the whole set — its
- * primary and every size. */
+/** The set menu's Move up arrow (flipped for Move down), inline in `currentColor`. */
+function MoveArrowIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden>
+      <path d="M13.5303 7.46973L12.4697 8.53027L8.75 4.81055L8.75 13L7.25 13L7.25 4.81055L3.53027 8.53027L2.46973 7.46973L8 1.93945L13.5303 7.46973Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** The ⋮ next to a set's name (same as the rows' own) (shown while hovering it): move the set up or down, or duplicate or
+ * delete the whole set — its primary and every size. */
 function SetMenu({ primaryId }: { primaryId: string }) {
   const t = useT();
+  const groups = useBannerGroups();
+  const index = groups.findIndex((g) => g.primaryId === primaryId);
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
@@ -598,6 +599,15 @@ function SetMenu({ primaryId }: { primaryId: string }) {
         className="min-w-40 rounded-lg border p-1 text-white shadow-[0px_4px_32px_4px_rgba(0,0,0,0.24)] backdrop-blur-[16px]"
         style={MENU_SURFACE}
       >
+        <DropdownMenuItem className={ROW_MENU_ITEM} disabled={index <= 0} onSelect={() => moveBannerSet(primaryId, -1)}>
+          <MoveArrowIcon className="size-4 shrink-0 text-white" />
+          {t('Move up')}
+        </DropdownMenuItem>
+        <DropdownMenuItem className={ROW_MENU_ITEM} disabled={index < 0 || index >= groups.length - 1} onSelect={() => moveBannerSet(primaryId, 1)}>
+          <MoveArrowIcon className="size-4 shrink-0 rotate-180 text-white" />
+          {t('Move down')}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator className="my-1 h-px" style={{ background: BORDER }} />
         <DropdownMenuItem
           className={ROW_MENU_ITEM}
           onSelect={() => {
@@ -617,17 +627,55 @@ function SetMenu({ primaryId }: { primaryId: string }) {
   );
 }
 
+/** At the end of an edited row's Size cell: improves that row's edited banner(s). The tooltip
+ * says what it does. */
+function ImproveRowButton({ pageIds }: { pageIds: string[] }) {
+  const t = useT();
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={t('Improve banner')}
+          onClick={() => improveBanners(pageIds)}
+          className="ml-auto flex size-7 shrink-0 items-center justify-center rounded-lg bg-button-primary/15 text-white transition-colors hover:bg-button-primary/30"
+        >
+          <ImproveBannerIcon className="size-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={6} className="flex max-w-[220px] flex-col gap-0.5">
+        <span className="text-[13px] font-semibold">{t('Improve banner')}</span>
+        <span className="text-[11px] leading-[1.4] opacity-60">{t('Adjust size and spacing to match the new content.')}</span>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** Next to a set's name once several of its banners were edited: improves all of them at once. */
+function ImproveSetButton({ pageIds }: { pageIds: string[] }) {
+  const language = useAppStore((s) => s.language);
+  const count = pageIds.length;
+  return (
+    <button
+      type="button"
+      onClick={() => improveBanners(pageIds)}
+      className="ml-1 flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-button-primary/15 pr-1 pl-2 text-[13px] font-semibold whitespace-nowrap text-white transition-colors hover:bg-button-primary/30"
+    >
+      <ImproveBannerIcon className="size-4 shrink-0" />
+      {language === 'ja' ? `${count}件のバナーを改善` : `Improve ${count} edited banners`}
+      <span className="flex size-5 items-center justify-center rounded-md bg-button-primary">
+        <ArrowRight className="size-3.5" />
+      </span>
+    </button>
+  );
+}
+
 /** A row's ⋮ menu: open that banner in the Create view, duplicate it, or delete it. */
 function RowMenu({ setId }: { setId: string }) {
   const t = useT();
   // Offered once this banner's content has been changed from the table.
   const edited = useAppStore((s) => Boolean(s.bulkEditEditedPageIds[setId]));
-  function improve() {
-    // Mocked for now: the banner just goes through its loading state, as when a size is generated.
-    const state = useAppStore.getState();
-    state.startPageLoading(setId);
-    state.clearBulkEditEdited(setId);
-  }
+  const improve = () => improveBanners([setId]);
   function seeOnCreate() {
     // Only once the click that picked this item is over: switching views grows the canvas under
     // the pointer, and that click landing on its background would clear the selection again.
@@ -669,13 +717,13 @@ function RowMenu({ setId }: { setId: string }) {
           <>
             {/* Set apart from the generic options and highlighted: the one that does real work. */}
             <DropdownMenuItem
-              className="flex cursor-pointer items-start gap-2 rounded-lg bg-[#4570FF]/15 px-3 py-2 text-white outline-none focus:bg-[#4570FF]/25 data-[highlighted]:bg-[#4570FF]/25"
+              className="flex cursor-pointer items-start gap-2 rounded-lg bg-button-primary/15 px-3 py-2 text-white outline-none focus:bg-button-primary/25 data-[highlighted]:bg-button-primary/25"
               onSelect={improve}
             >
-              <Sparkles className="mt-0.5 size-4 shrink-0 text-[#4570FF]" />
-              <span className="flex min-w-0 flex-col">
-                <span className="text-[13px] leading-[1.4] font-semibold">{t('Improve banner')}</span>
-                <span className="text-[11px] leading-[1.4] text-white/45">{t('Takes around 2 minutes')}</span>
+              <ImproveBannerIcon className="size-5 shrink-0 text-white" />
+              <span className="flex max-w-[200px] min-w-0 flex-col gap-0.5">
+                <span className="text-[13px] leading-5 font-semibold">{t('Improve banner')}</span>
+                <span className="text-[11px] leading-[1.4] text-white/45">{t('Adjust size and spacing to match the new content.')}</span>
               </span>
             </DropdownMenuItem>
             <DropdownMenuSeparator className="my-1 h-px" style={{ background: BORDER }} />
@@ -694,6 +742,117 @@ function RowMenu({ setId }: { setId: string }) {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** Every distinct color a set uses, across all its banners: texts' colors and backgrounds, shapes'
+ * and vectors' fills, and the banners' own backgrounds — in order of first use. */
+function setPalette(state: ReturnType<typeof useAppStore.getState>, bannerIds: string[]): string[] {
+  const seen = new Map<string, string>();
+  const add = (color: string | undefined) => {
+    if (color && !seen.has(color.toUpperCase())) seen.set(color.toUpperCase(), color);
+  };
+  for (const id of bannerIds) {
+    const layout = state.setsById[id] ? state.layoutsById[state.setsById[id].sourceLayoutId] : undefined;
+    if (!layout) continue;
+    add(layout.backgroundColor);
+    for (const el of layout.elements) {
+      if (!isRealLayer(el)) continue;
+      if (el.kind === 'text') add(el.style.color);
+      if (el.kind !== 'image') add(el.style.fill);
+    }
+  }
+  return [...seen.values()];
+}
+
+/** Replaces one color with another everywhere the set uses it (see setPalette). */
+function replaceSetColor(bannerIds: string[], from: string, to: string) {
+  const state = useAppStore.getState();
+  const same = (color: string | undefined) => Boolean(color) && color!.toUpperCase() === from.toUpperCase();
+  const touched: string[] = [];
+  for (const id of bannerIds) {
+    const layout = state.setsById[id] ? state.layoutsById[state.setsById[id].sourceLayoutId] : undefined;
+    if (!layout) continue;
+    let changed = false;
+    if (same(layout.backgroundColor)) {
+      state.updateLayoutStyle(layout.id, { backgroundColor: to });
+      changed = true;
+    }
+    for (const el of layout.elements) {
+      const color = el.kind === 'text' && same(el.style.color);
+      const fill = el.kind !== 'image' && same(el.style.fill);
+      if (!color && !fill) continue;
+      state.updateElement(layout.id, el.id, { style: { ...el.style, ...(color ? { color: to } : {}), ...(fill ? { fill: to } : {}) } });
+      changed = true;
+    }
+    if (changed) touched.push(id);
+  }
+  if (touched.length) state.markBulkEditEdited(touched);
+}
+
+/** One color of a set's palette: a dot that opens the color picker. Remembers the color it last
+ * set, so each step of a drag in the picker replaces the previous step's color, not the original. */
+function PaletteColor({ color, bannerIds }: { color: string; bannerIds: string[] }) {
+  const t = useT();
+  const currentRef = useRef(color);
+  useEffect(() => {
+    currentRef.current = color;
+  }, [color]);
+  return (
+    <ColorPickerPopover
+      color={color}
+      onChange={(next) => {
+        replaceSetColor(bannerIds, currentRef.current, next);
+        currentRef.current = next;
+      }}
+    >
+      <button
+        type="button"
+        aria-label={`${t('Color')} ${color}`}
+        title={color}
+        className="size-6 shrink-0 rounded-full border border-white/20 outline-none transition-shadow hover:shadow-[0_0_0_1px_rgba(255,255,255,0.65)] focus-visible:shadow-[0_0_0_1px_rgba(255,255,255,0.65)]"
+        style={{ background: color }}
+      />
+    </ColorPickerPopover>
+  );
+}
+
+/** On the right of a set's heading: every color the set uses, each changeable everywhere at once. */
+function SetPalette({ bannerIds }: { bannerIds: string[] }) {
+  const t = useT();
+  // Re-read whenever banners change, so the dots follow every edit.
+  useAppStore((s) => s.layoutsById);
+  const colors = setPalette(useAppStore.getState(), bannerIds);
+  if (colors.length === 0) return null;
+  return (
+    <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5 pl-4" aria-label={t('Colors used in this set')}>
+      {colors.map((color, i) => (
+        <PaletteColor key={i} color={color} bannerIds={bannerIds} />
+      ))}
+    </div>
+  );
+}
+
+/** Where a table would be, before there's anything to replace: no banner yet, or a banner with no
+ * layer yet. Points to the Create mode, where banners are made. */
+function EmptyTableState() {
+  const t = useT();
+  const setWorkspaceView = useAppStore((s) => s.setWorkspaceView);
+  return (
+    <div className="flex flex-col items-center gap-4 rounded-lg border px-6 py-12 text-center" style={{ borderColor: TABLE_BORDER }}>
+      <p className="max-w-[360px] text-[14px] leading-[1.6] tracking-[-0.01em] text-white/65">
+        {t('Create your first banner in the')}{' '}
+        {/* A colored tag, in the Create mode's own color (the selected mode's blue). */}
+        <span className="mx-1 inline-flex items-center gap-1 rounded-md bg-button-primary/20 px-2 py-1 align-middle text-[14px] leading-none text-[#6B8DFF]">
+          <CreateModeIcon className="size-3.5" />
+          {t('Create mode')}
+        </span>{' '}
+        {t('before replacing the content here.')}
+      </p>
+      <Button size="sm" className="text-[13px] rounded-lg" onClick={() => setWorkspaceView('edit')}>
+        {t('Go to create mode')}
+      </Button>
+    </div>
   );
 }
 
@@ -752,6 +911,8 @@ function BannerGroupTable({
   const setBulkEditActivePage = useAppStore((s) => s.setBulkEditActivePage);
   const reorderGroupSiblings = useAppStore((s) => s.reorderGroupSiblings);
   const loadingPageIds = useAppStore((s) => s.loadingPageIds);
+  const editedPageIds = useAppStore((s) => s.bulkEditEditedPageIds);
+  const editedInSet = memberIds.filter((id) => editedPageIds[id]);
   // The image picker's targets are fixed when it opens — the cell selection can change (or clear)
   // while the dialog is up, and the pick should still land where it was meant to.
   const [picking, setPicking] = useState<{ layoutId: string; elementId: string }[] | null>(null);
@@ -1040,6 +1201,19 @@ function BannerGroupTable({
     else if (checked.length === 1) requestFocusPage(checked[0]);
   }
   const columns = contentColumns(primary);
+  // Nothing to replace until the banner has at least one layer: the empty state instead of the
+  // table, and no "Add more sizes" either.
+  if (columns.length === 0) {
+    return (
+      <section className="flex flex-col gap-2">
+        <div className="group/heading flex min-w-0 items-center gap-1">
+          <SetName primaryId={primaryId} name={setsById[primaryId]?.name || t('Primary')} />
+          <SetMenu primaryId={primaryId} />
+        </div>
+        <EmptyTableState />
+      </section>
+    );
+  }
   const groupPlatformId = pageGroups[pageGroupIdByPage[primaryId]]?.platformId;
 
   return (
@@ -1049,6 +1223,9 @@ function BannerGroupTable({
             too, and the other way round). Double-click to rename. */}
         <SetName primaryId={primaryId} name={setsById[primaryId]?.name || t('Primary')} />
         <SetMenu primaryId={primaryId} />
+        {/* Every edited banner of the set at once — the rows' own Improve buttons cover them one by one. */}
+        {editedInSet.length > 1 && <ImproveSetButton pageIds={editedInSet} />}
+        <SetPalette bannerIds={memberIds} />
       </div>
 
       {/* One rounded frame around the table. Inside it the checkbox column (left) and the row
@@ -1222,6 +1399,7 @@ function BannerGroupTable({
                               <span className="truncate">{sizes[0]}</span>
                             </>
                           )}
+                          {banners.some((id) => editedPageIds[id]) && <ImproveRowButton pageIds={banners.filter((id) => editedPageIds[id])} />}
                         </Cell>
                         {columns.flatMap((col, ci) => {
                           // A text has two cells under its header: its color, then the text itself.
@@ -1314,7 +1492,7 @@ function BannerGroupTable({
             </div>
             {rowDrag?.lineY !== undefined && (
               // Where the dragged row will land.
-              <div aria-hidden className="pointer-events-none absolute right-0 left-0 z-[4] h-0.5 bg-[#4570FF]" style={{ top: rowDrag.lineY - 1 }} />
+              <div aria-hidden className="pointer-events-none absolute right-0 left-0 z-[4] h-0.5 bg-button-primary" style={{ top: rowDrag.lineY - 1 }} />
             )}
             {moreToTheRight && (
               <div
@@ -1361,10 +1539,9 @@ function rowFacts(state: ReturnType<typeof useAppStore.getState>, setId: string)
   const set = state.setsById[setId];
   const layout = set ? state.layoutsById[set.sourceLayoutId] : undefined;
   if (!set || !layout) return null;
-  const groupId = state.pageGroupIdByPage[setId];
   const preset = getPreset(layout.size.presetId ?? '');
   // Same channel the Size column shows: the size's own preset's, else its group's.
-  const channel = preset?.platformId ?? (groupId ? state.pageGroups[groupId]?.platformId : undefined) ?? '';
+  const channel = bannerChannel(state, setId);
   return {
     sizeKey: `${channel}:${layout.size.width}x${layout.size.height}`,
     width: layout.size.width,
@@ -1413,6 +1590,33 @@ function FilterMenu<T extends string | null>({
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+const CANVAS_ORDERS: { value: BulkEditCanvasOrder; label: string }[] = [
+  { value: 'set', label: 'By set' },
+  { value: 'format', label: 'By format' },
+  { value: 'channel', label: 'By channel' },
+  { value: 'size', label: 'By size' },
+];
+
+/** At the top left of Replace's preview: how it arranges the banners — by set (each primary with
+ * its sizes), or in columns by format, channel or size. */
+export function CanvasOrderSwitch() {
+  const t = useT();
+  const order = useAppStore((s) => s.bulkEditCanvasOrder);
+  const setOrder = useAppStore((s) => s.setBulkEditCanvasOrder);
+  const hasBanners = useAppStore((s) => s.pageOrder.length > 0);
+  if (!hasBanners) return null;
+  return (
+    <div className="pointer-events-auto absolute top-4 left-4 z-10" aria-label={t('Order banners')}>
+      <FilterMenu
+        label={t(CANVAS_ORDERS.find((o) => o.value === order)!.label)}
+        value={order}
+        options={CANVAS_ORDERS.map((o) => ({ value: o.value, label: t(o.label) }))}
+        onChange={setOrder}
+      />
+    </div>
   );
 }
 
@@ -1572,7 +1776,7 @@ function FilterBar({
         <FilterMenu label={channel === null ? t('All channels') : channelName(channel)} value={channel} options={channelOptions} onChange={onChannelChange} />
         <SizeFilterMenu sizes={sizes} onChange={onSizesChange} groups={sizeGroups} />
       </div>
-      <label className="flex h-8 w-[228px] shrink-0 items-center gap-2 overflow-hidden rounded-full border border-[#40404A] bg-[#26262C] px-3 focus-within:border-[#4570FF]">
+      <label className="flex h-8 w-[228px] shrink-0 items-center gap-2 overflow-hidden rounded-full border border-[#40404A] bg-[#26262C] px-3 focus-within:border-button-primary">
         <Search className="size-4 shrink-0 text-white" />
         <input
           value={query}
@@ -1630,6 +1834,12 @@ export function BulkEditView() {
     return { id: ch || 'custom', name: channelName(ch), icon: ch ? `/icons/ec-platform-icon/${ch}.svg` : undefined, items: [...items.values()] };
   });
   const shown = groups.map((g) => ({ ...g, rowIds: g.memberIds.filter(matches) })).filter((g) => g.rowIds.length > 0);
+  // The filter bar only once some banner has layers to filter and replace.
+  const hasContent = groups.some((g) => {
+    const set = setsById[g.primaryId];
+    const layout = set ? layoutsById[set.sourceLayoutId] : undefined;
+    return Boolean(layout && contentColumns(layout).length > 0);
+  });
   // The preview fades every banner the filters/search leave out (see bulkEditFilterMatches).
   const filtering = sizes.size > 0 || channel !== null || q !== '';
   const matchesKey = filtering ? shown.flatMap((g) => g.rowIds).join(',') : null;
@@ -1642,7 +1852,7 @@ export function BulkEditView() {
     // Below the floating header: the filter bar, fixed, then the tables scrolling under it — so
     // their scrollbar runs only down the tables, never behind the header or the filters.
     <div className="relative flex h-full animate-in flex-col bg-[#19191D] fade-in-0 duration-300" style={{ paddingTop: HEADER_HEIGHT }}>
-      {groups.length > 0 && (
+      {hasContent && (
         // Reserves the same scrollbar room as the tables' area below (see SCROLLBAR_ROOM), so the bar
         // lines up with the tables on both sides.
         <div className="shrink-0 overflow-hidden" style={{ paddingTop: SCROLL_TOP_PADDING, paddingLeft: SIDE_PADDING, paddingRight: SIDE_PADDING, ...SCROLLBAR_ROOM }}>
@@ -1663,13 +1873,13 @@ export function BulkEditView() {
       <div className="relative min-h-0 flex-1">
         <div
           className="h-full overflow-x-hidden overflow-y-auto pb-6"
-          style={{ paddingTop: groups.length > 0 ? FILTERS_TO_TABLES : SCROLL_TOP_PADDING, paddingLeft: SIDE_PADDING, paddingRight: SIDE_PADDING, ...SCROLLBAR_ROOM }}
+          style={{ paddingTop: hasContent ? FILTERS_TO_TABLES : SCROLL_TOP_PADDING, paddingLeft: SIDE_PADDING, paddingRight: SIDE_PADDING, ...SCROLLBAR_ROOM }}
         >
           <div className="flex flex-col gap-10">
             {shown.map((g) => (
               <BannerGroupTable key={g.primaryId} primaryId={g.primaryId} memberIds={g.memberIds} rowIds={g.rowIds} combine={combine} />
             ))}
-            {groups.length === 0 && <span className="text-[13px] text-white/45">{t('No banners yet.')}</span>}
+            {groups.length === 0 && <EmptyTableState />}
             {groups.length > 0 && shown.length === 0 && <span className="text-[13px] text-white/45">{t('No banners match these filters.')}</span>}
           </div>
         </div>

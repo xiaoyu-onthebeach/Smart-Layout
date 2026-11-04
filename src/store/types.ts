@@ -18,6 +18,9 @@ export type Language = 'en' | 'ja';
 export type SelectedElementRef = { layoutId: string; elementId: string };
 
 export type WorkspaceView = 'edit' | 'bulkEdit';
+/** How Replace's preview arranges the banners: by set (each primary with its sizes), or in columns
+ * by format, by channel or by size. */
+export type BulkEditCanvasOrder = 'set' | 'format' | 'channel' | 'size';
 
 export type UiSlice = {
   step: AppStep;
@@ -108,6 +111,8 @@ export type UiSlice = {
   /** While the Replace table's filters/search are active: the banners they let through (the rest
    * fade out in the preview). `null` when nothing is filtered. */
   bulkEditFilterMatches: string[] | null;
+  /** How Replace's preview arranges the banners (see BulkEditCanvasOrder). */
+  bulkEditCanvasOrder: BulkEditCanvasOrder;
   /** Banners whose content was changed from the Replace table since their last "Improve banner" —
    * their row menu offers it. */
   bulkEditEditedPageIds: Record<string, true>;
@@ -180,6 +185,7 @@ export type UiSlice = {
   setBulkEditActivePage: (pageId: string | null) => void;
   setWorkspaceSwitching: (switching: boolean) => void;
   setBulkEditFilterMatches: (pageIds: string[] | null) => void;
+  setBulkEditCanvasOrder: (order: BulkEditCanvasOrder) => void;
   markBulkEditEdited: (pageIds: string[]) => void;
   clearBulkEditEdited: (pageId: string) => void;
   setBulkEditHighlight: (highlight: { elementId: string; pageIds: string[] } | null) => void;

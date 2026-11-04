@@ -3,6 +3,7 @@ import { nextId } from '@/lib/create-layout';
 import { canvasRootOf, PAGE_GAP } from '@/lib/canvas-layout';
 import { nextAvailableName } from '@/lib/main-size-naming';
 import type { BannerSet, Layout } from '@/types';
+import type { AppState } from '@/store/types';
 
 /**
  * Puts a new primary banner (its layout already upserted) on the canvas as its own column, to the
@@ -102,4 +103,45 @@ export function deleteBannerSet(primaryId: string) {
   const group = state.pageGroups[state.pageGroupIdByPage[primaryId]];
   const memberIds = group && group.memberIds[0] === primaryId ? group.memberIds : [primaryId];
   for (const id of [...memberIds].reverse()) useAppStore.getState().deletePage(id);
+}
+
+/** Each primary banner with its own sizes, in the playground's order — the sets the Banners list
+ * and the Replace table show. */
+export function bannerSetGroups(state: Pick<AppState, 'pageOrder' | 'pageGroups' | 'pageGroupIdByPage'>): { primaryId: string; memberIds: string[] }[] {
+  const groups: { primaryId: string; memberIds: string[] }[] = [];
+  const seen = new Set<string>();
+  for (const id of state.pageOrder) {
+    if (seen.has(id)) continue;
+    const group = state.pageGroups[state.pageGroupIdByPage[id]];
+    if (group && group.memberIds.length > 1) {
+      if (group.memberIds[0] !== id) continue; // a size whose primary comes later — listed with it
+      groups.push({ primaryId: id, memberIds: group.memberIds });
+      for (const memberId of group.memberIds) seen.add(memberId);
+    } else {
+      groups.push({ primaryId: id, memberIds: [id] });
+      seen.add(id);
+    }
+  }
+  return groups;
+}
+
+/** Swaps the set `primaryId` with the one before (-1) or after (1) it — in the Banners list, the
+ * Replace table and, when both share a canvas, the order of its columns there. */
+export function moveBannerSet(primaryId: string, direction: -1 | 1) {
+  const state = useAppStore.getState();
+  const groups = bannerSetGroups(state);
+  const index = groups.findIndex((g) => g.primaryId === primaryId);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= groups.length) return;
+  const moved = [...groups];
+  [moved[index], moved[target]] = [moved[target], moved[index]];
+  const root = canvasRootOf(state, primaryId);
+  const sameCanvas = canvasRootOf(state, groups[target].primaryId) === root;
+  useAppStore.setState({ pageOrder: moved.flatMap((g) => g.memberIds) });
+  if (sameCanvas) {
+    state.reorderCanvasRoot(
+      root,
+      moved.filter((g) => canvasRootOf(state, g.primaryId) === root).map((g) => g.primaryId),
+    );
+  }
 }

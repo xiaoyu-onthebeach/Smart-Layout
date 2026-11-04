@@ -19,7 +19,7 @@ import { PlaygroundsPage } from './PlaygroundsPage';
 import { TestDataButton } from './TestDataButton';
 import { DefaultModeToolbar } from './DefaultModeToolbar';
 import { InspectorPanel } from './InspectorPanel';
-import { BulkEditView } from './BulkEditView';
+import { BulkEditView, CanvasOrderSwitch } from './BulkEditView';
 import { BulkEditDownloadPanel } from './BulkEditDownloadPanel';
 
 /**
@@ -291,6 +291,7 @@ export function Shell() {
                     {showToolbar && <DefaultModeToolbar />}
                     {step === 'editor' && !isBulkEdit && <InspectorPanel />}
                     {isBulkEdit && <BulkEditDownloadPanel />}
+                    {isBulkEdit && <CanvasOrderSwitch />}
                   </div>
                 </div>
               </ResizablePanel>

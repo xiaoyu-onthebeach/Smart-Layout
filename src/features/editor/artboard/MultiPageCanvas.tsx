@@ -8,19 +8,24 @@ import { useAppStore } from '@/store/useAppStore';
 import { layoutHasContent } from '@/lib/create-layout';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import type { BannerSet, Layout } from '@/types';
-import type { PagePosition } from '@/store/types';
+import type { BulkEditCanvasOrder, PagePosition } from '@/store/types';
+import { formatSize } from '@/lib/format-size';
+import { getPlatform } from '@/lib/mock/platforms';
 import { ArtboardFrame } from './ArtboardFrame';
 import { CascadeToolbar } from './CascadeToolbar';
+import { ImproveBannersPanel } from './ImproveBannersPanel';
 import { CanvasZoomBar } from './CanvasZoomBar';
 import { RulerOverlay } from './RulerOverlay';
 import { PageTitleBar } from './PageTitleBar';
 import { QuickSizeMenu, type QuickSizeResult } from './QuickSizeMenu';
 import { addSizesTo } from './add-sizes';
 import { duplicateBanner } from './duplicate-banner';
+import { bannerSetGroups } from './banner-sets';
 import { SceneContextMenu } from './SceneContextMenu';
 import {
   canvasRootOf,
   isPrimaryPage,
+  PACK_GAP,
   PAGE_GAP,
   PAGE_TITLE_RESERVE,
   PRIMARY_LABEL_RESERVE,
@@ -29,6 +34,7 @@ import {
   TITLE_CLEARANCE_BUFFER,
 } from '@/lib/canvas-layout';
 import { computeGroupLayout } from '@/lib/group-layout';
+import { canvasOrderGroups } from '@/lib/canvas-order';
 
 const PADDING = 96;
 // 100% is real size (1 native px = 1 screen px, see `PageCard`'s width/height = `size * camera.zoom`)
@@ -346,6 +352,7 @@ function PageCard({
   renaming,
   onRenamingChange,
   onSceneContextMenu,
+  improveIds,
 }: {
   entry: PageEntry;
   left: number;
@@ -387,6 +394,9 @@ function PageCard({
   onRenamingChange: (renaming: boolean) => void;
   /** Right-click anywhere on the scene that isn't already its own image layer's context menu. */
   onSceneContextMenu: (e: ReactMouseEvent, pasteHere: () => void) => void;
+  /** Replace's preview: the edited banners this card offers to improve, in a panel below it (see
+   * `improveIdsByPage`). */
+  improveIds?: string[];
 }) {
   const { set: bannerSet, layout } = entry;
   // In the Bulk edit view's preview a click on the card just selects the banner (shift adds it to the
@@ -404,7 +414,7 @@ function PageCard({
   return (
     <div
       className={cn('group/card absolute', reflowing ? 'transition-[opacity,left,top] duration-150' : 'transition-opacity', readOnly && 'cursor-pointer [&_*]:pointer-events-none')}
-      style={{ left, top, width, height, opacity: filteredOut ? FILTERED_OUT_OPACITY : dimmed ? 0.6 : 1, zIndex: dragging ? 10 : undefined }}
+      style={{ left, top, width, height, opacity: filteredOut ? FILTERED_OUT_OPACITY : dimmed ? 0.6 : 1, zIndex: dragging ? 10 : improveIds ? (isHovered ? 20 : 5) : undefined }}
       onMouseDown={(e) => {
         e.stopPropagation();
         if (readOnly && e.button === 0) {
@@ -437,6 +447,17 @@ function PageCard({
           <CascadeToolbar setId={entry.id} />
         </div>
       )}
+      {improveIds && !isLoading && (
+        // The card itself ignores the pointer in Replace — the panel takes it back.
+        <div
+          className="pointer-events-auto! absolute left-1/2 z-10 -translate-x-1/2 [&_*]:pointer-events-auto!"
+          style={{ top: '100%', marginTop: 8 }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ImproveBannersPanel pageIds={improveIds} />
+        </div>
+      )}
       {isLoading ? (
         <div className="absolute inset-0 flex items-center justify-center border border-chrome-border-soft bg-chrome-bg">
           <LoadingSpinner size={Math.min(width, height) * 0.3} />
@@ -465,6 +486,22 @@ function PageCard({
   );
 }
 
+/** A column's title when Replace's preview is ordered by format, channel or size. */
+function CanvasOrderLabel({ order, groupKey }: { order: Exclude<BulkEditCanvasOrder, 'set'>; groupKey: string }) {
+  const t = useT();
+  if (order === 'format') return <span className="truncate">{t(groupKey.toUpperCase())}</span>;
+  if (order === 'size') {
+    const [width, height] = groupKey.split('x').map(Number);
+    return <span className="truncate">{formatSize(width, height)}</span>;
+  }
+  return (
+    <>
+      {groupKey && <img src={`/icons/ec-platform-icon/${groupKey}.svg`} alt="" className="size-5 shrink-0 rounded-[5px]" />}
+      <span className="truncate">{groupKey ? (getPlatform(groupKey)?.name ?? groupKey) : t('Custom')}</span>
+    </>
+  );
+}
+
 /** Screen 7 — an infinite, pannable/zoomable canvas with every page, and hover controls to spin off adjacent sizes. */
 export function MultiPageCanvas() {
   const t = useT();
@@ -489,6 +526,7 @@ export function MultiPageCanvas() {
   const clearFocusPage = useAppStore((s) => s.clearFocusPage);
   const focusPages = useAppStore((s) => s.focusPages);
   const bulkEditFilterMatches = useAppStore((s) => s.bulkEditFilterMatches);
+  const bulkEditEditedPageIds = useAppStore((s) => s.bulkEditEditedPageIds);
   const requestFocusPages = useAppStore((s) => s.requestFocusPages);
   const clearFocusPages = useAppStore((s) => s.clearFocusPages);
   const revealPageId = useAppStore((s) => s.revealPageId);
@@ -502,6 +540,10 @@ export function MultiPageCanvas() {
   // to, their layers can't be selected, and no editing panel opens. Its rulers sit inside the
   // preview window rather than along the screen's edges.
   const readOnly = useAppStore((s) => s.workspaceView !== 'edit');
+  // Replace's preview can also lay every banner out in columns by format, channel or size (see
+  // CanvasOrderSwitch) — no sets there, so no primary either.
+  const canvasOrder = useAppStore((s) => s.bulkEditCanvasOrder);
+  const altOrder = readOnly && canvasOrder !== 'set' ? canvasOrder : null;
   const showRulers = useAppStore((s) => s.showRulers);
   const toggleRulers = useAppStore((s) => s.toggleRulers);
   const setCanvasDotBackground = useAppStore((s) => s.setCanvasDotBackground);
@@ -636,7 +678,7 @@ export function MultiPageCanvas() {
   const effectiveActiveId = activeCanvasRootId && activeRoots.has(activeCanvasRootId) ? activeCanvasRootId : pageOrder.length ? rootOf(pageOrder[0]) : null;
 
   const entries: PageEntry[] = pageOrder
-    .filter((id) => rootOf(id) === effectiveActiveId)
+    .filter((id) => altOrder || rootOf(id) === effectiveActiveId)
     .map((id) => {
       const set = setsById[id];
       const layout = set ? layoutsById[set.sourceLayoutId] : null;
@@ -825,10 +867,43 @@ export function MultiPageCanvas() {
     }
   }
 
+  // Pass 5, only when Replace's preview is ordered by format, channel or size: every banner, from
+  // every set, in one column per format/channel/size, left to right, each column's banners stacked
+  // in the same order the table lists them. Replaces whatever the passes above worked out.
+  const orderColumns: Array<{ key: string; x: number; width: number; count: number }> = [];
+  if (altOrder) {
+    const shown = entries.filter((e) => !e.layout.hidden);
+    let cursorX = 0;
+    for (const group of canvasOrderGroups({ setsById, layoutsById, pageGroups, pageGroupIdByPage }, altOrder, shown.map((e) => e.id))) {
+      const columnEntries = group.ids.map((id) => shown.find((e) => e.id === id)!);
+      const width = Math.max(...columnEntries.map((e) => e.layout.size.width));
+      let y = 0;
+      for (const entry of columnEntries) {
+        entry.pos = { x: cursorX, y };
+        y += entry.layout.size.height + PACK_GAP;
+      }
+      orderColumns.push({ key: group.key, x: cursorX, width, count: columnEntries.length });
+      cursorX += width + PAGE_GAP;
+    }
+  }
+
+  // Replace's "Improve" panels, scoped to what was edited from the table: under the one edited
+  // banner of a set, or under a set's primary for all of that set's edited banners. Ordered by
+  // format, channel or size there are no sets on screen, so each edited banner gets its own.
+  const improveIdsByPage = new Map<string, string[]>();
+  if (readOnly) {
+    const edited = (id: string) => Boolean(bulkEditEditedPageIds[id]) && entries.some((e) => e.id === id);
+    for (const { primaryId, memberIds } of bannerSetGroups({ pageOrder, pageGroups, pageGroupIdByPage })) {
+      const editedIds = memberIds.filter(edited);
+      if (altOrder || editedIds.length === 1) for (const id of editedIds) improveIdsByPage.set(id, [id]);
+      else if (editedIds.length > 1) improveIdsByPage.set(primaryId, editedIds);
+    }
+  }
+
   // Shared by the auto-fit effect below and the zoom bar's manual "fit to screen" button.
   function computeFitCamera(): Camera | null {
     if (viewport.width === 0 || entries.length === 0) return null;
-    const bounds = entries.reduce(
+    const bounds = entries.filter((e) => !altOrder || !e.layout.hidden).reduce(
       (acc, e) => ({
         minX: Math.min(acc.minX, e.pos.x),
         minY: Math.min(acc.minY, e.pos.y),
@@ -862,18 +937,20 @@ export function MultiPageCanvas() {
   // So the size change a switch causes never re-fits the canvas — until something else does
   // (another canvas, banners added or removed, the browser window resized).
   const holdFramingRef = useRef(false);
+  // Changing the ordering re-fits too, like switching to another canvas.
+  const viewKey = altOrder ? `order:${altOrder}` : effectiveActiveId;
   useEffect(() => {
     if (viewport.width === 0 || entries.length === 0) return;
-    const key = `${effectiveActiveId}:${entries.length}:${viewport.width}:${viewport.height}`;
+    const key = `${viewKey}:${entries.length}:${viewport.width}:${viewport.height}`;
     if (fitKeyRef.current === key) return;
-    const onlyResized = fitKeyRef.current?.startsWith(`${effectiveActiveId}:${entries.length}:`);
+    const onlyResized = fitKeyRef.current?.startsWith(`${viewKey}:${entries.length}:`);
     fitKeyRef.current = key;
     if (holdFramingRef.current && onlyResized) return;
     holdFramingRef.current = false;
     const fit = computeFitCamera();
     if (fit) setCamera(fit);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveActiveId, entries.length, viewport.width, viewport.height]);
+  }, [viewKey, entries.length, viewport.width, viewport.height]);
   useEffect(() => {
     const release = () => {
       holdFramingRef.current = false;
@@ -1413,6 +1490,23 @@ export function MultiPageCanvas() {
         )}
 
         {viewport.width > 0 &&
+          orderColumns.map((column) => (
+            <div
+              key={column.key}
+              className="pointer-events-none absolute flex items-center gap-2 text-[15px] leading-6 font-semibold text-white/45"
+              style={{
+                left: camera.x + column.x * camera.zoom,
+                top: camera.y + (-PRIMARY_LABEL_RESERVE - titleClearance) * camera.zoom,
+                maxWidth: Math.max((column.width + PAGE_GAP) * camera.zoom - 16, 0),
+              }}
+            >
+              <CanvasOrderLabel order={altOrder!} groupKey={column.key} />
+              <span className="shrink-0 font-normal text-white/30">{column.count}</span>
+            </div>
+          ))}
+
+        {viewport.width > 0 &&
+          !altOrder &&
           Array.from(groupLayoutById.entries())
             .filter(([groupId]) => !bundledGroupIds.has(groupId))
             .map(([groupId, { primaryEntry, originX, originY, layout }]) => {
@@ -1450,6 +1544,7 @@ export function MultiPageCanvas() {
             })}
 
         {viewport.width > 0 &&
+          !altOrder &&
           unifiedHeaders.map((header, i) => {
             const left = camera.x + header.originX * camera.zoom;
             const labelTop = camera.y + (header.originY + header.primaryLabelY) * camera.zoom;
@@ -1514,13 +1609,13 @@ export function MultiPageCanvas() {
                 active={entry.id === viewAllActivePageId || selectedSceneIds.includes(entry.id)}
                 entered={entry.id === viewAllActivePageId}
                 isLoading={Boolean(loadingPageIds[entry.id])}
-                isPrimary={isPrimaryPage({ pageGroupIdByPage, pageGroups }, entry.id)}
+                isPrimary={!altOrder && isPrimaryPage({ pageGroupIdByPage, pageGroups }, entry.id)}
                 showCascadeToolbar={!readOnly && pageGroups[pageGroupIdByPage[entry.id]]?.memberIds[0] === entry.id && Boolean(pendingCascadeSetIds[entry.id])}
                 dimmed={
                   !isMultiSceneElementSelection &&
                   selectedSceneIds.length > 0 &&
                   !selectedSceneIds.includes(entry.id) &&
-                  !(groupId && selectedGroupIds.has(groupId))
+                  !(!altOrder && groupId && selectedGroupIds.has(groupId))
                 }
                 filteredOut={Boolean(readOnly && bulkEditFilterMatches && !bulkEditFilterMatches.includes(entry.id))}
                 dragging={isDraggingThis || isDraggingCluster}
@@ -1539,6 +1634,7 @@ export function MultiPageCanvas() {
                 showBottomAdd={!isMultiMemberGroupPage(entry.id) && !hasBlockerBelow(entry, entries)}
                 onAddAdjacent={(edge, results) => handleAddAdjacent(entry, edge, results)}
                 onSceneContextMenu={(e, pasteHere) => setSceneContextMenu({ x: e.clientX, y: e.clientY, entryId: entry.id, pasteHere })}
+                improveIds={improveIdsByPage.get(entry.id)}
               />
             );
           })}

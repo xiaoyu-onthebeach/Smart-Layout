@@ -7,7 +7,7 @@ import { useT } from '@/lib/i18n';
 
 /** The Create mode's icon (shapes) — inline, in `currentColor`, so it follows the button's own
  * active/inactive color. */
-function CreateModeIcon({ className }: { className?: string }) {
+export function CreateModeIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden>
       <path
