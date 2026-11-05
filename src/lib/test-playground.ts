@@ -52,8 +52,34 @@ async function withStore<T>(mode: IDBTransactionMode, run: (store: IDBObjectStor
   }
 }
 
-/** `blob:` URLs (uploaded images) only live as long as the tab — swapped for data URLs so the
- * saved banners still have their images after a reload. */
+/** Saved images are no larger than this on their longest side — plenty for any banner, and the
+ * full-size originals (several MB each, drawn in every banner, thumbnail and preview) made the app
+ * lag once loaded. */
+const SAVED_IMAGE_MAX_SIDE = 1600;
+
+/** An uploaded image, scaled down to SAVED_IMAGE_MAX_SIDE if it's bigger and re-encoded as WebP
+ * (which keeps transparency) — as is if the browser can't. */
+async function shrinkImage(blob: Blob): Promise<Blob> {
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const scale = Math.min(1, SAVED_IMAGE_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+    const canvas = new OffscreenCanvas(Math.round(bitmap.width * scale), Math.round(bitmap.height * scale));
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const shrunk = await canvas.convertToBlob({ type: 'image/webp', quality: 0.85 });
+    return shrunk.size < blob.size ? shrunk : blob;
+  } catch {
+    return blob;
+  }
+}
+
+/** Images embedded as data URLs beyond this length (about 1MB) are shrunk too — saves made before
+ * images were shrunk on saving. */
+const OVERSIZED_DATA_URL_LENGTH = 1_000_000;
+
+/** `blob:` URLs (uploaded images) only live as long as the tab — swapped for data URLs (of the
+ * shrunk image, see shrinkImage) so the saved banners still have their images after a reload.
+ * Oversized data URLs are shrunk the same way. */
 async function inlineBlobUrls(layoutsById: Snapshot['layoutsById']): Promise<Snapshot['layoutsById']> {
   const cache = new Map<string, Promise<string>>();
   const toDataUrl = (url: string) => {
@@ -62,6 +88,7 @@ async function inlineBlobUrls(layoutsById: Snapshot['layoutsById']): Promise<Sna
         url,
         fetch(url)
           .then((res) => res.blob())
+          .then(shrinkImage)
           .then(
             (blob) =>
               new Promise<string>((resolve, reject) => {
@@ -77,7 +104,10 @@ async function inlineBlobUrls(layoutsById: Snapshot['layoutsById']): Promise<Sna
   };
   // Every string field anywhere in a layout, so any image property (fills, backgrounds...) is covered.
   const walk = async (value: unknown): Promise<unknown> => {
-    if (typeof value === 'string') return value.startsWith('blob:') ? toDataUrl(value).catch(() => value) : value;
+    if (typeof value === 'string') {
+      const inline = value.startsWith('blob:') || (value.startsWith('data:image/') && value.length > OVERSIZED_DATA_URL_LENGTH);
+      return inline ? toDataUrl(value).catch(() => value) : value;
+    }
     if (Array.isArray(value)) return Promise.all(value.map(walk));
     if (value && typeof value === 'object') {
       const entries = await Promise.all(Object.entries(value).map(async ([k, v]) => [k, await walk(v)] as const));
@@ -127,8 +157,16 @@ export async function hasSavedTestPlayground(): Promise<boolean> {
  * nothing was saved yet. */
 export async function loadTestPlayground(): Promise<boolean> {
   // This browser's own save first; otherwise the set committed to the project.
-  const snapshot = (await withStore<Snapshot | undefined>('readonly', (store) => store.get(KEY)).catch(() => undefined)) ?? (await projectSnapshot());
+  const saved = await withStore<Snapshot | undefined>('readonly', (store) => store.get(KEY)).catch(() => undefined);
+  const snapshot = saved ?? (await projectSnapshot());
   if (!snapshot) return false;
+  // Full-size images from an older save would make the app lag: shrunk on the way in, and this
+  // browser's save updated so it only happens once.
+  const layoutsById = await inlineBlobUrls(snapshot.layoutsById);
+  if (saved && JSON.stringify(layoutsById) !== JSON.stringify(snapshot.layoutsById)) {
+    await withStore('readwrite', (store) => store.put({ ...saved, layoutsById }, KEY)).catch(() => undefined);
+  }
+  snapshot.layoutsById = layoutsById;
   const firstPage = snapshot.pageOrder[0];
   const firstSet = firstPage ? snapshot.setsById[firstPage] : undefined;
   useAppStore.setState({

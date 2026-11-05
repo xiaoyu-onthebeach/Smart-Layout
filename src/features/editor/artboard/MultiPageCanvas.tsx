@@ -1445,7 +1445,7 @@ export function MultiPageCanvas() {
         ref={outerRef}
         className="absolute inset-0 overflow-hidden"
         style={{
-          cursor: activeTool === 'move' ? 'grab' : 'default',
+          cursor: activeTool === 'move' ? 'grab' : 'var(--cursor-default)',
           // In Bulk edit this canvas sits in its own window over an opaque background, which hides
           // the screen-wide dot backdrop Shell paints for Edit — so it draws its own dots, lined
           // up with the camera in this element's own coordinates.

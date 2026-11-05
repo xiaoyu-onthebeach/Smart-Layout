@@ -1,0 +1,16 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="Avatars">
+<rect width="32" height="32" rx="16" fill="#50505D"/>
+<g id="shape">
+<use xlink:href="#stroke0_2840_7324" fill="#F5A7DF"/>
+<use xlink:href="#stroke0_2840_7324" fill="url(#paint0_linear_2840_7324)"/>
+</g>
+</g>
+<defs>
+<linearGradient id="paint0_linear_2840_7324" x1="22.325" y1="8.05128" x2="14.6361" y2="18.34" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="white" stop-opacity="0"/>
+</linearGradient>
+<path id="stroke0_2840_7324" d="M13.8733 7.09101C15.1414 6.16966 16.8586 6.16966 18.1267 7.09101L23.9958 11.3552C25.2639 12.2765 25.7945 13.9096 25.3102 15.4004L23.0684 22.2999C22.584 23.7907 21.1948 24.8 19.6273 24.8H12.3727C10.8052 24.8 9.416 23.7907 8.93163 22.2999L6.68983 15.4004C6.20545 13.9096 6.73609 12.2765 8.00421 11.3552L13.8733 7.09101Z"/>
+</defs>
+</svg>

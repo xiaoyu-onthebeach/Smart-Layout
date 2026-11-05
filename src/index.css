@@ -54,6 +54,9 @@
   --chrome-fg-muted: rgba(255, 255, 255, 0.65);
   --chrome-active: #4570ff;
   --sunburn: #fd4e62;
+  /* Figma "thepopsicleactive" — with sunburn, the colors of the other people on a playground (see
+     lib/presence.ts). */
+  --popsicle: #f48cd7;
 }
 
 .dark {
@@ -103,6 +106,9 @@
   --chrome-fg-muted: rgba(255, 255, 255, 0.65);
   --chrome-active: #4570ff;
   --sunburn: #fd4e62;
+  /* Figma "thepopsicleactive" — with sunburn, the colors of the other people on a playground (see
+     lib/presence.ts). */
+  --popsicle: #f48cd7;
 }
 
 @theme inline {
@@ -166,6 +172,7 @@
   --color-chrome-fg-muted: var(--chrome-fg-muted);
   --color-chrome-active: var(--chrome-active);
   --color-sunburn: var(--sunburn);
+  --color-popsicle: var(--popsicle);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -256,4 +263,17 @@
         0 0;
     }
   }
+}
+
+/* The app's own arrow cursor (Figma "cursor 24"), in place of the system one: on the whole page, and
+   wherever the default cursor is asked for by name — Tailwind's `cursor-default` (menus, select
+   items) and inline styles via `var(--cursor-default)`. Unlayered, so it beats the utility. The
+   hotspot is the arrow's tip. PNGs (1x and 2x, rendered from cursor-default.svg) rather than the
+   SVG itself, so the browser doesn't have to render its drop shadow. */
+:root {
+  --cursor-default: image-set(url('/icons/cursor-default.png') 1x, url('/icons/cursor-default@2x.png') 2x) 3 3, default;
+}
+html,
+.cursor-default {
+  cursor: var(--cursor-default);
 }

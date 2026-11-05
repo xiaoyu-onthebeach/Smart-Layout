@@ -1,0 +1,16 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="Avatars">
+<rect width="32" height="32" rx="16" fill="#50505D"/>
+<g id="shape">
+<use xlink:href="#stroke0_2840_7316" fill="#FD4E62"/>
+<use xlink:href="#stroke0_2840_7316" fill="url(#paint0_linear_2840_7316)"/>
+</g>
+</g>
+<defs>
+<linearGradient id="paint0_linear_2840_7316" x1="24.4" y1="7.3" x2="16.403" y2="15.3503" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="white" stop-opacity="0"/>
+</linearGradient>
+<path id="stroke0_2840_7316" d="M18.6557 6.82562C22.7798 5.03448 26.9655 9.22022 25.1744 13.3443L24.8782 14.0261C24.3314 15.2852 24.3314 16.7148 24.8782 17.9739L25.1744 18.6557C26.9655 22.7798 22.7798 26.9655 18.6557 25.1744L17.9739 24.8782C16.7148 24.3314 15.2852 24.3314 14.0261 24.8782L13.3443 25.1744C9.22022 26.9655 5.03448 22.7798 6.82562 18.6557L7.12177 17.9739C7.66861 16.7148 7.66861 15.2852 7.12176 14.0261L6.82562 13.3443C5.03448 9.22021 9.22022 5.03448 13.3443 6.82562L14.0261 7.12176C15.2852 7.66861 16.7148 7.66861 17.9739 7.12176L18.6557 6.82562Z"/>
+</defs>
+</svg>

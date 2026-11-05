@@ -8,6 +8,7 @@ import {
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import { ModeSwitch } from './ModeSwitch';
+import { PresenceAvatars } from './PresenceAvatars';
 import { RULER_SIZE } from '@/features/editor/artboard/RulerOverlay';
 
 // Document-level title — not tied to any single page, so it's a fixed label for now.
@@ -46,6 +47,8 @@ export function TopBar() {
 
       <div className="flex items-center gap-2 p-3">
         {downloading && <img src="/icons/dropdown/Downloading.svg" alt="" className="size-6 animate-spin" />}
+
+        {step === 'editor' && <PresenceAvatars />}
 
         {/* Figma "Button 32 / Primary text". Not wired to anything yet. */}
         <button

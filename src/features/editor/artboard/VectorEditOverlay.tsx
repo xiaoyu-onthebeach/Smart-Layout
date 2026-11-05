@@ -381,7 +381,7 @@ export function VectorEditOverlay({ layoutId, element }: { layoutId: string; ele
                   stroke="transparent"
                   strokeWidth={12}
                   vectorEffect="non-scaling-stroke"
-                  style={{ pointerEvents: 'stroke', cursor: 'default' }}
+                  style={{ pointerEvents: 'stroke', cursor: 'var(--cursor-default)' }}
                   onMouseEnter={() => setHoveredSegment(i)}
                   onMouseLeave={() => setHoveredSegment((cur) => (cur === i ? null : cur))}
                 />

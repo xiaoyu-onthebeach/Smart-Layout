@@ -48,11 +48,8 @@ function BannerRow({
       <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-center gap-3 text-left">
         <div className="flex shrink-0 items-center gap-1">
           <RatioIcon width={width} height={height} />
-          {/* Fixed width, not just shrink-0 — so the name after it always starts at the same x
-              regardless of how many digits this particular size's own width x height needs. */}
-          <span className="w-[60px] shrink-0 text-sm text-chrome-fg">
-            {formatSize(width, height)}
-          </span>
+          {/* Its own width, never wrapping: the name follows right after it (and truncates instead). */}
+          <span className="shrink-0 text-sm whitespace-nowrap text-chrome-fg">{formatSize(width, height)}</span>
         </div>
         <span className="min-w-0 truncate text-left text-xs text-white/45">{displayName}</span>
       </button>
@@ -132,10 +129,10 @@ function CategoryRow({
           )}
           <div className="flex shrink-0 items-center gap-1">
             <RatioIcon width={representativeWidth} height={representativeHeight} />
-            <span className="shrink-0 text-sm text-white">
-              {formatSize(representativeWidth, representativeHeight)}
-            </span>
+            <span className="shrink-0 text-sm whitespace-nowrap text-white">{formatSize(representativeWidth, representativeHeight)}</span>
           </div>
+          {/* The primary's name right after its size, like the sizes below it. */}
+          <span className="ml-2 min-w-0 truncate text-xs text-white/45">{representativeName}</span>
         </div>
         <img src="/icons/primary%20label.svg" alt={t('Primary')} className="h-[19px] w-auto shrink-0" />
       </button>

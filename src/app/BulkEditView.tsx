@@ -30,10 +30,12 @@ const BORDER = '#40404A';
 const TABLE_BORDER = '#2A2A2C';
 /** How long the glimmer on freshly filled cells plays — matches `.cell-glimmer` in index.css. */
 const GLIMMER_MS = 600;
-// Columns are sized by the content they hold (in both views): Size large, texts medium (sharing the
-// remaining width), images and colors small — just the thumbnail / dot.
-/** The Size column — room for a grouped row's several sizes, a few per line. */
-const SIZE_COLUMN_WIDTH = 240;
+// Columns are sized by the content they hold: Size small with one size per row, large in the
+// grouped view, texts medium (sharing the remaining width), images and colors smallest — just the
+// thumbnail / dot.
+/** The Size column: S holds one size (its icon and WxH) per row; L, in the grouped view, a row's
+ * several sizes, a few per line. */
+const SIZE_COLUMN_WIDTH = { S: 144, L: 240 };
 /** Image and color columns: the thumbnail / dot alone. */
 const SMALL_COLUMN_WIDTH = 64;
 /** Text columns share the remaining width, never narrower than this — below it, the table scrolls
@@ -1178,6 +1180,7 @@ function BannerGroupTable({
     );
   }
   const groupPlatformId = pageGroups[pageGroupIdByPage[primaryId]]?.platformId;
+  const sizeColumnWidth = combine ? SIZE_COLUMN_WIDTH.L : SIZE_COLUMN_WIDTH.S;
 
   return (
     <section className="flex flex-col gap-2">
@@ -1215,14 +1218,14 @@ function BannerGroupTable({
                     minWidth:
                       CHECKBOX_COLUMN_WIDTH +
                       ACTIONS_COLUMN_WIDTH +
-                      SIZE_COLUMN_WIDTH +
+                      sizeColumnWidth +
                       columns.reduce((sum, c) => sum + (c.kind === 'text' ? TEXT_COLOR_COLUMN_WIDTH * (c.hasFill ? 2 : 1) + TEXT_COLUMN_MIN_WIDTH : SMALL_COLUMN_WIDTH), 0),
                   }}
                 >
                   {/* Column widths (a fixed-layout table takes them from here) — see SIZE_COLUMN_WIDTH. */}
                   <colgroup>
                     <col style={{ width: CHECKBOX_COLUMN_WIDTH }} />
-                    <col style={{ width: SIZE_COLUMN_WIDTH }} />
+                    <col style={{ width: sizeColumnWidth }} />
                     {columns.flatMap((c) =>
                       c.kind === 'text'
                         ? columnParts(c).map((part) => <col key={part} style={{ width: part === c.id ? undefined : TEXT_COLOR_COLUMN_WIDTH }} />)
