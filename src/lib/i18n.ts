@@ -78,6 +78,8 @@ export const ja: Record<string, string> = {
   'Set options': 'セットのオプション',
   'Set name': 'セット名',
   You: 'あなた',
+  Follow: 'フォロー',
+  'Stop following': 'フォローを停止',
   'Duplicate set': 'セットを複製',
   'Delete set': 'セットを削除',
   'Share': '共有',

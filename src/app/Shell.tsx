@@ -18,7 +18,6 @@ import { LeftPanel } from './LeftPanel';
 import { PlaygroundsPage } from './PlaygroundsPage';
 import { TestDataButton } from './TestDataButton';
 import { DefaultModeToolbar } from './DefaultModeToolbar';
-import { RemoteCursors } from './RemoteCursors';
 import { InspectorPanel } from './InspectorPanel';
 import { BulkEditView, CanvasOrderSwitch } from './BulkEditView';
 import { BulkEditDownloadPanel } from './BulkEditDownloadPanel';
@@ -289,7 +288,6 @@ export function Shell() {
                   </div>
                   <div className={cn('relative flex-1 overflow-hidden transition-[border-radius] duration-300 ease-out', isBulkEdit && 'rounded-2xl border border-white/10 bg-background')}>
                     {step === 'editor' && <MultiPageCanvas />}
-                    {step === 'editor' && <RemoteCursors />}
                     {showToolbar && <DefaultModeToolbar />}
                     {step === 'editor' && !isBulkEdit && <InspectorPanel />}
                     {isBulkEdit && <BulkEditDownloadPanel />}

@@ -113,6 +113,9 @@ export type UiSlice = {
   bulkEditFilterMatches: string[] | null;
   /** How Replace's preview arranges the banners (see BulkEditCanvasOrder). */
   bulkEditCanvasOrder: BulkEditCanvasOrder;
+  /** The other person (see lib/presence.ts) whose view the canvas follows — clicking their avatar;
+   * any pan or zoom of your own stops it. `null` when not following anyone. */
+  followingUserName: string | null;
   /** The layer behind the Replace table's active cell (and the rest of its column selection),
    * outlined in each of those banners in the preview — display only, nothing gets selected. */
   bulkEditHighlight: { elementId: string; pageIds: string[] } | null;
@@ -183,6 +186,7 @@ export type UiSlice = {
   setWorkspaceSwitching: (switching: boolean) => void;
   setBulkEditFilterMatches: (pageIds: string[] | null) => void;
   setBulkEditCanvasOrder: (order: BulkEditCanvasOrder) => void;
+  setFollowingUser: (name: string | null) => void;
   setBulkEditHighlight: (highlight: { elementId: string; pageIds: string[] } | null) => void;
   setCanvasDotBackground: (bg: { x: number; y: number; zoom: number; offsetX: number; offsetY: number } | null) => void;
   setLanguage: (language: Language) => void;

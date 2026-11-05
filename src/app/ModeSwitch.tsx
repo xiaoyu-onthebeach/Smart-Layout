@@ -1,9 +1,10 @@
-import type { ComponentType } from 'react';
+import { useLayoutEffect, useRef, useState, type ComponentType } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import type { WorkspaceView } from '@/store/types';
 import { useT } from '@/lib/i18n';
+import { PRESENCE_USERS } from '@/lib/presence';
 
 /** The Create mode's icon (shapes) — inline, in `currentColor`, so it follows the button's own
  * active/inactive color. */
@@ -36,19 +37,62 @@ const MODES: { value: WorkspaceView; label: string; icon: ComponentType<{ classN
   { value: 'bulkEdit', label: 'Replace', icon: ReplaceModeIcon },
 ];
 
-/** Which mode the playground is in (Create / Replace) — a tab hanging from the top of the screen,
- * its top corners curving out into the edge (Figma "top menu"): two buttons, each with its icon and
- * name, the current one sunk into the page's own dark with its icon and name in the primary blue. */
 /** Trying the switch with icons only: the names move to a tooltip below each button. Back to
  * `true` to show them next to the icons again. */
 const SHOW_MODE_LABELS = false;
 
+/** The tab's corners' radius (top-tab-corner.svg), and its own bottom corners' (rounded-b-2xl). */
+const CORNER = 20;
+const BOTTOM_RADIUS = 16;
+
+/**
+ * While following someone in Create, the canvas's border in their color runs along the top of
+ * the screen — where this tab hangs over it. This carries it around the tab instead: down its
+ * curved corners, its sides and along its bottom, 2px wide on the canvas side of its outline (the
+ * path runs 1px outside it), meeting the border's top edge at either end.
+ */
+function TabOutline({ width, height, color }: { width: number; height: number; color: string }) {
+  const r = CORNER - 1;
+  const b = BOTTOM_RADIUS + 1;
+  const d = [
+    `M 0 1`,
+    `A ${r} ${r} 0 0 1 ${r} ${CORNER}`,
+    `L ${r} ${height - BOTTOM_RADIUS}`,
+    `A ${b} ${b} 0 0 0 ${CORNER + BOTTOM_RADIUS} ${height + 1}`,
+    `L ${width - CORNER - BOTTOM_RADIUS} ${height + 1}`,
+    `A ${b} ${b} 0 0 0 ${width - r} ${height - BOTTOM_RADIUS}`,
+    `L ${width - r} ${CORNER}`,
+    `A ${r} ${r} 0 0 1 ${width} 1`,
+  ].join(' ');
+  return (
+    <svg className="pointer-events-none absolute top-0 left-0 overflow-visible" width={width} height={height} aria-hidden>
+      <path d={d} fill="none" stroke={color} strokeWidth={2} />
+    </svg>
+  );
+}
+
+/** Which mode the playground is in (Create / Replace) — a tab hanging from the top of the screen,
+ * its top corners curving out into the edge (Figma "top menu"): two buttons, each with its icon and
+ * name, the current one sunk into the page's own dark with its icon and name in the primary blue. */
 export function ModeSwitch() {
   const t = useT();
   const view = useAppStore((s) => s.workspaceView);
   const setView = useAppStore((s) => s.setWorkspaceView);
+  const followingUserName = useAppStore((s) => s.followingUserName);
+  // Only in Create does the canvas (and so its follow border) reach up behind the tab.
+  const followColor = view === 'edit' ? PRESENCE_USERS.find((user) => user.name === followingUserName)?.color : undefined;
+  const tabRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  useLayoutEffect(() => {
+    const el = tabRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setSize({ width: el.offsetWidth, height: el.offsetHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   return (
-    <div className="flex items-start">
+    <div ref={tabRef} className="relative flex items-start">
+      {followColor && size.width > 0 && <TabOutline width={size.width} height={size.height} color={followColor} />}
       <img src="/icons/top-tab-corner.svg" alt="" className="size-5 shrink-0" />
       <div className="flex items-center gap-1 rounded-b-2xl bg-chrome-border-soft px-2 pt-3 pb-2">
         {MODES.map(({ value, label, icon: Icon }) => {

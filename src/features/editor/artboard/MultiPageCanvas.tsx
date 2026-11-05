@@ -14,6 +14,7 @@ import { getPlatform } from '@/lib/mock/platforms';
 import { ArtboardFrame } from './ArtboardFrame';
 import { CascadeToolbar } from './CascadeToolbar';
 import { CanvasZoomBar } from './CanvasZoomBar';
+import { RemoteCursors } from './RemoteCursors';
 import { RulerOverlay } from './RulerOverlay';
 import { PageTitleBar } from './PageTitleBar';
 import { QuickSizeMenu, type QuickSizeResult } from './QuickSizeMenu';
@@ -607,6 +608,12 @@ export function MultiPageCanvas() {
     cameraAnimRef.current = null;
   }
 
+  // A pan or zoom of your own: also stops following someone (see RemoteCursors).
+  function takeOverCamera() {
+    stopCameraAnim();
+    if (useAppStore.getState().followingUserName) useAppStore.getState().setFollowingUser(null);
+  }
+
   useEffect(() => {
     return () => {
       if (cameraAnimRef.current !== null) cancelAnimationFrame(cameraAnimRef.current);
@@ -1025,7 +1032,7 @@ export function MultiPageCanvas() {
   // canvas-space (same "zoom around a point" math the wheel handler below uses, just centered on
   // the viewport instead of the cursor).
   function setZoomPct(pct: number) {
-    stopCameraAnim();
+    takeOverCamera();
     const newZoom = clamp(pct / 100, MIN_ZOOM, MAX_ZOOM);
     const cx = viewport.width / 2;
     const cy = viewport.height / 2;
@@ -1041,7 +1048,7 @@ export function MultiPageCanvas() {
   }
 
   function handleFitToScreen() {
-    stopCameraAnim();
+    takeOverCamera();
     const fit = computeFitCamera();
     if (fit) setCamera(fit);
   }
@@ -1052,7 +1059,7 @@ export function MultiPageCanvas() {
     if (!el) return;
     function onWheelNative(e: WheelEvent) {
       e.preventDefault();
-      stopCameraAnim();
+      takeOverCamera();
       // A pinch gesture on a trackpad fires wheel events with ctrlKey set (a browser convention,
       // not an actual held-down key), and holding Ctrl/Cmd with a real scroll wheel does the same
       // deliberately — either way, that's "zoom". Everything else (a plain two-finger scroll) pans
@@ -1351,7 +1358,7 @@ export function MultiPageCanvas() {
       startMarqueeSelect(e);
       return;
     }
-    stopCameraAnim();
+    takeOverCamera();
     const startX = e.clientX;
     const startY = e.clientY;
     const startCam = camera;
@@ -1617,6 +1624,12 @@ export function MultiPageCanvas() {
           />
         )}
       </div>
+      {/* The other people's cursors on the banners, and following one of them (see RemoteCursors). */}
+      <RemoteCursors
+        banners={entries.map((e) => ({ id: e.id, x: e.pos.x, y: e.pos.y, w: e.layout.size.width, h: e.layout.size.height }))}
+        camera={camera}
+        labelTop={readOnly ? 16 : 64}
+      />
       {showRulers && <RulerOverlay camera={camera} viewport={viewport} canvasOffsetX={canvasOffsetX} contained={readOnly} />}
 
       {/* Tagged so the bottom toolbar can keep clear of it (DefaultModeToolbar). */}
