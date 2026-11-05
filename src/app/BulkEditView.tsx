@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowRight, Check, EllipsisVertical, ImageIcon, Plus, Search } from 'lucide-react';
+import { Check, EllipsisVertical, ImageIcon, Plus, Search } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
@@ -15,10 +15,9 @@ import { GROUPS, type ListItem, type QuickSizeResult } from '@/features/editor/a
 import { Button } from '@/components/ui/button';
 import { addSizesTo } from '@/features/editor/artboard/add-sizes';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { duplicateBanner } from '@/features/editor/artboard/duplicate-banner';
-import { ImproveBannerIcon, improveBanners } from '@/features/editor/artboard/ImproveBannersPanel';
+import { SegmentedControl, SelectButton, Tag } from '@/features/editor/artboard/PanelKit';
 import { bannerSetGroups, deleteBannerSet, duplicateBannerSet, moveBannerSet } from '@/features/editor/artboard/banner-sets';
 import { canvasRootOf } from '@/lib/canvas-layout';
 import { bannerChannel } from '@/lib/canvas-order';
@@ -234,9 +233,9 @@ function TextColorCell({ color, onChange, variant }: { color: string; onChange: 
       <button type="button" data-cell-field aria-label={label} title={label} className="flex h-12 w-full items-center justify-center outline-none">
         {variant === 'font' ? (
           // A "T" in the text's color.
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="size-6 shrink-0" aria-hidden>
+          <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="size-4 shrink-0 overflow-visible" aria-hidden>
             <path
-              d="M18.7222 1C21.0848 1 23 2.91523 23 5.27778V7.72222H19.3333V5.27778C19.3333 4.94027 19.0597 4.66667 18.7222 4.66667H13.8333V19.3333H16.8889V23H7.11111V19.3333H10.1667V4.66667H5.27778C4.94027 4.66667 4.66667 4.94027 4.66667 5.27778V7.72222H1V5.27778C1 2.91523 2.91523 1 5.27778 1H18.7222Z"
+              d="M12.8889 0C14.6071 0 16 1.39289 16 3.11111V4.88889H13.3333V3.11111C13.3333 2.86565 13.1343 2.66667 12.8889 2.66667H9.33333V13.3333H11.5556V16H4.44444V13.3333H6.66667V2.66667H3.11111C2.86565 2.66667 2.66667 2.86565 2.66667 3.11111V4.88889H0V3.11111C0 1.39289 1.39289 0 3.11111 0H12.8889Z"
               fill={color}
               stroke="rgba(255, 255, 255, 0.35)"
               strokeWidth={0.75}
@@ -544,21 +543,28 @@ function SetName({ primaryId, name }: { primaryId: string; name: string }) {
       if (draft.trim() && draft.trim() !== name) renamePage(primaryId, draft);
       setDraft(null);
     };
+    // The field is exactly as wide as its text: an invisible copy of the text sets the width and the
+    // input lies over it (left in the flow, an input keeps a default width of its own), with the
+    // underline along both.
     return (
-      <input
-        autoFocus
-        aria-label={t('Set name')}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onFocus={(e) => e.currentTarget.select()}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commit();
-          if (e.key === 'Escape') setDraft(null);
-        }}
-        className={cn('-mx-1 min-w-0 rounded-md bg-[#26262C] px-1 outline-none focus:shadow-[inset_0_0_0_1px_var(--button-primary)]', textClass)}
-        style={{ width: `${Math.max(draft.length, 4) + 2}ch` }}
-      />
+      <span className={cn('relative min-w-0 border-b border-button-primary', textClass)}>
+        <span aria-hidden className="invisible block overflow-hidden pr-px whitespace-pre">
+          {draft || ' '}
+        </span>
+        <input
+          autoFocus
+          aria-label={t('Set name')}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onFocus={(e) => e.currentTarget.select()}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') setDraft(null);
+          }}
+          className="absolute inset-0 size-full min-w-0 bg-transparent p-0 outline-none"
+        />
+      </span>
     );
   }
   return (
@@ -574,6 +580,32 @@ function MoveArrowIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden>
       <path d="M13.5303 7.46973L12.4697 8.53027L8.75 4.81055L8.75 13L7.25 13L7.25 4.81055L3.53027 8.53027L2.46973 7.46973L8 1.93945L13.5303 7.46973Z" fill="currentColor" />
     </svg>
+  );
+}
+
+/** Right of a set's name: how many banners the set holds — every size, whatever the filters show. */
+function BannerCountTag({ count }: { count: number }) {
+  const language = useAppStore((s) => s.language);
+  return (
+    <Tag className="ml-1">{language === 'ja' ? `${count}件のバナー` : `${count} banner${count === 1 ? '' : 's'}`}</Tag>
+  );
+}
+
+/** Left of a set's name: folds its table away (and back). The chevron points right while folded. */
+function CollapseSetButton({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      aria-label={t(collapsed ? 'Expand set' : 'Collapse set')}
+      aria-expanded={!collapsed}
+      onClick={onToggle}
+      className="-ml-1 flex size-6 shrink-0 items-center justify-center rounded-lg text-white/70 transition-colors outline-none hover:bg-white/10 hover:text-white"
+    >
+      <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className={cn('size-4 transition-transform', collapsed && '-rotate-90')} aria-hidden>
+        <path d="M12.5303 6.53027L8 11.0605L3.46973 6.53027L4.53027 5.46973L8 8.93945L11.4697 5.46973L12.5303 6.53027Z" fill="currentColor" />
+      </svg>
+    </button>
   );
 }
 
@@ -627,55 +659,9 @@ function SetMenu({ primaryId }: { primaryId: string }) {
   );
 }
 
-/** At the end of an edited row's Size cell: improves that row's edited banner(s). The tooltip
- * says what it does. */
-function ImproveRowButton({ pageIds }: { pageIds: string[] }) {
-  const t = useT();
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={t('Improve banner')}
-          onClick={() => improveBanners(pageIds)}
-          className="ml-auto flex size-7 shrink-0 items-center justify-center rounded-lg bg-button-primary/15 text-white transition-colors hover:bg-button-primary/30"
-        >
-          <ImproveBannerIcon className="size-4" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top" sideOffset={6} className="flex max-w-[220px] flex-col gap-0.5">
-        <span className="text-[13px] font-semibold">{t('Improve banner')}</span>
-        <span className="text-[11px] leading-[1.4] opacity-60">{t('Adjust size and spacing to match the new content.')}</span>
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-/** Next to a set's name once several of its banners were edited: improves all of them at once. */
-function ImproveSetButton({ pageIds }: { pageIds: string[] }) {
-  const language = useAppStore((s) => s.language);
-  const count = pageIds.length;
-  return (
-    <button
-      type="button"
-      onClick={() => improveBanners(pageIds)}
-      className="ml-1 flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-button-primary/15 pr-1 pl-2 text-[13px] font-semibold whitespace-nowrap text-white transition-colors hover:bg-button-primary/30"
-    >
-      <ImproveBannerIcon className="size-4 shrink-0" />
-      {language === 'ja' ? `${count}件のバナーを改善` : `Improve ${count} edited banners`}
-      <span className="flex size-5 items-center justify-center rounded-md bg-button-primary">
-        <ArrowRight className="size-3.5" />
-      </span>
-    </button>
-  );
-}
-
 /** A row's ⋮ menu: open that banner in the Create view, duplicate it, or delete it. */
 function RowMenu({ setId }: { setId: string }) {
   const t = useT();
-  // Offered once this banner's content has been changed from the table.
-  const edited = useAppStore((s) => Boolean(s.bulkEditEditedPageIds[setId]));
-  const improve = () => improveBanners([setId]);
   function seeOnCreate() {
     // Only once the click that picked this item is over: switching views grows the canvas under
     // the pointer, and that click landing on its background would clear the selection again.
@@ -713,22 +699,6 @@ function RowMenu({ setId }: { setId: string }) {
         className="min-w-40 rounded-lg border p-1 text-white shadow-[0px_4px_32px_4px_rgba(0,0,0,0.24)] backdrop-blur-[16px]"
         style={MENU_SURFACE}
       >
-        {edited && (
-          <>
-            {/* Set apart from the generic options and highlighted: the one that does real work. */}
-            <DropdownMenuItem
-              className="flex cursor-pointer items-start gap-2 rounded-lg bg-button-primary/15 px-3 py-2 text-white outline-none focus:bg-button-primary/25 data-[highlighted]:bg-button-primary/25"
-              onSelect={improve}
-            >
-              <ImproveBannerIcon className="size-5 shrink-0 text-white" />
-              <span className="flex max-w-[200px] min-w-0 flex-col gap-0.5">
-                <span className="text-[13px] leading-5 font-semibold">{t('Improve banner')}</span>
-                <span className="text-[11px] leading-[1.4] text-white/45">{t('Adjust size and spacing to match the new content.')}</span>
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator className="my-1 h-px" style={{ background: BORDER }} />
-          </>
-        )}
         <DropdownMenuItem className={ROW_MENU_ITEM} onSelect={seeOnCreate}>
           {t('See on Create')}
         </DropdownMenuItem>
@@ -769,25 +739,17 @@ function setPalette(state: ReturnType<typeof useAppStore.getState>, bannerIds: s
 function replaceSetColor(bannerIds: string[], from: string, to: string) {
   const state = useAppStore.getState();
   const same = (color: string | undefined) => Boolean(color) && color!.toUpperCase() === from.toUpperCase();
-  const touched: string[] = [];
   for (const id of bannerIds) {
     const layout = state.setsById[id] ? state.layoutsById[state.setsById[id].sourceLayoutId] : undefined;
     if (!layout) continue;
-    let changed = false;
-    if (same(layout.backgroundColor)) {
-      state.updateLayoutStyle(layout.id, { backgroundColor: to });
-      changed = true;
-    }
+    if (same(layout.backgroundColor)) state.updateLayoutStyle(layout.id, { backgroundColor: to });
     for (const el of layout.elements) {
       const color = el.kind === 'text' && same(el.style.color);
       const fill = el.kind !== 'image' && same(el.style.fill);
       if (!color && !fill) continue;
       state.updateElement(layout.id, el.id, { style: { ...el.style, ...(color ? { color: to } : {}), ...(fill ? { fill: to } : {}) } });
-      changed = true;
     }
-    if (changed) touched.push(id);
   }
-  if (touched.length) state.markBulkEditEdited(touched);
 }
 
 /** One color of a set's palette: a dot that opens the color picker. Remembers the color it last
@@ -873,6 +835,8 @@ function BannerGroupTable({
   // content, keyed by its first banner — which cell-selection and fill ranges run over; `membersOf`
   // turns a row back into the banners it stands for (what every edit is applied to).
   const t = useT();
+  const [collapsed, setCollapsed] = useState(false);
+  const toggleCollapsed = () => setCollapsed((c) => !c);
   const setsById = useAppStore((s) => s.setsById);
   const layoutsByIdForRows = useAppStore((s) => s.layoutsById);
   const rowMembers = new Map<string, string[]>();
@@ -911,8 +875,6 @@ function BannerGroupTable({
   const setBulkEditActivePage = useAppStore((s) => s.setBulkEditActivePage);
   const reorderGroupSiblings = useAppStore((s) => s.reorderGroupSiblings);
   const loadingPageIds = useAppStore((s) => s.loadingPageIds);
-  const editedPageIds = useAppStore((s) => s.bulkEditEditedPageIds);
-  const editedInSet = memberIds.filter((id) => editedPageIds[id]);
   // The image picker's targets are fixed when it opens — the cell selection can change (or clear)
   // while the dialog is up, and the pick should still land where it was meant to.
   const [picking, setPicking] = useState<{ layoutId: string; elementId: string }[] | null>(null);
@@ -1126,7 +1088,6 @@ function BannerGroupTable({
       const el = layout?.elements.find((candidate) => candidate.id === elementIdOf(columnId));
       if (layout && el) updateElement(layout.id, el.id, patch(el));
     }
-    state.markBulkEditEdited(rowIds);
   }
 
   const layoutOf = (setId: string) => {
@@ -1207,10 +1168,12 @@ function BannerGroupTable({
     return (
       <section className="flex flex-col gap-2">
         <div className="group/heading flex min-w-0 items-center gap-1">
+          <CollapseSetButton collapsed={collapsed} onToggle={toggleCollapsed} />
           <SetName primaryId={primaryId} name={setsById[primaryId]?.name || t('Primary')} />
+          <BannerCountTag count={memberIds.length} />
           <SetMenu primaryId={primaryId} />
         </div>
-        <EmptyTableState />
+        {!collapsed && <EmptyTableState />}
       </section>
     );
   }
@@ -1221,10 +1184,10 @@ function BannerGroupTable({
       <div className="group/heading flex min-w-0 items-center gap-1">
         {/* The primary banner's own name, as in the Banners list (renaming it there renames this
             too, and the other way round). Double-click to rename. */}
+        <CollapseSetButton collapsed={collapsed} onToggle={toggleCollapsed} />
         <SetName primaryId={primaryId} name={setsById[primaryId]?.name || t('Primary')} />
+        <BannerCountTag count={memberIds.length} />
         <SetMenu primaryId={primaryId} />
-        {/* Every edited banner of the set at once — the rows' own Improve buttons cover them one by one. */}
-        {editedInSet.length > 1 && <ImproveSetButton pageIds={editedInSet} />}
         <SetPalette bannerIds={memberIds} />
       </div>
 
@@ -1236,282 +1199,283 @@ function BannerGroupTable({
           part while there's more to see. No native drag-and-drop of a field's selected text either:
           pressing on already-selected text and moving would otherwise start dragging that text
           away instead of a cell-selection drag. */}
-      <div className="relative">
-        <div className="overflow-hidden rounded-lg border" style={{ borderColor: TABLE_BORDER }}>
-          <div ref={rowsWrapRef} className="relative">
-            <div
-              ref={tableRef}
-              // While dragging a fill handle the resize cursor holds over every cell, fields included.
-              className={cn('overflow-x-auto', fill && '[&_*]:cursor-ns-resize!')}
-              onDragStart={(e) => e.preventDefault()}
-            >
-              <table
-                className="w-full table-fixed border-separate border-spacing-0 [&>tbody>tr:last-child>td]:border-b-0"
-                style={{
-                  minWidth:
-                    CHECKBOX_COLUMN_WIDTH +
-                    ACTIONS_COLUMN_WIDTH +
-                    SIZE_COLUMN_WIDTH +
-                    columns.reduce((sum, c) => sum + (c.kind === 'text' ? TEXT_COLOR_COLUMN_WIDTH * (c.hasFill ? 2 : 1) + TEXT_COLUMN_MIN_WIDTH : SMALL_COLUMN_WIDTH), 0),
-                }}
+      {!collapsed && (
+        <div className="relative">
+          <div className="overflow-hidden rounded-lg border" style={{ borderColor: TABLE_BORDER }}>
+            <div ref={rowsWrapRef} className="relative">
+              <div
+                ref={tableRef}
+                // While dragging a fill handle the resize cursor holds over every cell, fields included.
+                className={cn('overflow-x-auto', fill && '[&_*]:cursor-ns-resize!')}
+                onDragStart={(e) => e.preventDefault()}
               >
-                {/* Column widths (a fixed-layout table takes them from here) — see SIZE_COLUMN_WIDTH. */}
-                <colgroup>
-                  <col style={{ width: CHECKBOX_COLUMN_WIDTH }} />
-                  <col style={{ width: SIZE_COLUMN_WIDTH }} />
-                  {columns.flatMap((c) =>
-                    c.kind === 'text'
-                      ? columnParts(c).map((part) => <col key={part} style={{ width: part === c.id ? undefined : TEXT_COLOR_COLUMN_WIDTH }} />)
-                      : [<col key={c.id} style={{ width: SMALL_COLUMN_WIDTH }} />],
-                  )}
-                  <col style={{ width: ACTIONS_COLUMN_WIDTH }} />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th className="sticky left-0 z-[2] h-10 border-r border-b px-3" style={{ borderColor: TABLE_BORDER, background: ROW_BG, width: CHECKBOX_COLUMN_WIDTH }}>
-                      <RowCheckbox checked={allRowsChecked} onChange={toggleAllRows} />
-                    </th>
-                    {[
-                      { id: 'size', label: t('Size'), short: t('Size'), icon: '/icons/edit_panel/panel_image.svg', kind: null },
-                      ...columns.map((c) => ({ id: c.id, label: `${t(KIND_LABELS[c.kind])} ${c.index}`, short: String(c.index), icon: KIND_ICONS[c.kind], kind: c.kind })),
-                    ].map((col, i, all) => {
-                      // Image and color columns are narrow: their header shows just the icon and number.
-                      const small = col.kind !== null && col.kind !== 'text';
-                      return (
-                        <th
-                          key={col.id}
-                          // A text's header spans all its columns: color, fill (if any), then text.
-                          colSpan={col.kind === 'text' ? columnParts(columns.find((c) => c.id === col.id)!).length : undefined}
-                          title={small ? col.label : undefined}
-                          className={cn('h-10 border-b px-2 text-left text-[13px] font-normal tracking-[-0.01em] text-white/45', i < all.length - 1 && 'border-r')}
-                          style={{ borderColor: TABLE_BORDER, background: ROW_BG }}
-                        >
-                          <div className={cn('flex min-w-0 items-center gap-1', small && 'justify-center')}>
-                            <img src={col.icon} alt="" className="size-6 shrink-0" />
-                            <span className="truncate">{small ? col.short : col.label}</span>
-                          </div>
-                        </th>
-                      );
-                    })}
-                    <th className="sticky right-0 z-[2] h-10 border-b border-l" style={{ borderColor: TABLE_BORDER, background: ROW_BG, width: ACTIONS_COLUMN_WIDTH }} />
-                  </tr>
-                </thead>
-                <tbody>
-                  {rowIds.map((setId) => {
-                    const layout = layoutOf(setId);
-                    if (!layout) return null;
-                    const banners = membersOf(setId);
-                    const sizes = banners.map((id) => layoutOf(id)).filter((l): l is Layout => Boolean(l)).map((l) => formatSize(l.size.width, l.size.height));
-                    // Each channel among the row's banners, once (banners with none add no icon).
-                    const channelIcons = [
-                      ...new Set(
-                        banners.flatMap((id) => {
-                          const l = layoutOf(id);
-                          const ch = l ? (getPreset(l.size.presetId ?? '')?.platformId ?? groupPlatformId) : undefined;
-                          return ch ? [ch] : [];
-                        }),
-                      ),
-                    ];
-                    const platformId = getPreset(layout.size.presetId ?? '')?.platformId ?? groupPlatformId;
-                    return (
-                      // Selecting any cell brings that row's banner into view in the preview — focus
-                      // bubbles up from whichever field took it, so this covers every kind of cell.
-                      <tr
-                        key={setId}
-                        data-row-id={setId}
-                        className={cn('group/row', rowDrag?.id === setId && 'opacity-20')}
-                        onFocus={(e) => {
-                          focusBanner(setId);
-                          // Which content cell took focus (if any) — its layer gets outlined in the preview.
-                          const key = (e.target as Element).closest('[data-bulk-cell]')?.getAttribute('data-bulk-cell');
-                          setActiveCell(key ? { setId, columnId: key.slice(setId.length + 1) } : null);
-                        }}
-                        // Leaving the row entirely (not just moving to another of its cells) lets coming
-                        // back to it bring its banner into view again.
-                        onBlur={(e) => {
-                          const next = e.relatedTarget as Element | null;
-                          if (e.currentTarget.contains(next)) return;
-                          lastFocusedRef.current = null;
-                          // Still editing this row from a picker opened by one of its cells (color
-                          // popover, image dialog) — keep its banner outlined. Moving to another row
-                          // outlines that one instead (its own onFocus).
-                          if (!next?.closest('[data-radix-popper-content-wrapper], [role="dialog"]')) {
-                            setBulkEditActivePage(null);
-                            setActiveCell(null);
-                          }
-                        }}
-                      >
-                        <Cell pinned="left" className="group/lead px-3">
-                          {/* The drag handle shows in the left margin while hovering this column — not on the
-                              primary (it always stays first), nor while filters or grouping are on (the
-                              order is the whole group's, one banner at a time). */}
-                          {setId !== primaryId && !filtered && (
-                            <img
-                              src="/icons/drag-12.svg"
-                              alt=""
-                              draggable={false}
-                              onMouseDown={(e) => startRowDrag(e, setId)}
-                              className={cn(
-                                'absolute top-1/2 left-0 size-3 -translate-y-1/2 cursor-grab opacity-0 transition-opacity group-hover/lead:opacity-100',
-                                rowDrag?.id === setId && 'opacity-100',
-                              )}
-                            />
-                          )}
-                          <RowCheckbox
-                            checked={banners.every((id) => selectedSceneIds.includes(id))}
-                            onChange={() => {
-                              const all = banners.every((id) => selectedSceneIds.includes(id));
-                              const others = selectedSceneIds.filter((id) => !banners.includes(id));
-                              selectScenes(all ? others : [...others, ...banners]);
-                              frameCheckedBanners();
-                            }}
-                          />
-                        </Cell>
-                        <Cell className={columns.length === 0 ? 'border-r-0' : undefined}>
-                          {sizes.length > 1 ? (
-                            // A grouped row: its channels' icons on their own line, then every size it
-                            // stands for, in full — wrapping onto more lines (the row grows) rather than
-                            // cutting any off.
-                            <div className="flex min-w-0 flex-col gap-1 py-2">
-                              {channelIcons.length > 0 && (
-                                <div className="flex items-center gap-1">
-                                  {channelIcons.map((id) => (
-                                    <img key={id} src={`/icons/ec-platform-icon/${id}.svg`} alt="" className="size-6 shrink-0 rounded-[6px]" />
-                                  ))}
-                                </div>
-                              )}
-                              <span className="flex min-w-0 flex-wrap gap-x-2 gap-y-0.5">
-                                {sizes.map((size, i) => (
-                                  <span key={i} className="whitespace-nowrap">
-                                    {size}
-                                    {i < sizes.length - 1 && ','}
-                                  </span>
-                                ))}
-                              </span>
+                <table
+                  className="w-full table-fixed border-separate border-spacing-0 [&>tbody>tr:last-child>td]:border-b-0"
+                  style={{
+                    minWidth:
+                      CHECKBOX_COLUMN_WIDTH +
+                      ACTIONS_COLUMN_WIDTH +
+                      SIZE_COLUMN_WIDTH +
+                      columns.reduce((sum, c) => sum + (c.kind === 'text' ? TEXT_COLOR_COLUMN_WIDTH * (c.hasFill ? 2 : 1) + TEXT_COLUMN_MIN_WIDTH : SMALL_COLUMN_WIDTH), 0),
+                  }}
+                >
+                  {/* Column widths (a fixed-layout table takes them from here) — see SIZE_COLUMN_WIDTH. */}
+                  <colgroup>
+                    <col style={{ width: CHECKBOX_COLUMN_WIDTH }} />
+                    <col style={{ width: SIZE_COLUMN_WIDTH }} />
+                    {columns.flatMap((c) =>
+                      c.kind === 'text'
+                        ? columnParts(c).map((part) => <col key={part} style={{ width: part === c.id ? undefined : TEXT_COLOR_COLUMN_WIDTH }} />)
+                        : [<col key={c.id} style={{ width: SMALL_COLUMN_WIDTH }} />],
+                    )}
+                    <col style={{ width: ACTIONS_COLUMN_WIDTH }} />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th className="sticky left-0 z-[2] h-10 border-r border-b px-3" style={{ borderColor: TABLE_BORDER, background: ROW_BG, width: CHECKBOX_COLUMN_WIDTH }}>
+                        <RowCheckbox checked={allRowsChecked} onChange={toggleAllRows} />
+                      </th>
+                      {[
+                        { id: 'size', label: t('Size'), short: t('Size'), icon: '/icons/edit_panel/panel_image.svg', kind: null },
+                        ...columns.map((c) => ({ id: c.id, label: `${t(KIND_LABELS[c.kind])} ${c.index}`, short: String(c.index), icon: KIND_ICONS[c.kind], kind: c.kind })),
+                      ].map((col, i, all) => {
+                        // Image and color columns are narrow: their header shows just the icon and number.
+                        const small = col.kind !== null && col.kind !== 'text';
+                        return (
+                          <th
+                            key={col.id}
+                            // A text's header spans all its columns: color, fill (if any), then text.
+                            colSpan={col.kind === 'text' ? columnParts(columns.find((c) => c.id === col.id)!).length : undefined}
+                            title={small ? col.label : undefined}
+                            className={cn('h-10 border-b px-2 text-left text-[13px] font-normal tracking-[-0.01em] text-white/45', i < all.length - 1 && 'border-r')}
+                            style={{ borderColor: TABLE_BORDER, background: ROW_BG }}
+                          >
+                            <div className={cn('flex min-w-0 items-center gap-1', small && 'justify-center')}>
+                              <img src={col.icon} alt="" className="size-6 shrink-0" />
+                              <span className="truncate">{small ? col.short : col.label}</span>
                             </div>
-                          ) : (
-                            <>
-                              {platformId ? (
-                                <img src={`/icons/ec-platform-icon/${platformId}.svg`} alt="" className="size-6 shrink-0 rounded-[6px]" />
-                              ) : (
-                                <RatioIcon width={layout.size.width} height={layout.size.height} className="size-6 shrink-0" />
-                              )}
-                              <span className="truncate">{sizes[0]}</span>
-                            </>
-                          )}
-                          {banners.some((id) => editedPageIds[id]) && <ImproveRowButton pageIds={banners.filter((id) => editedPageIds[id])} />}
-                        </Cell>
-                        {columns.flatMap((col, ci) => {
-                          // A text has two cells under its header: its color, then the text itself.
-                          const parts = columnParts(col);
-                          return parts.map((columnId) => {
-                            // The pinned actions column already draws the separator after the last one.
-                            const lastClass = ci === columns.length - 1 && columnId === col.id ? 'border-r-0' : undefined;
-                            const el = layout.elements.find((e) => e.id === col.id);
-                            // A size just added is still "generating" (same loading time as on the canvas)
-                            // — nothing to edit yet.
-                            if (banners.some((id) => loadingPageIds[id])) {
-                              return (
-                                <Cell key={columnId} className={lastClass}>
-                                  {elementIdOf(columnId) === columnId && <LoadingCell />}
-                                </Cell>
-                              );
+                          </th>
+                        );
+                      })}
+                      <th className="sticky right-0 z-[2] h-10 border-b border-l" style={{ borderColor: TABLE_BORDER, background: ROW_BG, width: ACTIONS_COLUMN_WIDTH }} />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rowIds.map((setId) => {
+                      const layout = layoutOf(setId);
+                      if (!layout) return null;
+                      const banners = membersOf(setId);
+                      const sizes = banners.map((id) => layoutOf(id)).filter((l): l is Layout => Boolean(l)).map((l) => formatSize(l.size.width, l.size.height));
+                      // Each channel among the row's banners, once (banners with none add no icon).
+                      const channelIcons = [
+                        ...new Set(
+                          banners.flatMap((id) => {
+                            const l = layoutOf(id);
+                            const ch = l ? (getPreset(l.size.presetId ?? '')?.platformId ?? groupPlatformId) : undefined;
+                            return ch ? [ch] : [];
+                          }),
+                        ),
+                      ];
+                      const platformId = getPreset(layout.size.presetId ?? '')?.platformId ?? groupPlatformId;
+                      return (
+                        // Selecting any cell brings that row's banner into view in the preview — focus
+                        // bubbles up from whichever field took it, so this covers every kind of cell.
+                        <tr
+                          key={setId}
+                          data-row-id={setId}
+                          className={cn('group/row', rowDrag?.id === setId && 'opacity-20')}
+                          onFocus={(e) => {
+                            focusBanner(setId);
+                            // Which content cell took focus (if any) — its layer gets outlined in the preview.
+                            const key = (e.target as Element).closest('[data-bulk-cell]')?.getAttribute('data-bulk-cell');
+                            setActiveCell(key ? { setId, columnId: key.slice(setId.length + 1) } : null);
+                          }}
+                          // Leaving the row entirely (not just moving to another of its cells) lets coming
+                          // back to it bring its banner into view again.
+                          onBlur={(e) => {
+                            const next = e.relatedTarget as Element | null;
+                            if (e.currentTarget.contains(next)) return;
+                            lastFocusedRef.current = null;
+                            // Still editing this row from a picker opened by one of its cells (color
+                            // popover, image dialog) — keep its banner outlined. Moving to another row
+                            // outlines that one instead (its own onFocus).
+                            if (!next?.closest('[data-radix-popper-content-wrapper], [role="dialog"]')) {
+                              setBulkEditActivePage(null);
+                              setActiveCell(null);
                             }
-                            if (!el) {
+                          }}
+                        >
+                          <Cell pinned="left" className="group/lead px-3">
+                            {/* The drag handle shows in the left margin while hovering this column — not on the
+                                primary (it always stays first), nor while filters or grouping are on (the
+                                order is the whole group's, one banner at a time). */}
+                            {setId !== primaryId && !filtered && (
+                              <img
+                                src="/icons/drag-12.svg"
+                                alt=""
+                                draggable={false}
+                                onMouseDown={(e) => startRowDrag(e, setId)}
+                                className={cn(
+                                  'absolute top-1/2 left-0 size-3 -translate-y-1/2 cursor-grab opacity-0 transition-opacity group-hover/lead:opacity-100',
+                                  rowDrag?.id === setId && 'opacity-100',
+                                )}
+                              />
+                            )}
+                            <RowCheckbox
+                              checked={banners.every((id) => selectedSceneIds.includes(id))}
+                              onChange={() => {
+                                const all = banners.every((id) => selectedSceneIds.includes(id));
+                                const others = selectedSceneIds.filter((id) => !banners.includes(id));
+                                selectScenes(all ? others : [...others, ...banners]);
+                                frameCheckedBanners();
+                              }}
+                            />
+                          </Cell>
+                          <Cell className={columns.length === 0 ? 'border-r-0' : undefined}>
+                            {sizes.length > 1 ? (
+                              // A grouped row: its channels' icons on their own line, then every size it
+                              // stands for, in full — wrapping onto more lines (the row grows) rather than
+                              // cutting any off.
+                              <div className="flex min-w-0 flex-col gap-1 py-2">
+                                {channelIcons.length > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    {channelIcons.map((id) => (
+                                      <img key={id} src={`/icons/ec-platform-icon/${id}.svg`} alt="" className="size-6 shrink-0 rounded-[6px]" />
+                                    ))}
+                                  </div>
+                                )}
+                                <span className="flex min-w-0 flex-wrap gap-x-2 gap-y-0.5">
+                                  {sizes.map((size, i) => (
+                                    <span key={i} className="whitespace-nowrap">
+                                      {size}
+                                      {i < sizes.length - 1 && ','}
+                                    </span>
+                                  ))}
+                                </span>
+                              </div>
+                            ) : (
+                              <>
+                                {platformId ? (
+                                  <img src={`/icons/ec-platform-icon/${platformId}.svg`} alt="" className="size-6 shrink-0 rounded-[6px]" />
+                                ) : (
+                                  <RatioIcon width={layout.size.width} height={layout.size.height} className="size-6 shrink-0" />
+                                )}
+                                <span className="truncate">{sizes[0]}</span>
+                              </>
+                            )}
+                          </Cell>
+                          {columns.flatMap((col, ci) => {
+                            // A text has two cells under its header: its color, then the text itself.
+                            const parts = columnParts(col);
+                            return parts.map((columnId) => {
+                              // The pinned actions column already draws the separator after the last one.
+                              const lastClass = ci === columns.length - 1 && columnId === col.id ? 'border-r-0' : undefined;
+                              const el = layout.elements.find((e) => e.id === col.id);
+                              // A size just added is still "generating" (same loading time as on the canvas)
+                              // — nothing to edit yet.
+                              if (banners.some((id) => loadingPageIds[id])) {
+                                return (
+                                  <Cell key={columnId} className={lastClass}>
+                                    {elementIdOf(columnId) === columnId && <LoadingCell />}
+                                  </Cell>
+                                );
+                              }
+                              if (!el) {
+                                return (
+                                  <Cell key={columnId} className={lastClass}>
+                                    {elementIdOf(columnId) === columnId && <Missing />}
+                                  </Cell>
+                                );
+                              }
+                              const rows = () => targetRows(setId, columnId);
+                              const multiSelected =
+                                Boolean(cellSelection && cellSelection.rowIds.length > 1 && cellSelection.columnId === columnId && cellSelection.rowIds.includes(setId)) ||
+                                Boolean(fill && fill.columnId === columnId && fill.sourceId !== setId && fill.rowIds.includes(setId));
                               return (
-                                <Cell key={columnId} className={lastClass}>
-                                  {elementIdOf(columnId) === columnId && <Missing />}
-                                </Cell>
-                              );
-                            }
-                            const rows = () => targetRows(setId, columnId);
-                            const multiSelected =
-                              Boolean(cellSelection && cellSelection.rowIds.length > 1 && cellSelection.columnId === columnId && cellSelection.rowIds.includes(setId)) ||
-                              Boolean(fill && fill.columnId === columnId && fill.sourceId !== setId && fill.rowIds.includes(setId));
-                            return (
-                              <Cell
-                                key={columnId}
-                                className={lastClass}
-                                editable
-                                cellKey={`${setId}:${columnId}`}
-                                selected={multiSelected}
-                                onMouseDown={(e) => handleCellMouseDown(e, setId, columnId)}
-                                onMouseEnter={(e) => handleCellMouseEnter(e, setId, columnId)}
-                                onFillHandleMouseDown={(e) => startFill(e, setId, columnId)}
-                                glimmer={glimmer && glimmer.columnId === columnId && glimmer.rowIds.includes(setId) ? glimmer.stamp : undefined}
-                              >
-                                {el.kind === 'text' &&
-                                  (isTextColorColumn(columnId) ? (
-                                    <TextColorCell
-                                      variant="font"
-                                      // Same default as the canvas draws an uncolored text in.
-                                      color={el.style.color ?? '#18181b'}
-                                      onChange={(color) => applyToRows(rows(), columnId, (target) => ({ style: { ...target.style, color } }))}
+                                <Cell
+                                  key={columnId}
+                                  className={lastClass}
+                                  editable
+                                  cellKey={`${setId}:${columnId}`}
+                                  selected={multiSelected}
+                                  onMouseDown={(e) => handleCellMouseDown(e, setId, columnId)}
+                                  onMouseEnter={(e) => handleCellMouseEnter(e, setId, columnId)}
+                                  onFillHandleMouseDown={(e) => startFill(e, setId, columnId)}
+                                  glimmer={glimmer && glimmer.columnId === columnId && glimmer.rowIds.includes(setId) ? glimmer.stamp : undefined}
+                                >
+                                  {el.kind === 'text' &&
+                                    (isTextColorColumn(columnId) ? (
+                                      <TextColorCell
+                                        variant="font"
+                                        // Same default as the canvas draws an uncolored text in.
+                                        color={el.style.color ?? '#18181b'}
+                                        onChange={(color) => applyToRows(rows(), columnId, (target) => ({ style: { ...target.style, color } }))}
+                                      />
+                                    ) : isTextFillColumn(columnId) ? (
+                                      <TextColorCell
+                                        variant="background"
+                                        color={el.style.fill ?? 'transparent'}
+                                        onChange={(fill) => applyToRows(rows(), columnId, (target) => ({ style: { ...target.style, fill } }))}
+                                      />
+                                    ) : (
+                                      <TextCell value={el.content ?? ''} onCommit={(content) => applyToRows(rows(), columnId, () => ({ content }))} />
+                                    ))}
+                                  {el.kind === 'image' && (
+                                    <ImageCell
+                                      url={el.imageUrl}
+                                      onPick={() =>
+                                        setPicking(
+                                          rows().flatMap(membersOf).flatMap((rowId) => {
+                                            const rowLayout = layoutOf(rowId);
+                                            return rowLayout?.elements.some((e) => e.id === col.id) ? [{ layoutId: rowLayout.id, elementId: col.id }] : [];
+                                          }),
+                                        )
+                                      }
                                     />
-                                  ) : isTextFillColumn(columnId) ? (
-                                    <TextColorCell
-                                      variant="background"
-                                      color={el.style.fill ?? 'transparent'}
+                                  )}
+                                  {(el.kind === 'shape' || el.kind === 'vector') && (
+                                    <FillCell
+                                      color={el.style.fill ?? '#D9D9D9'}
                                       onChange={(fill) => applyToRows(rows(), columnId, (target) => ({ style: { ...target.style, fill } }))}
                                     />
-                                  ) : (
-                                    <TextCell value={el.content ?? ''} onCommit={(content) => applyToRows(rows(), columnId, () => ({ content }))} />
-                                  ))}
-                                {el.kind === 'image' && (
-                                  <ImageCell
-                                    url={el.imageUrl}
-                                    onPick={() =>
-                                      setPicking(
-                                        rows().flatMap(membersOf).flatMap((rowId) => {
-                                          const rowLayout = layoutOf(rowId);
-                                          return rowLayout?.elements.some((e) => e.id === col.id) ? [{ layoutId: rowLayout.id, elementId: col.id }] : [];
-                                        }),
-                                      )
-                                    }
-                                  />
-                                )}
-                                {(el.kind === 'shape' || el.kind === 'vector') && (
-                                  <FillCell
-                                    color={el.style.fill ?? '#D9D9D9'}
-                                    onChange={(fill) => applyToRows(rows(), columnId, (target) => ({ style: { ...target.style, fill } }))}
-                                  />
-                                )}
-                              </Cell>
-                            );
-                          });
-                        })}
-                        <Cell pinned="right" className="px-2">
-                          {/* Its actions are about one banner — none on a row standing for several. */}
-                          {banners.length === 1 && <RowMenu setId={setId} />}
-                        </Cell>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                                  )}
+                                </Cell>
+                              );
+                            });
+                          })}
+                          <Cell pinned="right" className="px-2">
+                            {/* Its actions are about one banner — none on a row standing for several. */}
+                            {banners.length === 1 && <RowMenu setId={setId} />}
+                          </Cell>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {rowDrag?.lineY !== undefined && (
+                // Where the dragged row will land.
+                <div aria-hidden className="pointer-events-none absolute right-0 left-0 z-[4] h-0.5 bg-button-primary" style={{ top: rowDrag.lineY - 1 }} />
+              )}
+              {moreToTheRight && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute top-0 bottom-0 z-[3] w-[60px] bg-gradient-to-l from-[rgba(25,25,29,0.8)] to-[rgba(25,25,29,0)]"
+                  style={{ right: ACTIONS_COLUMN_WIDTH }}
+                />
+              )}
             </div>
-            {rowDrag?.lineY !== undefined && (
-              // Where the dragged row will land.
-              <div aria-hidden className="pointer-events-none absolute right-0 left-0 z-[4] h-0.5 bg-button-primary" style={{ top: rowDrag.lineY - 1 }} />
-            )}
-            {moreToTheRight && (
-              <div
-                aria-hidden
-                className="pointer-events-none absolute top-0 bottom-0 z-[3] w-[60px] bg-gradient-to-l from-[rgba(25,25,29,0.8)] to-[rgba(25,25,29,0)]"
-                style={{ right: ACTIONS_COLUMN_WIDTH }}
-              />
-            )}
+            <AddSizeRow
+              onAdd={(sizes) => {
+                // Adapted from the primary, like any size added on the canvas — so they start with
+                // the same content as the rest of the group, and join it as the table's last rows.
+                const [newId] = addSizesTo(primaryId, sizes);
+                if (newId) requestFocusPage(newId);
+              }}
+            />
           </div>
-          <AddSizeRow
-            onAdd={(sizes) => {
-              // Adapted from the primary, like any size added on the canvas — so they start with
-              // the same content as the rest of the group, and join it as the table's last rows.
-              const [newId] = addSizesTo(primaryId, sizes);
-              if (newId) requestFocusPage(newId);
-            }}
-          />
         </div>
-      </div>
+      )}
 
       {picking && (
         <ImagePickerDialog
@@ -1519,7 +1483,6 @@ function BannerGroupTable({
           onOpenChange={(open) => !open && setPicking(null)}
           onSelect={(url) => {
             for (const target of picking) updateElement(target.layoutId, target.elementId, { imageUrl: url });
-            useAppStore.getState().markBulkEditEdited(picking.map((target) => useAppStore.getState().layoutsById[target.layoutId]?.setId).filter((id): id is string => Boolean(id)));
             setPicking(null);
           }}
         />
@@ -1552,10 +1515,7 @@ function rowFacts(state: ReturnType<typeof useAppStore.getState>, setId: string)
   };
 }
 
-/** The look of the bar's two dropdown buttons (Figma "Button 32 / Secondary text"). */
-const FILTER_BUTTON =
-  'flex h-8 shrink-0 items-center gap-2 rounded-lg border border-[#40404A] bg-[#26262C] px-3 text-[14px] leading-[1.4] tracking-[-0.01em] text-white shadow-[0px_1px_1px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.02),0px_2px_2px_rgba(0,0,0,0.02)] outline-none transition-colors hover:bg-[#2F2F37] data-[state=open]:bg-[#2F2F37]';
-
+/** One of the bar's dropdowns (also the preview's ordering): the shared select button and a menu. */
 function FilterMenu<T extends string | null>({
   label,
   value,
@@ -1570,10 +1530,7 @@ function FilterMenu<T extends string | null>({
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <button type="button" className={FILTER_BUTTON}>
-          {label}
-          <img src="/icons/dropdown-16.svg" alt="" className="size-4 shrink-0" />
-        </button>
+        <SelectButton className="h-8">{label}</SelectButton>
       </DropdownMenuTrigger>
       {/* Same look as the rows' ⋮ menu. */}
       <DropdownMenuContent
@@ -1643,10 +1600,7 @@ function SizeFilterMenu({ sizes, onChange, groups }: { sizes: Set<string>; onCha
   return (
     <Popover onOpenChange={(open) => !open && setQuery('')}>
       <PopoverTrigger asChild>
-        <button type="button" className={FILTER_BUTTON}>
-          {label}
-          <img src="/icons/dropdown-16.svg" alt="" className="size-4 shrink-0" />
-        </button>
+        <SelectButton className="h-8">{label}</SelectButton>
       </PopoverTrigger>
       <PopoverContent
         align="start"
@@ -1702,35 +1656,22 @@ function GroupedBannersIcon({ className }: { className?: string }) {
 }
 
 /** How the tables list banners: one row per banner, or grouped — banners with the same content in
- * every column sharing one row (edits to it go to all of them). Two icon buttons with tooltips. */
+ * every column sharing one row (edits to it go to all of them). The panels' segmented control, at
+ * the bar's 32px, with each option's name in a tooltip. */
 function ViewToggle({ combine, onChange }: { combine: boolean; onChange: (combine: boolean) => void }) {
   const t = useT();
-  const options = [
-    // The default (one row per banner) first.
-    { value: false, label: t('One row per banner'), icon: OneRowPerBannerIcon },
-    { value: true, label: t('Group banners with the same content'), icon: GroupedBannersIcon },
-  ];
   return (
-    <div className="flex h-8 items-center gap-0.5 rounded-lg border border-[#40404A] bg-[#26262C] p-0.5">
-      {options.map(({ value, label, icon: Icon }) => (
-        <Tooltip key={String(value)}>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              aria-label={label}
-              aria-pressed={combine === value}
-              onClick={() => onChange(value)}
-              className={cn('flex size-6 items-center justify-center rounded-md transition-colors', combine === value ? 'bg-chrome-active text-white' : 'text-white hover:bg-white/5')}
-            >
-              <Icon className="size-4" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" sideOffset={8} className="text-[14px]">
-            {label}
-          </TooltipContent>
-        </Tooltip>
-      ))}
-    </div>
+    <SegmentedControl
+      size="md"
+      tooltipSide="bottom"
+      value={combine ? 'grouped' : 'perBanner'}
+      onChange={(value) => onChange(value === 'grouped')}
+      options={[
+        // The default (one row per banner) first.
+        { value: 'perBanner', label: t('One row per banner'), icon: <OneRowPerBannerIcon className="size-4" /> },
+        { value: 'grouped', label: t('Group banners with the same content'), icon: <GroupedBannersIcon className="size-4" /> },
+      ]}
+    />
   );
 }
 
@@ -1776,14 +1717,15 @@ function FilterBar({
         <FilterMenu label={channel === null ? t('All channels') : channelName(channel)} value={channel} options={channelOptions} onChange={onChannelChange} />
         <SizeFilterMenu sizes={sizes} onChange={onSizesChange} groups={sizeGroups} />
       </div>
-      <label className="flex h-8 w-[228px] shrink-0 items-center gap-2 overflow-hidden rounded-full border border-[#40404A] bg-[#26262C] px-3 focus-within:border-button-primary">
+      {/* Same field as the selects (see SelectButton), outlined in blue while typing. */}
+      <label className="flex h-8 w-[228px] shrink-0 items-center gap-2 overflow-hidden rounded-lg bg-chrome-border-subtle px-2 transition-colors hover:bg-chrome-border-soft focus-within:bg-chrome-border-subtle focus-within:shadow-[inset_0_0_0_1px_var(--button-primary)]">
         <Search className="size-4 shrink-0 text-white" />
         <input
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           onKeyDown={(e) => e.key === 'Escape' && onQueryChange('')}
           placeholder={t('Search content')}
-          className="min-w-0 flex-1 bg-transparent text-[14px] leading-[1.4] tracking-[-0.01em] text-white outline-none placeholder:text-white/25"
+          className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/45"
         />
       </label>
     </div>

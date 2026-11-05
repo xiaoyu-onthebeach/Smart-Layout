@@ -4,6 +4,7 @@ import { getPreset } from '@/lib/mock';
 import { PlatformMark } from '@/features/size-select/PlatformMark';
 import { useT } from '@/lib/i18n';
 import { formatSize } from '@/lib/format-size';
+import { Tag } from './PanelKit';
 
 /** Title row for a scene on the view-all canvas: name + optional platform mark + size pill. */
 export function PageTitleBar({
@@ -97,9 +98,7 @@ export function PageTitleBar({
         </div>
       )}
 
-      <span className="flex h-5 shrink-0 items-center rounded-full border border-chrome-border bg-chrome-border-subtle px-2 text-xs text-chrome-fg">
-        {formatSize(width, height)}
-      </span>
+      <Tag>{formatSize(width, height)}</Tag>
     </div>
   );
 }

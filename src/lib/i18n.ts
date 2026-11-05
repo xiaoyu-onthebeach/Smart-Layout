@@ -73,8 +73,6 @@ export const ja: Record<string, string> = {
   'Text color': 'テキストの色',
   'One row per banner': 'バナーごとに1行',
   'Group banners with the same content': '同じ内容のバナーをまとめる',
-  'Improve banner': 'バナーを改善',
-  'Adjust size and spacing to match the new content.': '新しいコンテンツに合わせてサイズと余白を調整します。',
   'Create mode': '作成モード',
   'Replace mode': '置き換えモード',
   'Set options': 'セットのオプション',
@@ -292,6 +290,8 @@ export const ja: Record<string, string> = {
   'Layout group': 'レイアウトグループ',
   'Expand group': 'グループを展開',
   'Collapse group': 'グループを折りたたむ',
+  'Expand set': 'セットを展開',
+  'Collapse set': 'セットを折りたたむ',
 };
 
 export function translate(text: string, language: Language): string {

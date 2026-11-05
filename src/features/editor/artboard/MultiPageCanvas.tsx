@@ -13,14 +13,12 @@ import { formatSize } from '@/lib/format-size';
 import { getPlatform } from '@/lib/mock/platforms';
 import { ArtboardFrame } from './ArtboardFrame';
 import { CascadeToolbar } from './CascadeToolbar';
-import { ImproveBannersPanel } from './ImproveBannersPanel';
 import { CanvasZoomBar } from './CanvasZoomBar';
 import { RulerOverlay } from './RulerOverlay';
 import { PageTitleBar } from './PageTitleBar';
 import { QuickSizeMenu, type QuickSizeResult } from './QuickSizeMenu';
 import { addSizesTo } from './add-sizes';
 import { duplicateBanner } from './duplicate-banner';
-import { bannerSetGroups } from './banner-sets';
 import { SceneContextMenu } from './SceneContextMenu';
 import {
   canvasRootOf,
@@ -352,7 +350,6 @@ function PageCard({
   renaming,
   onRenamingChange,
   onSceneContextMenu,
-  improveIds,
 }: {
   entry: PageEntry;
   left: number;
@@ -394,9 +391,6 @@ function PageCard({
   onRenamingChange: (renaming: boolean) => void;
   /** Right-click anywhere on the scene that isn't already its own image layer's context menu. */
   onSceneContextMenu: (e: ReactMouseEvent, pasteHere: () => void) => void;
-  /** Replace's preview: the edited banners this card offers to improve, in a panel below it (see
-   * `improveIdsByPage`). */
-  improveIds?: string[];
 }) {
   const { set: bannerSet, layout } = entry;
   // In the Bulk edit view's preview a click on the card just selects the banner (shift adds it to the
@@ -414,7 +408,7 @@ function PageCard({
   return (
     <div
       className={cn('group/card absolute', reflowing ? 'transition-[opacity,left,top] duration-150' : 'transition-opacity', readOnly && 'cursor-pointer [&_*]:pointer-events-none')}
-      style={{ left, top, width, height, opacity: filteredOut ? FILTERED_OUT_OPACITY : dimmed ? 0.6 : 1, zIndex: dragging ? 10 : improveIds ? (isHovered ? 20 : 5) : undefined }}
+      style={{ left, top, width, height, opacity: filteredOut ? FILTERED_OUT_OPACITY : dimmed ? 0.6 : 1, zIndex: dragging ? 10 : undefined }}
       onMouseDown={(e) => {
         e.stopPropagation();
         if (readOnly && e.button === 0) {
@@ -445,17 +439,6 @@ function PageCard({
       {showCascadeToolbar && scale >= 0.4 && (isHovered || active) && (
         <div className="absolute left-1/2 z-10 -translate-x-1/2" style={{ top: '100%', marginTop: 16 }} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
           <CascadeToolbar setId={entry.id} />
-        </div>
-      )}
-      {improveIds && !isLoading && (
-        // The card itself ignores the pointer in Replace — the panel takes it back.
-        <div
-          className="pointer-events-auto! absolute left-1/2 z-10 -translate-x-1/2 [&_*]:pointer-events-auto!"
-          style={{ top: '100%', marginTop: 8 }}
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <ImproveBannersPanel pageIds={improveIds} />
         </div>
       )}
       {isLoading ? (
@@ -526,7 +509,6 @@ export function MultiPageCanvas() {
   const clearFocusPage = useAppStore((s) => s.clearFocusPage);
   const focusPages = useAppStore((s) => s.focusPages);
   const bulkEditFilterMatches = useAppStore((s) => s.bulkEditFilterMatches);
-  const bulkEditEditedPageIds = useAppStore((s) => s.bulkEditEditedPageIds);
   const requestFocusPages = useAppStore((s) => s.requestFocusPages);
   const clearFocusPages = useAppStore((s) => s.clearFocusPages);
   const revealPageId = useAppStore((s) => s.revealPageId);
@@ -884,19 +866,6 @@ export function MultiPageCanvas() {
       }
       orderColumns.push({ key: group.key, x: cursorX, width, count: columnEntries.length });
       cursorX += width + PAGE_GAP;
-    }
-  }
-
-  // Replace's "Improve" panels, scoped to what was edited from the table: under the one edited
-  // banner of a set, or under a set's primary for all of that set's edited banners. Ordered by
-  // format, channel or size there are no sets on screen, so each edited banner gets its own.
-  const improveIdsByPage = new Map<string, string[]>();
-  if (readOnly) {
-    const edited = (id: string) => Boolean(bulkEditEditedPageIds[id]) && entries.some((e) => e.id === id);
-    for (const { primaryId, memberIds } of bannerSetGroups({ pageOrder, pageGroups, pageGroupIdByPage })) {
-      const editedIds = memberIds.filter(edited);
-      if (altOrder || editedIds.length === 1) for (const id of editedIds) improveIdsByPage.set(id, [id]);
-      else if (editedIds.length > 1) improveIdsByPage.set(primaryId, editedIds);
     }
   }
 
@@ -1634,7 +1603,6 @@ export function MultiPageCanvas() {
                 showBottomAdd={!isMultiMemberGroupPage(entry.id) && !hasBlockerBelow(entry, entries)}
                 onAddAdjacent={(edge, results) => handleAddAdjacent(entry, edge, results)}
                 onSceneContextMenu={(e, pasteHere) => setSceneContextMenu({ x: e.clientX, y: e.clientY, entryId: entry.id, pasteHere })}
-                improveIds={improveIdsByPage.get(entry.id)}
               />
             );
           })}

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { ChevronDown, Minus, Plus, RefreshCw } from 'lucide-react';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -579,6 +579,35 @@ export function PanelSection({
       </div>
       {children}
     </div>
+  );
+}
+
+/** The trigger of a select, in both modes (the Create banner panel's Size, Replace's filters and
+ * preview ordering): what's chosen, then a chevron, on a borderless dark field. The caller sets the
+ * height and width, and passes the menu's own trigger props through (it's used `asChild`). */
+export function SelectButton({ className, children, ...props }: ComponentProps<'button'>) {
+  return (
+    <button
+      type="button"
+      {...props}
+      className={cn(
+        'flex shrink-0 items-center gap-2 rounded-lg bg-chrome-border-subtle px-2 text-sm text-white outline-none transition-colors hover:bg-chrome-border-soft data-[state=open]:bg-chrome-border-soft',
+        className,
+      )}
+    >
+      {children}
+      <ChevronDown className="size-4 shrink-0 text-white" />
+    </button>
+  );
+}
+
+/** The design system's default tag: a small rounded pill of text — a banner's size on the canvas,
+ * a set's banner count in the Replace table. */
+export function Tag({ className, children }: { className?: string; children: ReactNode }) {
+  return (
+    <span className={cn('flex h-5 shrink-0 items-center rounded-full border border-chrome-border bg-chrome-border-subtle px-2 text-[13px] leading-4 tracking-[-0.01em] whitespace-nowrap text-chrome-fg', className)}>
+      {children}
+    </span>
   );
 }
 
@@ -1521,29 +1550,50 @@ export function SegmentedControl<T extends string>({
   options,
   value,
   onChange,
+  size = 'sm',
+  tooltipSide,
 }: {
   options: { value: T; label: string; icon: ReactNode }[];
   value: T;
   onChange: (value: T) => void;
+  /** 'sm' (28px) for the editing panels' fields; 'md' (32px, fixed-width buttons instead of
+   * sharing the row) for a toolbar of 32px controls, like the Replace table's filter bar. */
+  size?: 'sm' | 'md';
+  /** Each option's name in a styled tooltip on this side, instead of the browser's own. */
+  tooltipSide?: 'top' | 'bottom';
 }) {
   return (
     // 2px padding on all 4 sides + 24px buttons = 28px total — was 2px padding + 28px buttons
     // (32px total), taller than every other 28px field in these panels.
     <div className="flex items-center gap-0.5 rounded-lg bg-chrome-border-subtle p-0.5">
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          title={opt.label}
-          onClick={() => onChange(opt.value)}
-          className={cn(
-            'flex h-6 flex-1 items-center justify-center rounded-md text-white/70 transition-colors',
-            opt.value === value ? 'bg-[#131316] text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02)]' : 'hover:bg-white/5',
-          )}
-        >
-          {opt.icon}
-        </button>
-      ))}
+      {options.map((opt) => {
+        const button = (
+          <button
+            key={opt.value}
+            type="button"
+            title={tooltipSide ? undefined : opt.label}
+            aria-label={opt.label}
+            aria-pressed={opt.value === value}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              'flex items-center justify-center rounded-md text-white/70 transition-colors',
+              size === 'md' ? 'h-7 w-10' : 'h-6 flex-1',
+              opt.value === value ? 'bg-[#131316] text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02)]' : 'hover:bg-white/5',
+            )}
+          >
+            {opt.icon}
+          </button>
+        );
+        if (!tooltipSide) return button;
+        return (
+          <Tooltip key={opt.value}>
+            <TooltipTrigger asChild>{button}</TooltipTrigger>
+            <TooltipContent side={tooltipSide} sideOffset={8} className="text-[14px]">
+              {opt.label}
+            </TooltipContent>
+          </Tooltip>
+        );
+      })}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, Minus, Plus } from 'lucide-react';
+import { Minus, Plus } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
 import type { Layout } from '@/types';
@@ -18,6 +18,7 @@ import {
   PanelHeaderIcon,
   PanelSection,
   SegmentedControl,
+  SelectButton,
 } from './PanelKit';
 import { SizeChangeMenu } from './SizeChangeMenu';
 import type { QuickSizeResult } from './QuickSizeMenu';
@@ -113,17 +114,10 @@ export function SceneEditorPanel({ layout, setId }: { layout: Layout; setId: str
           sections in this panel still wants the full 16px). */}
       <PanelSection label={t('Size')} style={{ marginTop: -4 }}>
         <SizeChangeMenu onSelect={handleChangeSize} currentWidth={layout.size.width} currentHeight={layout.size.height}>
-          <button
-            type="button"
-            className="flex h-[35px] w-full items-center gap-2 rounded-lg px-2 text-sm text-white"
-            style={{ background: '#26262C' }}
-          >
-            <span className="shrink-0">
-              {formatSize(layout.size.width, layout.size.height)}
-            </span>
+          <SelectButton className="h-[35px] w-full">
+            <span className="shrink-0">{formatSize(layout.size.width, layout.size.height)}</span>
             <span className="min-w-0 flex-1 truncate text-right text-xs text-white/45">{currentSizeLabel}</span>
-            <ChevronDown className="size-4 shrink-0 text-white" />
-          </button>
+          </SelectButton>
         </SizeChangeMenu>
       </PanelSection>
 

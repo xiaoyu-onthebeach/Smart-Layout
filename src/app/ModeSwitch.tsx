@@ -36,38 +36,52 @@ const MODES: { value: WorkspaceView; label: string; icon: ComponentType<{ classN
   { value: 'bulkEdit', label: 'Replace', icon: ReplaceModeIcon },
 ];
 
-/** Which mode the playground is in (Create / Replace) — in the top bar, next to the playground's
- * name: two small square buttons on a rounded strip, the current one raised, each with its name
- * in a tooltip (below, since the bar is at the top of the screen). */
+/** Which mode the playground is in (Create / Replace) — a tab hanging from the top of the screen,
+ * its top corners curving out into the edge (Figma "top menu"): two buttons, each with its icon and
+ * name, the current one sunk into the page's own dark with its icon and name in the primary blue. */
+/** Trying the switch with icons only: the names move to a tooltip below each button. Back to
+ * `true` to show them next to the icons again. */
+const SHOW_MODE_LABELS = false;
+
 export function ModeSwitch() {
   const t = useT();
   const view = useAppStore((s) => s.workspaceView);
   const setView = useAppStore((s) => s.setWorkspaceView);
   return (
-    <div className="flex items-center gap-1 rounded-lg bg-[#26262C] p-1">
-      {MODES.map(({ value, label, icon: Icon }) => (
-        // Figma "Tooltip with Shortcut": the mode's name, below the button.
-        <Tooltip key={value}>
-          <TooltipTrigger asChild>
+    <div className="flex items-start">
+      <img src="/icons/top-tab-corner.svg" alt="" className="size-5 shrink-0" />
+      <div className="flex items-center gap-1 rounded-b-2xl bg-chrome-border-soft px-2 pt-3 pb-2">
+        {MODES.map(({ value, label, icon: Icon }) => {
+          const button = (
             <button
+              key={value}
               type="button"
-              aria-label={t(label)}
+              aria-label={SHOW_MODE_LABELS ? undefined : t(label)}
               aria-pressed={view === value}
               onClick={() => setView(value)}
               className={cn(
-                'flex size-8 items-center justify-center rounded-md text-white transition-colors',
-                // The selected mode in the primary blue, like the active tool; the other one white.
-                view === value ? 'bg-chrome-active' : 'hover:bg-white/5',
+                'flex h-8 items-center gap-1.5 rounded-lg px-2 text-[14px] font-medium transition-colors',
+                view === value
+                  ? 'bg-chrome-bg text-chrome-active shadow-[0px_1px_1px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.02),0px_2px_2px_rgba(0,0,0,0.02)]'
+                  : 'text-chrome-fg hover:bg-white/5',
               )}
             >
-              <Icon className="size-5" />
+              <Icon className="size-6 shrink-0" />
+              {SHOW_MODE_LABELS && t(label)}
             </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" sideOffset={8} className="text-[14px]">
-            {t(`${label} mode`)}
-          </TooltipContent>
-        </Tooltip>
-      ))}
+          );
+          if (SHOW_MODE_LABELS) return button;
+          return (
+            <Tooltip key={value}>
+              <TooltipTrigger asChild>{button}</TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={8} className="text-[14px]">
+                {t(`${label} mode`)}
+              </TooltipContent>
+            </Tooltip>
+          );
+        })}
+      </div>
+      <img src="/icons/top-tab-corner.svg" alt="" className="size-5 shrink-0 -scale-x-100" />
     </div>
   );
 }

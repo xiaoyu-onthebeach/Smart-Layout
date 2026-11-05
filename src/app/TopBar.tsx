@@ -33,10 +33,16 @@ export function TopBar() {
     >
       <div className="flex items-center gap-4 py-3 pr-6 pl-3">
         <img src="/icons/logo.svg" alt="Beachside" className="size-8" />
-        <span className="text-sm font-medium text-chrome-fg">{DOCUMENT_TITLE}</span>
-        {step === 'editor' && <ModeSwitch />}
+        <span className="text-[14px] font-medium text-chrome-fg">{DOCUMENT_TITLE}</span>
       </div>
 
+      {/* Hangs from the top of the bar, centered on the screen rather than on this bar — which starts
+          after the left ruler when it's shown. */}
+      {step === 'editor' && (
+        <div className="absolute top-0 -translate-x-1/2" style={{ left: `calc(50% - ${rulersActive ? RULER_SIZE / 2 : 0}px)` }}>
+          <ModeSwitch />
+        </div>
+      )}
 
       <div className="flex items-center gap-2 p-3">
         {downloading && <img src="/icons/dropdown/Downloading.svg" alt="" className="size-6 animate-spin" />}
