@@ -6,7 +6,7 @@ import { useT } from '@/lib/i18n';
 import { useAppStore } from '@/store/useAppStore';
 import { SAMPLE_IMAGES } from '@/lib/sample-images';
 
-type TabId = 'visuals' | 'upload';
+type TabId = 'visuals' | 'library' | 'upload';
 
 // Tile (134px) + gap (16px) at the dialog's 736px content width fits exactly 5 per row.
 const GRID_COLUMNS = 5;
@@ -114,7 +114,10 @@ export function ImagePickerDialog({
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-0.5 rounded-lg bg-black/20 p-[3px]">
               <SegmentedTab active={tab === 'visuals'} onClick={() => setTab('visuals')}>
-                {t('Beachside visuals')}
+                {t('Playground')}
+              </SegmentedTab>
+              <SegmentedTab active={tab === 'library'} onClick={() => setTab('library')}>
+                {t('Library')}
               </SegmentedTab>
               <SegmentedTab active={tab === 'upload'} onClick={() => setTab('upload')}>
                 {t('Upload')}
@@ -144,6 +147,9 @@ export function ImagePickerDialog({
                 )}
               </div>
             </>
+          ) : tab === 'library' ? (
+            // Nothing in it yet — just holds the grid's height so the dialog doesn't jump between tabs.
+            <div className="h-[482px]" />
           ) : (
             <div className="flex flex-wrap gap-4">
               <input

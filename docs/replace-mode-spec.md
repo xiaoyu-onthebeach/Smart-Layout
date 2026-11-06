@@ -313,7 +313,7 @@ Left to right:
 ### 7.5 Image
 
 - A 48 px rounded thumbnail of the current image; an image icon on an empty placeholder when there's none. Hover outlines it.
-- Click (or Enter when the cell is focused) → the **visuals picker** (Beachside visuals, Uploads, upload a file). Choosing an image applies it and closes the picker.
+- Click (or Enter when the cell is focused) → the **visuals picker** (tabs: Playground visuals, Library, Upload). Choosing an image applies it and closes the picker.
 - The targets are fixed when the picker opens: if the selection changes meanwhile, the image still goes where it was meant to.
 
 ### 7.6 Shape / vector color
@@ -354,7 +354,7 @@ Spreadsheet-like fill:
 - The active cell shows a small **handle** on its bottom edge (blue-bordered pill).
 - Drag it **up or down the column**: the cursor becomes a vertical resize cursor everywhere, and the cells it covers are tinted as you go.
 - On release, the active cell's value is **copied into every covered cell** — text, text color, text fill, image, or shape color.
-- Feedback: a soft **glimmer** sweeps once across every cell that took the value (~600 ms).
+- Feedback: a soft blue **glimmer** sweeps once across every cell that took the value (~350 ms).
 - Afterwards the filled run stays selected, the source cell active, so you can keep typing into all of them.
 - Text typed but not yet committed in the source cell is part of what's copied.
 

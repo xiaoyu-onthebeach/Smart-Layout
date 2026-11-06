@@ -123,7 +123,7 @@ export const ja: Record<string, string> = {
   'Choose a visual': '画像を選択',
   Search: '検索',
   Close: '閉じる',
-  'Beachside visuals': 'Beachside ビジュアル',
+  Playground: 'プレイグラウンド',
   Upload: 'アップロード',
   'All visuals': 'すべての画像',
   'Uploaded image': 'アップロード済みの画像',
