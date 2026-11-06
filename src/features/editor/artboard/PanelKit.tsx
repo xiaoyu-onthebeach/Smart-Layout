@@ -1556,8 +1556,9 @@ export function SegmentedControl<T extends string>({
   options: { value: T; label: string; icon: ReactNode }[];
   value: T;
   onChange: (value: T) => void;
-  /** 'sm' (28px) for the editing panels' fields; 'md' (32px, fixed-width buttons instead of
-   * sharing the row) for a toolbar of 32px controls, like the Replace table's filter bar. */
+  /** 'sm' (28px) for the editing panels' fields; 'md' for a toolbar of 32px controls, like the
+   * Replace table's filter bar (Figma "Segmented", icon only): no track, just 32px-tall, fixed-width
+   * buttons, the current one raised on the fields' own gray. */
   size?: 'sm' | 'md';
   /** Each option's name in a styled tooltip on this side, instead of the browser's own. */
   tooltipSide?: 'top' | 'bottom';
@@ -1565,7 +1566,7 @@ export function SegmentedControl<T extends string>({
   return (
     // 2px padding on all 4 sides + 24px buttons = 28px total — was 2px padding + 28px buttons
     // (32px total), taller than every other 28px field in these panels.
-    <div className="flex items-center gap-0.5 rounded-lg bg-chrome-border-subtle p-0.5">
+    <div className={cn('flex items-center', size === 'md' ? 'overflow-clip rounded-md' : 'gap-0.5 rounded-lg bg-chrome-border-subtle p-0.5')}>
       {options.map((opt) => {
         const button = (
           <button
@@ -1576,9 +1577,18 @@ export function SegmentedControl<T extends string>({
             aria-pressed={opt.value === value}
             onClick={() => onChange(opt.value)}
             className={cn(
-              'flex items-center justify-center rounded-md text-white/70 transition-colors',
-              size === 'md' ? 'h-7 w-10' : 'h-6 flex-1',
-              opt.value === value ? 'bg-[#131316] text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02)]' : 'hover:bg-white/5',
+              'flex items-center justify-center transition-colors',
+              size === 'md'
+                ? cn(
+                    'h-8 w-10 rounded-lg text-white',
+                    opt.value === value
+                      ? 'bg-chrome-border-subtle shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_rgba(0,0,0,0.02)]'
+                      : 'hover:bg-white/5',
+                  )
+                : cn(
+                    'h-6 flex-1 rounded-md text-white/70',
+                    opt.value === value ? 'bg-[#131316] text-white shadow-[0_1px_2px_rgba(0,0,0,0.03),0_1px_6px_-1px_rgba(0,0,0,0.02)]' : 'hover:bg-white/5',
+                  ),
             )}
           >
             {opt.icon}

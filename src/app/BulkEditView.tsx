@@ -41,9 +41,10 @@ const SMALL_COLUMN_WIDTH = 64;
 /** Text columns share the remaining width, never narrower than this — below it, the table scrolls
  * sideways instead. */
 const TEXT_COLUMN_MIN_WIDTH = 160;
-/** The leftmost column: the checkbox (16px) centered, 12px each side and its border. The row's drag
- * handle (12px) appears in the left margin on hover, over nothing — so revealing it moves nothing. */
-const CHECKBOX_COLUMN_WIDTH = 41;
+/** The leftmost column: the checkbox (16px) with 20px on its left, 12px on its right and its border.
+ * The row's drag handle (12px) appears in that left margin on hover, 4px from either edge, over
+ * nothing — so revealing it moves nothing. */
+const CHECKBOX_COLUMN_WIDTH = 49;
 /** The pinned row-actions column on the right. */
 const ACTIONS_COLUMN_WIDTH = 40;
 /** The floating header's height — the scrolling content starts below it. */
@@ -1238,11 +1239,12 @@ function BannerGroupTable({
                   </colgroup>
                   <thead>
                     <tr>
-                      <th className="sticky left-0 z-[2] h-10 border-r border-b px-3" style={{ borderColor: TABLE_BORDER, background: ROW_BG, width: CHECKBOX_COLUMN_WIDTH }}>
+                      <th className="sticky left-0 z-[2] h-10 border-r border-b pr-3 pl-5" style={{ borderColor: TABLE_BORDER, background: ROW_BG, width: CHECKBOX_COLUMN_WIDTH }}>
                         <RowCheckbox checked={allRowsChecked} onChange={toggleAllRows} />
                       </th>
                       {[
-                        { id: 'size', label: t('Size'), short: t('Size'), icon: '/icons/edit_panel/panel_image.svg', kind: null },
+                        // The size column's header is just its name.
+                        { id: 'size', label: t('Size'), short: t('Size'), icon: undefined, kind: null },
                         ...columns.map((c) => ({ id: c.id, label: `${t(KIND_LABELS[c.kind])} ${c.index}`, short: String(c.index), icon: KIND_ICONS[c.kind], kind: c.kind })),
                       ].map((col, i, all) => {
                         // Image and color columns are narrow: their header shows just the icon and number.
@@ -1257,7 +1259,7 @@ function BannerGroupTable({
                             style={{ borderColor: TABLE_BORDER, background: ROW_BG }}
                           >
                             <div className={cn('flex min-w-0 items-center gap-1', small && 'justify-center')}>
-                              <img src={col.icon} alt="" className="size-6 shrink-0" />
+                              {col.icon && <img src={col.icon} alt="" className="size-6 shrink-0" />}
                               <span className="truncate">{small ? col.short : col.label}</span>
                             </div>
                           </th>
@@ -1311,8 +1313,8 @@ function BannerGroupTable({
                             }
                           }}
                         >
-                          <Cell pinned="left" className="group/lead px-3">
-                            {/* The drag handle shows in the left margin while hovering this column — not on the
+                          <Cell pinned="left" className="group/lead pr-3 pl-5">
+                            {/* The drag handle shows in the left margin (the column's wider left padding) while hovering this column — not on the
                                 primary (it always stays first), nor while filters or grouping are on (the
                                 order is the whole group's, one banner at a time). */}
                             {setId !== primaryId && !filtered && (
@@ -1322,7 +1324,7 @@ function BannerGroupTable({
                                 draggable={false}
                                 onMouseDown={(e) => startRowDrag(e, setId)}
                                 className={cn(
-                                  'absolute top-1/2 left-0 size-3 -translate-y-1/2 cursor-grab opacity-0 transition-opacity group-hover/lead:opacity-100',
+                                  'absolute top-1/2 left-1 size-3 -translate-y-1/2 cursor-grab opacity-0 transition-opacity group-hover/lead:opacity-100',
                                   rowDrag?.id === setId && 'opacity-100',
                                 )}
                               />
@@ -1662,8 +1664,8 @@ function GroupedBannersIcon({ className }: { className?: string }) {
 }
 
 /** How the tables list banners: one row per banner, or grouped — banners with the same content in
- * every column sharing one row (edits to it go to all of them). The panels' segmented control, at
- * the bar's 32px, with each option's name in a tooltip. */
+ * every column sharing one row (edits to it go to all of them). The segmented control's trackless
+ * 32px toolbar look, with each option's name in a tooltip. */
 function ViewToggle({ combine, onChange }: { combine: boolean; onChange: (combine: boolean) => void }) {
   const t = useT();
   return (

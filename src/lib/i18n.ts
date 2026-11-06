@@ -77,7 +77,6 @@ export const ja: Record<string, string> = {
   'Replace mode': '置き換えモード',
   'Set options': 'セットのオプション',
   'Set name': 'セット名',
-  You: 'あなた',
   Follow: 'フォロー',
   'Stop following': 'フォローを停止',
   'Duplicate set': 'セットを複製',
