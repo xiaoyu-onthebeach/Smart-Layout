@@ -81,7 +81,8 @@ export type UiSlice = {
   focusPageId: string | null;
   /** Like `focusPageId`, for several pages at once: frames all of them. `panOnly` re-centers at
    * the current zoom (the canvas's own follow-up once the zoom has landed). */
-  focusPages: { ids: string[]; panOnly?: boolean } | null;
+  /** `smooth`: a slower, eased glide (following someone — see RemoteCursors) instead of the quick one. */
+  focusPages: { ids: string[]; panOnly?: boolean; smooth?: boolean } | null;
   /** Set to request the view-all canvas pan (current zoom kept as-is) to bring this page into view —
    * unlike `focusPageId`, never changes zoom; used after duplicating a scene, where the new copy
    * should just scroll into view rather than the whole canvas zooming out to fit everything. */
@@ -166,7 +167,7 @@ export type UiSlice = {
   /** Requests that the view-all canvas pan/zoom to frame this page. */
   requestFocusPage: (pageId: string) => void;
   clearFocusPage: () => void;
-  requestFocusPages: (pageIds: string[], panOnly?: boolean) => void;
+  requestFocusPages: (pageIds: string[], panOnly?: boolean, smooth?: boolean) => void;
   clearFocusPages: () => void;
   /** Requests that the view-all canvas pan (keeping its current zoom) to bring this page into view. */
   requestRevealPage: (pageId: string) => void;

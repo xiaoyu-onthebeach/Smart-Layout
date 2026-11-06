@@ -18,14 +18,7 @@ export function PresenceAvatars() {
     <div className="mr-2 flex items-center">
       {USERS.map((user, i) => {
         const followed = followingUserName === user.name;
-        const avatar = (
-          <img
-            src={user.avatar}
-            alt=""
-            className={cn('size-8 shrink-0 rounded-full object-cover', followed && 'border-2')}
-            style={followed ? { borderColor: user.color } : undefined}
-          />
-        );
+        const avatar = <img src={user.avatar} alt="" className="size-8 shrink-0 rounded-full object-cover" />;
         return (
           <Tooltip key={user.name}>
             <TooltipTrigger asChild>
@@ -43,6 +36,15 @@ export function PresenceAvatars() {
                   style={{ zIndex: USERS.length - i }}
                 >
                   {avatar}
+                  {/* Following them: a ring in their color, over the photo (which keeps its size),
+                      easing in from slightly larger rather than popping on. */}
+                  <span
+                    className={cn(
+                      'pointer-events-none absolute inset-0 rounded-full border-2 transition-[opacity,scale] duration-300 ease-out',
+                      followed ? 'scale-100 opacity-100' : 'scale-125 opacity-0',
+                    )}
+                    style={{ borderColor: user.color }}
+                  />
                 </button>
               )}
             </TooltipTrigger>

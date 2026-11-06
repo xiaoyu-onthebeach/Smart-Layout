@@ -582,18 +582,33 @@ export function MultiPageCanvas() {
   // jump a plain `setCamera` would give — used for "bring the primary back on screen" (the "ALL
   // SIZES" + icon's onFocusPrimary), where a sudden cut reads as jarring. Cancels any prior
   // in-flight animation first so rapid repeat clicks retarget smoothly rather than fighting.
-  function animateCameraTo(target: Camera, duration = 400, onDone?: () => void) {
+  // `smooth` (following someone): eased in and out rather than just out, with the zoom changing
+  // at an even pace (geometrically) while the point at the viewport's center travels straight to
+  // its target — no lurch from mixing a linear zoom with a linear pan.
+  function animateCameraTo(target: Camera, duration = 400, onDone?: () => void, smooth = false) {
     if (cameraAnimRef.current !== null) cancelAnimationFrame(cameraAnimRef.current);
     const start = camera;
     const startTime = performance.now();
+    const cx = viewport.width / 2;
+    const cy = viewport.height / 2;
+    const startCenter = { x: (cx - start.x) / start.zoom, y: (cy - start.y) / start.zoom };
+    const targetCenter = { x: (cx - target.x) / target.zoom, y: (cy - target.y) / target.zoom };
     function tick(now: number) {
       const t = Math.min(1, (now - startTime) / duration);
-      const eased = 1 - Math.pow(1 - t, 3);
-      setCamera({
-        x: start.x + (target.x - start.x) * eased,
-        y: start.y + (target.y - start.y) * eased,
-        zoom: start.zoom + (target.zoom - start.zoom) * eased,
-      });
+      if (smooth) {
+        const eased = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+        const zoom = start.zoom * (target.zoom / start.zoom) ** eased;
+        const centerX = startCenter.x + (targetCenter.x - startCenter.x) * eased;
+        const centerY = startCenter.y + (targetCenter.y - startCenter.y) * eased;
+        setCamera({ x: cx - centerX * zoom, y: cy - centerY * zoom, zoom });
+      } else {
+        const eased = 1 - Math.pow(1 - t, 3);
+        setCamera({
+          x: start.x + (target.x - start.x) * eased,
+          y: start.y + (target.y - start.y) * eased,
+          zoom: start.zoom + (target.zoom - start.zoom) * eased,
+        });
+      }
       cameraAnimRef.current = t < 1 ? requestAnimationFrame(tick) : null;
       if (t >= 1) onDone?.();
     }
@@ -1007,9 +1022,9 @@ export function MultiPageCanvas() {
       : clamp(Math.min((viewport.width * MULTI_FOCUS_FILL_RATIO) / (maxX - minX), (viewport.height * MULTI_FOCUS_FILL_RATIO) / (maxY - minY)), MIN_ZOOM, MAX_FIT_ZOOM);
     const x = viewport.width / 2 - ((minX + maxX) / 2) * zoom;
     const y = viewport.height / 2 - ((minY + maxY) / 2) * zoom;
-    const ids = focusPages.ids;
-    if (focusPages.panOnly) animateCameraTo({ x, y, zoom }, 200);
-    else animateCameraTo({ x, y, zoom }, 400, () => requestFocusPages(ids, true));
+    const { ids, smooth } = focusPages;
+    if (focusPages.panOnly) animateCameraTo({ x, y, zoom }, smooth ? 500 : 200, undefined, smooth);
+    else animateCameraTo({ x, y, zoom }, smooth ? 1000 : 400, () => requestFocusPages(ids, true, smooth), smooth);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusPages, viewport.width, viewport.height]);
 

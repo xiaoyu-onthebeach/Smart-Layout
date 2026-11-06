@@ -258,9 +258,16 @@ export function Shell() {
                   </div>
                 )}
               </ResizablePanel>
-              {/* Same color as the background around it until hovered — the window's own border already
-                  separates the two sides. */}
-              <ResizableHandle disabled={!isBulkEdit} className={cn('bg-[#19191D] transition-colors hover:bg-white/10', !isBulkEdit && 'hidden')} />
+              {/* Same color as the background around it until hovered or dragged, then a 3px line in the
+                  primary blue, centred on it without moving either side — the window's own border
+                  already separates the two sides. */}
+              <ResizableHandle
+                disabled={!isBulkEdit}
+                className={cn(
+                  'bg-[#19191D] before:absolute before:inset-y-0 before:left-1/2 before:z-10 before:w-[3px] before:-translate-x-1/2 before:transition-colors hover:before:bg-button-primary data-[separator=active]:before:bg-button-primary data-[separator=hover]:before:bg-button-primary',
+                  !isBulkEdit && 'hidden',
+                )}
+              />
               <ResizablePanel id="workspace" minSize="25">
                 {/* In Bulk edit the canvas becomes a rounded window sitting on the view's own
                     background, below the floating header. */}

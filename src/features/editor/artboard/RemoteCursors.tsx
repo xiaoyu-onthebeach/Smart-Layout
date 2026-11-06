@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useT } from '@/lib/i18n';
-import { PRESENCE_USERS } from '@/lib/presence';
+import { FOLLOW_BORDER, PRESENCE_USERS } from '@/lib/presence';
 
 /** The arrow's path (Figma "cursor 24") — the same shape as the app's own cursor. */
 const ARROW_PATH =
@@ -76,7 +76,7 @@ export function RemoteCursors({ banners, camera, labelTop }: { banners: CursorBa
         const duration = current ? 1500 + Math.min(4500, Math.hypot(to.x - from.x, to.y - from.y) * zoom * 6) : 0;
         activities.current[i] = { pageId: banner.id, from, to, start: now, duration };
         // Onto another banner while being followed: the canvas goes there with them.
-        if (followingRef.current === user.name && banner.id !== current?.pageId) useAppStore.getState().requestFocusPages([banner.id]);
+        if (followingRef.current === user.name && banner.id !== current?.pageId) useAppStore.getState().requestFocusPages([banner.id], false, true);
         // The move, then a rest of 1.5 to 5s before the next one.
         timers[i] = window.setTimeout(move, duration + 1500 + Math.random() * 3500);
       };
@@ -113,7 +113,7 @@ export function RemoteCursors({ banners, camera, labelTop }: { banners: CursorBa
   useEffect(() => {
     if (!following) return;
     const activity = activities.current[OTHERS.indexOf(following)];
-    if (activity) requestFocusPages([activity.pageId]);
+    if (activity) requestFocusPages([activity.pageId], false, true);
     const onKeyDown = (e: KeyboardEvent) => e.key === 'Escape' && setFollowingUser(null);
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -150,12 +150,16 @@ export function RemoteCursors({ banners, camera, labelTop }: { banners: CursorBa
       {following && (
         <>
           {/* Under the top bar (z-10), so in Create the mode tab hanging over it hides its top edge
-              there — the tab carries it around its own outline instead (see ModeSwitch). */}
-          <div className="pointer-events-none absolute inset-0 z-[9] rounded-[inherit] border-2" style={{ borderColor: following.color }} />
+              there — the tab carries it around its own outline instead (see ModeSwitch). Rounded
+              like Replace's preview window, in Create too, where the canvas itself is square. */}
+          <div
+            className="pointer-events-none absolute inset-0 z-[9] animate-in rounded-2xl duration-500 fade-in-0"
+            style={{ border: `${FOLLOW_BORDER.width}px solid ${following.color}` }}
+          />
           <button
             type="button"
             onClick={() => setFollowingUser(null)}
-            className="absolute left-1/2 z-20 flex h-6 -translate-x-1/2 items-center gap-1 rounded-full pr-1.5 pl-2.5 text-[12px] font-semibold whitespace-nowrap text-white shadow-[0px_1px_2px_rgba(0,0,0,0.16)]"
+            className="absolute left-1/2 z-20 flex h-6 -translate-x-1/2 animate-in items-center duration-500 fade-in-0 slide-in-from-top-2 gap-1 rounded-full pr-1.5 pl-2.5 text-[12px] font-semibold whitespace-nowrap text-white shadow-[0px_1px_2px_rgba(0,0,0,0.16)]"
             style={{ top: labelTop, background: following.color }}
             aria-label={t('Stop following')}
           >

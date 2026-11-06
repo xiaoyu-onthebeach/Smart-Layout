@@ -160,8 +160,11 @@ function Cell({
         // the columns before it scroll underneath (the last of those draws no right border of its own).
         pinned === 'right' && 'sticky right-0 z-[2] border-r-0 border-l',
         // The active cell: blue-tinted with a blue border, drawn inset so it never fights the table's
-        // own grid lines. Not clipped, so its fill handle can sit across the bottom edge.
-        editable ? 'group/cell relative p-0 focus-within:bg-button-primary/10! focus-within:shadow-[inset_0_0_0_1px_var(--button-primary)]' : 'overflow-hidden px-2',
+        // own grid lines. Not clipped, so its fill handle can sit across the bottom edge. A color cell
+        // stays active while its picker is open, though focus has moved into the picker.
+        editable
+          ? 'group/cell relative p-0 focus-within:bg-button-primary/10! focus-within:shadow-[inset_0_0_0_1px_var(--button-primary)] has-[[data-cell-field][data-state=open]]:bg-button-primary/10! has-[[data-cell-field][data-state=open]]:shadow-[inset_0_0_0_1px_var(--button-primary)]'
+          : 'overflow-hidden px-2',
         // The rest of a multi-cell selection is just tinted; only the cell being edited (focus-within
         // above) gets the border.
         selected && 'bg-button-primary/15!',
@@ -176,7 +179,7 @@ function Cell({
           aria-hidden
           onMouseDown={onFillHandleMouseDown}
           // A larger invisible grab area around the 16×6 handle.
-          className="absolute right-[6px] -bottom-[2px] z-[1] hidden h-[6px] w-4 cursor-ns-resize rounded-[8px] border border-button-primary bg-[#2F2F37] group-focus-within/cell:block before:absolute before:-inset-x-1 before:-inset-y-2"
+          className="absolute right-[6px] -bottom-[2px] z-[1] hidden h-[6px] w-4 cursor-ns-resize rounded-[8px] border border-button-primary bg-[#2F2F37] group-focus-within/cell:block group-has-[[data-cell-field][data-state=open]]/cell:block before:absolute before:-inset-x-1 before:-inset-y-2"
         />
       )}
     </td>

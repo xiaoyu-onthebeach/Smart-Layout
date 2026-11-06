@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import type { WorkspaceView } from '@/store/types';
 import { useT } from '@/lib/i18n';
-import { PRESENCE_USERS } from '@/lib/presence';
+import { FOLLOW_BORDER, PRESENCE_USERS } from '@/lib/presence';
 
 /** The Create mode's icon (shapes) — inline, in `currentColor`, so it follows the button's own
  * active/inactive color. */
@@ -48,25 +48,31 @@ const BOTTOM_RADIUS = 16;
 /**
  * While following someone in Create, the canvas's border in their color runs along the top of
  * the screen — where this tab hangs over it. This carries it around the tab instead: down its
- * curved corners, its sides and along its bottom, 2px wide on the canvas side of its outline (the
- * path runs 1px outside it), meeting the border's top edge at either end.
+ * curved corners, its sides and along its bottom, as wide as the border on the canvas side of its
+ * outline (the path runs half that outside it). Cut off above the border's own depth, so where the
+ * two meet the border's own top edge takes over.
  */
 function TabOutline({ width, height, color }: { width: number; height: number; color: string }) {
-  const r = CORNER - 1;
-  const b = BOTTOM_RADIUS + 1;
+  const w = FOLLOW_BORDER.width;
+  const r = CORNER - w / 2;
+  const b = BOTTOM_RADIUS + w / 2;
   const d = [
-    `M 0 1`,
+    `M 0 ${w / 2}`,
     `A ${r} ${r} 0 0 1 ${r} ${CORNER}`,
     `L ${r} ${height - BOTTOM_RADIUS}`,
-    `A ${b} ${b} 0 0 0 ${CORNER + BOTTOM_RADIUS} ${height + 1}`,
-    `L ${width - CORNER - BOTTOM_RADIUS} ${height + 1}`,
+    `A ${b} ${b} 0 0 0 ${CORNER + BOTTOM_RADIUS} ${height + w / 2}`,
+    `L ${width - CORNER - BOTTOM_RADIUS} ${height + w / 2}`,
     `A ${b} ${b} 0 0 0 ${width - r} ${height - BOTTOM_RADIUS}`,
     `L ${width - r} ${CORNER}`,
-    `A ${r} ${r} 0 0 1 ${width} 1`,
+    `A ${r} ${r} 0 0 1 ${width} ${w / 2}`,
   ].join(' ');
+  const clipId = 'mode-tab-outline-clip';
   return (
-    <svg className="pointer-events-none absolute top-0 left-0 overflow-visible" width={width} height={height} aria-hidden>
-      <path d={d} fill="none" stroke={color} strokeWidth={2} />
+    <svg className="pointer-events-none absolute top-0 left-0 animate-in overflow-visible duration-500 fade-in-0" width={width} height={height} aria-hidden>
+      <clipPath id={clipId}>
+        <rect x={-w} y={w} width={width + 2 * w} height={height + w} />
+      </clipPath>
+      <path d={d} fill="none" stroke={color} strokeWidth={w} clipPath={`url(#${clipId})`} />
     </svg>
   );
 }

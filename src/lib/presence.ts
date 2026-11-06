@@ -6,6 +6,10 @@ export type PresenceUser = { name: string; avatar: string; color?: string; you?:
 export const PRESENCE_USERS: PresenceUser[] = [
   // Same picture as the account menu's, at the right end of the top bar.
   { name: 'Baptiste Ndiaye', avatar: '/samples/Baptiste.jpg', you: true },
-  { name: 'Kenta Takahashi', avatar: '/avatars/avatar-red.svg', color: 'var(--sunburn)' },
+  { name: 'Yui Nakamura', avatar: '/avatars/yui.jpg', color: 'var(--sunburn)' },
   { name: 'Aiko Sato', avatar: '/avatars/avatar-pink.svg', color: 'var(--popsicle)' },
 ];
+
+/** The border around the canvas while following someone, in their color (see RemoteCursors, and
+ * ModeSwitch which carries it around the mode tab): its width in px. */
+export const FOLLOW_BORDER = { width: 2 };

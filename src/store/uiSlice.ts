@@ -157,7 +157,7 @@ export const createUiSlice: Slice<UiSlice> = (set) => ({
   },
   requestFocusPage: (pageId) => set({ focusPageId: pageId }),
   clearFocusPage: () => set({ focusPageId: null }),
-  requestFocusPages: (pageIds, panOnly) => set({ focusPages: { ids: pageIds, panOnly } }),
+  requestFocusPages: (pageIds, panOnly, smooth) => set({ focusPages: { ids: pageIds, panOnly, smooth } }),
   clearFocusPages: () => set({ focusPages: null }),
   requestRevealPage: (pageId) => set({ revealPageId: pageId }),
   clearRevealPage: () => set({ revealPageId: null }),
